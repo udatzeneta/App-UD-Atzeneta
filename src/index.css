@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-brand-black-bg text-brand-gray-light antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Custom Scrollbar for sleek Linear/Notion dashboard */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-brand-black-bg;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-brand-black-border rounded-full hover:bg-brand-gray-dark transition-colors;
+  }
+
+  /* Custom input styles */
+  input, select, textarea {
+    @apply focus:outline-none focus:ring-1 focus:ring-brand-red-600 focus:border-brand-red-600;
+  }
+}
+
+@layer components {
+  .dashboard-card {
+    @apply bg-brand-black-card border border-brand-black-border rounded-xl p-6 shadow-premium hover:border-brand-gray-dark/40 transition-all duration-200;
+  }
+  
+  .glass-panel {
+    @apply bg-brand-black-card/80 backdrop-blur-md border border-brand-black-border;
+  }
+
+  .btn-primary {
+    @apply bg-brand-red-600 hover:bg-brand-red-700 text-white font-medium px-4 py-2 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-glow-red disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply bg-brand-black-hover hover:bg-brand-black-border text-brand-gray-light border border-brand-black-border font-medium px-4 py-2 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-danger {
+    @apply bg-red-950/40 hover:bg-red-900/60 text-red-200 border border-red-900/60 font-medium px-4 py-2 rounded-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2;
+  }
+  
+  .table-th {
+    @apply text-left text-xs font-semibold uppercase tracking-wider text-brand-gray-muted px-6 py-4 border-b border-brand-black-border bg-brand-black-card/50;
+  }
+  
+  .table-td {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-brand-gray-light border-b border-brand-black-border;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-brand-gray-muted mb-1;
+  }
+
+  .form-input {
+    @apply w-full bg-brand-black-bg border border-brand-black-border rounded-lg px-3.5 py-2 text-sm text-brand-gray-light placeholder:text-brand-gray-dark focus:ring-1 focus:ring-brand-red-600 focus:border-brand-red-600 transition-all;
+  }
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera when desired */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
