@@ -123,5 +123,64 @@ export const authService = {
       if (error) throw error;
       return data as Profile[];
     }
+  },
+
+  async createProfile(item: Omit<Profile, 'id'>): Promise<Profile> {
+    if (isMockMode) {
+      await delay(300);
+      const profiles = MockDatabase.getProfiles();
+      const newProfile: Profile = {
+        ...item,
+        id: `mock-uuid-user-${Math.random().toString(36).substring(2, 11)}`,
+        created_at: new Date().toISOString()
+      };
+      MockDatabase.setProfiles([...profiles, newProfile]);
+      return newProfile;
+    } else {
+      const tempId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Math.random().toString(36).substring(2, 15);
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({ ...item, id: tempId })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Profile;
+    }
+  },
+
+  async updateProfile(id: string, item: Partial<Profile>): Promise<Profile> {
+    if (isMockMode) {
+      await delay(300);
+      const profiles = MockDatabase.getProfiles();
+      const idx = profiles.findIndex(p => p.id === id);
+      if (idx === -1) throw new Error('Jugador no encontrado');
+      profiles[idx] = { ...profiles[idx], ...item };
+      MockDatabase.setProfiles(profiles);
+      return profiles[idx];
+    } else {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(item)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Profile;
+    }
+  },
+
+  async deleteProfile(id: string): Promise<void> {
+    if (isMockMode) {
+      await delay(300);
+      let profiles = MockDatabase.getProfiles();
+      profiles = profiles.filter(p => p.id !== id);
+      MockDatabase.setProfiles(profiles);
+    } else {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    }
   }
 };

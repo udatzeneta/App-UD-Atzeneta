@@ -79,7 +79,7 @@ export const Trainings: React.FC = () => {
     setEditingTraining(null);
     setDate(new Date().toISOString().split('T')[0]);
     setTime('18:00');
-    setLocation('Estadio El Regit (Césped)');
+    setLocation('Campo Municipal El Porrejat');
     setDuration('90');
     setObjective('');
     setObservations('');
@@ -275,7 +275,7 @@ export const Trainings: React.FC = () => {
           <input
             type="text"
             className="form-input pl-10 w-full"
-            placeholder="Buscar por lugar u objetivo (ej. El Regit, transiciones)..."
+            placeholder="Buscar por lugar u objetivo (ej. El Porrejat, transiciones)..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -495,7 +495,7 @@ export const Trainings: React.FC = () => {
               <input
                 type="text"
                 className="form-input"
-                placeholder="Estadio El Regit"
+                placeholder="Campo Municipal El Porrejat"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
               />

@@ -8,13 +8,22 @@ export const permissionsService = {
     if (isMockMode) {
       return MockDatabase.getPermissions();
     } else {
-      const { data, error } = await supabase
-        .from('permissions')
-        .select('*')
-        .order('page', { ascending: true })
-        .order('id', { ascending: true });
-      if (error) throw error;
-      return data as Permission[];
+      try {
+        const { data, error } = await supabase
+          .from('permissions')
+          .select('*')
+          .order('page', { ascending: true })
+          .order('id', { ascending: true });
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          console.warn('⚠️ [Supabase] La tabla de permisos está vacía. Usando datos Mock de respaldo.');
+          return MockDatabase.getPermissions();
+        }
+        return data as Permission[];
+      } catch (err) {
+        console.warn('⚠️ [Supabase] Error al cargar permisos. Usando datos Mock de respaldo:', err);
+        return MockDatabase.getPermissions();
+      }
     }
   },
 
@@ -23,11 +32,20 @@ export const permissionsService = {
     if (isMockMode) {
       return MockDatabase.getRolePermissions();
     } else {
-      const { data, error } = await supabase
-        .from('role_permissions')
-        .select('*');
-      if (error) throw error;
-      return data as RolePermission[];
+      try {
+        const { data, error } = await supabase
+          .from('role_permissions')
+          .select('*');
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          console.warn('⚠️ [Supabase] La tabla de permisos por rol está vacía. Usando datos Mock de respaldo.');
+          return MockDatabase.getRolePermissions();
+        }
+        return data as RolePermission[];
+      } catch (err) {
+        console.warn('⚠️ [Supabase] Error al cargar permisos de rol. Usando datos Mock de respaldo:', err);
+        return MockDatabase.getRolePermissions();
+      }
     }
   },
 
@@ -36,11 +54,17 @@ export const permissionsService = {
     if (isMockMode) {
       return MockDatabase.getUserPermissions();
     } else {
-      const { data, error } = await supabase
-        .from('user_permissions')
-        .select('*');
-      if (error) throw error;
-      return data as UserPermission[];
+      try {
+        const { data, error } = await supabase
+          .from('user_permissions')
+          .select('*');
+        if (error) throw error;
+        // user_permissions puede estar legítimamente vacía, pero si falla o queremos ser tolerantes:
+        return (data || []) as UserPermission[];
+      } catch (err) {
+        console.warn('⚠️ [Supabase] Error al cargar permisos de usuario. Usando vacío:', err);
+        return [];
+      }
     }
   },
 
@@ -113,6 +137,9 @@ export const permissionsService = {
     userPermissions: UserPermission[]
   ): boolean {
     if (!profile) return false;
+
+    // Administrador (role_id === 1) tiene bypass de seguridad y acceso completo a todo siempre
+    if (profile.role_id === 1) return true;
 
     // Buscar el id del permiso
     const perm = allPermissions.find(p => p.page === page && p.action === action);

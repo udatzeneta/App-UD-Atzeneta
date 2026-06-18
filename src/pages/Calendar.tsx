@@ -120,7 +120,8 @@ export const Calendar: React.FC = () => {
         date: m.date,
         title: `vs ${m.rival}`,
         subtitle: m.competition,
-        location: m.is_local ? 'Local (El Regit)' : 'Visitante'
+        time: m.time,
+        location: m.location || (m.is_local ? 'Local (El Porrejat)' : 'Visitante')
       }));
 
     return [...dateTrainings, ...dateMatches];
@@ -163,7 +164,7 @@ export const Calendar: React.FC = () => {
   const [trainingForm, setTrainingForm] = useState({
     date: '',
     time: '18:00',
-    location: 'Estadio El Regit',
+    location: 'Campo Municipal El Porrejat',
     duration: 90,
     objective: '',
     observations: '',
@@ -173,10 +174,14 @@ export const Calendar: React.FC = () => {
   // Formulario de partido
   const [matchForm, setMatchForm] = useState({
     date: '',
+    time: '18:00',
+    location: '',
     rival: '',
     is_local: true,
     competition: 'Liga' as const,
-    status: 'Programado' as const
+    status: 'Programado' as const,
+    objective: '',
+    observations: ''
   });
 
   const handleOpenTrainingForm = () => {
@@ -186,7 +191,15 @@ export const Calendar: React.FC = () => {
     const targetDay = selectedDay || defaultDay;
     const monthStr = String(month + 1).padStart(2, '0');
     const dayStr = String(targetDay).padStart(2, '0');
-    setTrainingForm(prev => ({ ...prev, date: `${year}-${monthStr}-${dayStr}` }));
+    setTrainingForm({
+      date: `${year}-${monthStr}-${dayStr}`,
+      time: '18:00',
+      location: 'Campo Municipal El Porrejat',
+      duration: 90,
+      objective: '',
+      observations: '',
+      status: 'Programado'
+    });
   };
 
   const handleOpenMatchForm = () => {
@@ -196,7 +209,17 @@ export const Calendar: React.FC = () => {
     const targetDay = selectedDay || defaultDay;
     const monthStr = String(month + 1).padStart(2, '0');
     const dayStr = String(targetDay).padStart(2, '0');
-    setMatchForm(prev => ({ ...prev, date: `${year}-${monthStr}-${dayStr}` }));
+    setMatchForm({
+      date: `${year}-${monthStr}-${dayStr}`,
+      time: '18:00',
+      location: '',
+      rival: '',
+      is_local: true,
+      competition: 'Liga',
+      status: 'Programado',
+      objective: '',
+      observations: ''
+    });
   };
 
   const handleSaveTraining = (e: React.FormEvent) => {
@@ -216,6 +239,8 @@ export const Calendar: React.FC = () => {
     }
     createMatchMutation.mutate({
       ...matchForm,
+      rival: matchForm.rival.trim(),
+      location: matchForm.location.trim() || (matchForm.is_local ? 'Campo Municipal El Porrejat' : 'Visitante'),
       score_us: null,
       score_them: null
     });
@@ -313,22 +338,22 @@ export const Calendar: React.FC = () => {
 
             let cellClass = '';
             if (!day) {
-              cellClass = 'bg-brand-black-bg/30 opacity-30 select-none min-h-[140px] p-2';
+              cellClass = 'bg-brand-black-bg/30 opacity-30 select-none min-h-[150px] p-2';
             } else {
-              cellClass = 'min-h-[140px] p-2.5 flex flex-col gap-2 transition-all duration-200 border-l-[3px] relative ';
+              cellClass = 'min-h-[150px] p-2 flex flex-col gap-1.5 transition-all duration-200 border-t-4 relative ';
               
               if (hasMatch && hasTraining) {
-                cellClass += 'bg-gradient-to-br from-amber-500/15 to-brand-red-600/15 border-l-amber-500 hover:from-amber-500/25 hover:to-brand-red-600/25';
+                cellClass += 'bg-gradient-to-br from-yellow-600/30 to-brand-red-600/30 border-t-yellow-500 hover:from-yellow-600/40 hover:to-brand-red-600/40';
               } else if (hasMatch) {
-                cellClass += 'bg-amber-500/10 border-l-amber-500 hover:bg-amber-500/15';
+                cellClass += 'bg-yellow-500/25 border-t-yellow-500 hover:bg-yellow-500/35';
               } else if (hasTraining) {
-                cellClass += 'bg-brand-red-600/10 border-l-brand-red-600 hover:bg-brand-red-600/15';
+                cellClass += 'bg-brand-red-600/25 border-t-brand-red-600 hover:bg-brand-red-600/35';
               } else {
-                cellClass += 'bg-brand-black-card border-l-transparent hover:bg-brand-black-hover/50';
+                cellClass += 'bg-brand-black-card border-t-brand-black-border hover:bg-brand-black-hover/50';
               }
 
               if (hasToday) {
-                cellClass += ' ring-1 ring-inset ring-brand-red-600 bg-brand-red-600/5';
+                cellClass += ' ring-2 ring-inset ring-brand-red-600 bg-brand-red-600/10';
               }
               
               if (canCreateTraining || canCreateMatch) {
@@ -344,54 +369,58 @@ export const Calendar: React.FC = () => {
               >
                 {/* Número del día */}
                 <div className="flex justify-between items-center">
-                  <span className={`text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center ${
+                  <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
                     hasToday
                       ? 'bg-brand-red-600 text-white shadow-glow-red'
-                      : 'text-brand-gray-muted'
+                      : 'text-brand-gray-light font-extrabold'
                   }`}>
                     {day}
                   </span>
                   {(canCreateTraining || canCreateMatch) && day && (
-                    <Plus className="w-3.5 h-3.5 text-brand-gray-dark opacity-0 group-hover:opacity-100" />
+                    <Plus className="w-3.5 h-3.5 text-brand-gray-muted hover:text-brand-gray-light" />
                   )}
                 </div>
 
                 {/* Eventos */}
-                <div className="flex-1 flex flex-col gap-1 overflow-hidden">
-                  {day && events.slice(0, 4).map((evt, eIdx) => {
+                <div className="flex-1 flex flex-col gap-1.5 overflow-hidden">
+                  {day && events.slice(0, 3).map((evt, eIdx) => {
                     const isTraining = evt.type === 'training';
                     return (
                       <div
                         key={eIdx}
-                        className={`text-[9px] px-1.5 py-1 rounded border flex items-center gap-1 truncate ${
+                        className={`text-[10px] p-1.5 rounded-lg border flex flex-col gap-0.5 leading-tight ${
                           isTraining
-                            ? 'bg-brand-red-600/20 text-brand-red-400 border-brand-red-600/30 font-semibold'
-                            : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 font-semibold'
+                            ? 'bg-brand-red-600/40 text-brand-red-200 border-brand-red-500/40 font-medium'
+                            : 'bg-yellow-600/40 text-yellow-200 border-yellow-500/40 font-medium'
                         }`}
-                        title={evt.title}
+                        title={`${evt.title} - ${evt.time || ''} - ${evt.location || ''}`}
                       >
-                        {isTraining ? <Dumbbell className="w-2.5 h-2.5 shrink-0" /> : <Trophy className="w-2.5 h-2.5 shrink-0" />}
-                        <span className="truncate font-medium">{evt.title}</span>
+                        <div className="flex items-center gap-1 font-bold truncate">
+                          {isTraining ? <Dumbbell className="w-3 h-3 shrink-0 text-brand-red-400" /> : <Trophy className="w-3 h-3 shrink-0 text-yellow-400" />}
+                          <span className="truncate">{evt.title}</span>
+                        </div>
+                        {evt.time && <div className="text-[9px] opacity-90 truncate font-semibold">🕒 {evt.time}</div>}
+                        {evt.location && <div className="text-[9px] opacity-90 truncate italic">📍 {evt.location}</div>}
                       </div>
                     );
                   })}
-                  {events.length > 4 && (
-                    <span className="text-[9px] text-brand-gray-dark text-center">
-                      +{events.length - 4} más
+                  {events.length > 3 && (
+                    <span className="text-[9px] text-brand-gray-light font-bold text-center">
+                      +{events.length - 3} más
                     </span>
                   )}
                 </div>
 
                 {/* Contadores */}
                 {day && events.length > 0 && (
-                  <div className="flex items-center gap-2 text-[9px]">
+                  <div className="flex items-center gap-2 text-[9px] mt-auto pt-1">
                     {trainingCount > 0 && (
-                      <span className="text-brand-red-400 flex items-center gap-0.5 font-semibold">
+                      <span className="text-brand-red-400 flex items-center gap-0.5 font-bold">
                         <Dumbbell className="w-2.5 h-2.5" /> {trainingCount}
                       </span>
                     )}
                     {matchCount > 0 && (
-                      <span className="text-yellow-400 flex items-center gap-0.5 font-semibold">
+                      <span className="text-yellow-400 flex items-center gap-0.5 font-bold">
                         <Trophy className="w-2.5 h-2.5" /> {matchCount}
                       </span>
                     )}
@@ -621,7 +650,7 @@ export const Calendar: React.FC = () => {
             <input
               type="text"
               className="form-input"
-              placeholder="Estadio El Regit (Césped)"
+              placeholder="Campo Municipal El Porrejat"
               value={trainingForm.location}
               onChange={(e) => setTrainingForm(prev => ({ ...prev, location: e.target.value }))}
               required
@@ -718,6 +747,19 @@ export const Calendar: React.FC = () => {
               />
             </div>
             <div>
+              <label className="form-label">Hora</label>
+              <input
+                type="time"
+                className="form-input"
+                value={matchForm.time}
+                onChange={(e) => setMatchForm(prev => ({ ...prev, time: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="form-label">Competición</label>
               <select
                 className="form-input bg-brand-black-bg"
@@ -728,6 +770,18 @@ export const Calendar: React.FC = () => {
                 <option value="Copa">Copa</option>
                 <option value="Amistoso">Amistoso</option>
                 <option value="Promoción">Promoción</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Estado</label>
+              <select
+                className="form-input bg-brand-black-bg"
+                value={matchForm.status}
+                onChange={(e) => setMatchForm(prev => ({ ...prev, status: e.target.value as any }))}
+              >
+                <option value="Programado">Programado</option>
+                <option value="Jugado">Jugado</option>
+                <option value="Suspendido">Suspendido</option>
               </select>
             </div>
           </div>
@@ -749,17 +803,17 @@ export const Calendar: React.FC = () => {
 
           <div>
             <label className="form-label">Ubicación</label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 mb-2">
               <button
                 type="button"
-                onClick={() => setMatchForm(prev => ({ ...prev, is_local: true }))}
+                onClick={() => setMatchForm(prev => ({ ...prev, is_local: true, location: prev.location || 'Campo Municipal El Porrejat' }))}
                 className={`p-3 rounded-lg border text-sm font-medium transition-all ${
                   matchForm.is_local
                     ? 'bg-brand-red-600 text-white border-brand-red-600'
                     : 'bg-brand-black-card text-brand-gray-muted border-brand-black-border hover:border-brand-gray-dark'
                 }`}
               >
-                🏟️ Local (El Regit)
+                🏟️ Local (El Porrejat)
               </button>
               <button
                 type="button"
@@ -773,19 +827,40 @@ export const Calendar: React.FC = () => {
                 ✈️ Visitante
               </button>
             </div>
+            <input
+              type="text"
+              className="form-input"
+              placeholder={matchForm.is_local ? 'Campo Municipal El Porrejat' : 'Lugar / Estadio visitante'}
+              value={matchForm.location}
+              onChange={(e) => setMatchForm(prev => ({ ...prev, location: e.target.value }))}
+            />
           </div>
 
           <div>
-            <label className="form-label">Estado</label>
-            <select
-              className="form-input bg-brand-black-bg"
-              value={matchForm.status}
-              onChange={(e) => setMatchForm(prev => ({ ...prev, status: e.target.value as any }))}
-            >
-              <option value="Programado">Programado</option>
-              <option value="Jugado">Jugado</option>
-              <option value="Suspendido">Suspendido</option>
-            </select>
+            <label className="form-label">
+              <Target className="w-3.5 h-3.5 inline mr-1" />
+              Objetivo del Partido (Opcional)
+            </label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Ej. Presión alta, transiciones rápidas..."
+              value={matchForm.objective}
+              onChange={(e) => setMatchForm(prev => ({ ...prev, objective: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label className="form-label">
+              <Users className="w-3.5 h-3.5 inline mr-1" />
+              Observaciones (Opcional)
+            </label>
+            <textarea
+              className="form-input h-20 resize-none"
+              placeholder="Convocatoria, uniforme, detalles de viaje..."
+              value={matchForm.observations}
+              onChange={(e) => setMatchForm(prev => ({ ...prev, observations: e.target.value }))}
+            />
           </div>
 
           <div className="flex gap-2 pt-4 justify-end">

@@ -14,6 +14,10 @@ export interface Profile {
   full_name: string;
   role_id: number;
   avatar_url?: string;
+  phone?: string;
+  address?: string;
+  dorsal?: number;
+  birth_date?: string;
   created_at?: string;
 }
 
@@ -56,6 +60,10 @@ export interface Match {
   score_us: number | null;
   score_them: number | null;
   status: 'Programado' | 'Jugado' | 'Suspendido';
+  time?: string;
+  location?: string;
+  objective?: string;
+  observations?: string;
   created_at?: string;
 }
 

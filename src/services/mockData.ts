@@ -5,7 +5,7 @@ import {
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
-const MOCK_DATA_VERSION = '4';
+const MOCK_DATA_VERSION = '6';
 
 // IDs fijos para los perfiles Mock
 export const MOCK_USER_IDS = {
@@ -27,7 +27,7 @@ const DEFAULT_ROLES: Role[] = [
 ];
 
 // 2. Páginas y acciones para permisos
-const PAGES = ['dashboard', 'calendar', 'trainings', 'matches', 'fines', 'points', 'scouting', 'opponent_analysis', 'settings', 'permissions', 'attendance'];
+const PAGES = ['dashboard', 'calendar', 'trainings', 'matches', 'fines', 'points', 'scouting', 'opponent_analysis', 'settings', 'permissions', 'attendance', 'players'];
 const ACTIONS: ('ver' | 'crear' | 'editar' | 'eliminar' | 'exportar')[] = ['ver', 'crear', 'editar', 'eliminar', 'exportar'];
 
 const generatePermissions = (): Permission[] => {
@@ -83,6 +83,9 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Carlos Albelda (Admin)',
     role_id: 1,
     avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
+    phone: '600111222',
+    address: 'Calle de la Roca, 5, Atzeneta',
+    birth_date: '1985-05-15',
     created_at: new Date().toISOString()
   },
   {
@@ -91,6 +94,8 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Administración UD Atzeneta',
     role_id: 1,
     avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
+    phone: '600111333',
+    address: 'Calle Roca del Sol, Atzeneta',
     created_at: new Date().toISOString()
   },
   {
@@ -99,6 +104,9 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Bernabé Ballester (Míster)',
     role_id: 2,
     avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80',
+    phone: '600222333',
+    address: 'Calle Deportiva, 10, Atzeneta',
+    birth_date: '1980-09-12',
     created_at: new Date().toISOString()
   },
   {
@@ -107,6 +115,10 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Paco Alcácer (Jugador)',
     role_id: 3,
     avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80',
+    phone: '612345678',
+    address: 'Calle Mayor 12, Atzeneta del Maestrat',
+    dorsal: 9,
+    birth_date: '1993-08-30',
     created_at: new Date().toISOString()
   },
   {
@@ -115,6 +127,8 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Pascual Donat (Presidente)',
     role_id: 4,
     avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80',
+    phone: '600444555',
+    address: 'Plaza del Ayuntamiento, 1, Atzeneta',
     created_at: new Date().toISOString()
   },
   {
@@ -123,6 +137,10 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Sergio Gómez (Centrocampista)',
     role_id: 3,
     avatar_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=100&q=80',
+    phone: '622987654',
+    address: 'Calle Valencia, 24, Atzeneta',
+    dorsal: 8,
+    birth_date: '2000-09-04',
     created_at: new Date().toISOString()
   },
   {
@@ -131,6 +149,10 @@ const DEFAULT_PROFILES: Profile[] = [
     full_name: 'Nacho Porcar (Defensa)',
     role_id: 3,
     avatar_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=100&q=80',
+    phone: '633456789',
+    address: 'Avenida del Sol, 8, Atzeneta',
+    dorsal: 4,
+    birth_date: '1994-01-28',
     created_at: new Date().toISOString()
   }
 ];
@@ -141,7 +163,7 @@ const DEFAULT_TRAININGS: Training[] = [
     id: 't-1',
     date: '2026-06-18',
     time: '18:00',
-    location: 'Estadio El Regit (Césped)',
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)',
     duration: 90,
     objective: 'Fase ofensiva y transiciones rápidas',
     observations: 'Traer tacos de césped artificial y espinilleras.',
@@ -161,7 +183,7 @@ const DEFAULT_TRAININGS: Training[] = [
     id: 't-3',
     date: '2026-06-15',
     time: '18:30',
-    location: 'Estadio El Regit (Anexo)',
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)',
     duration: 90,
     objective: 'Basculación táctica y salida de balón presionado',
     observations: 'Asistencia 100% obligatoria, análisis en vídeo posterior.',
@@ -171,7 +193,7 @@ const DEFAULT_TRAININGS: Training[] = [
     id: 't-4',
     date: '2026-05-28',
     time: '18:00',
-    location: 'Estadio El Regit',
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)',
     duration: 90,
     objective: 'Trabajo físico aeróbico y rondos de presión',
     observations: 'Terminar con partido en dimensiones reducidas.',
@@ -189,7 +211,9 @@ const DEFAULT_MATCHES: Match[] = [
     competition: 'Liga',
     score_us: null,
     score_them: null,
-    status: 'Programado'
+    status: 'Programado',
+    time: '18:00',
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)'
   },
   {
     id: 'm-2',
@@ -199,7 +223,9 @@ const DEFAULT_MATCHES: Match[] = [
     competition: 'Liga',
     score_us: 2,
     score_them: 1,
-    status: 'Jugado'
+    status: 'Jugado',
+    time: '17:00',
+    location: 'Estadio El Collao'
   },
   {
     id: 'm-3',
@@ -209,7 +235,9 @@ const DEFAULT_MATCHES: Match[] = [
     competition: 'Liga',
     score_us: 1,
     score_them: 1,
-    status: 'Jugado'
+    status: 'Jugado',
+    time: '18:00',
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)'
   },
   {
     id: 'm-4',
@@ -219,7 +247,9 @@ const DEFAULT_MATCHES: Match[] = [
     competition: 'Liga',
     score_us: 0,
     score_them: 2,
-    status: 'Jugado'
+    status: 'Jugado',
+    time: '12:00',
+    location: 'Ciudad Deportiva Facsa'
   },
   {
     id: 'm-5',
@@ -229,7 +259,9 @@ const DEFAULT_MATCHES: Match[] = [
     competition: 'Liga',
     score_us: 3,
     score_them: 0,
-    status: 'Jugado'
+    status: 'Jugado',
+    time: '18:00',
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)'
   }
 ];
 

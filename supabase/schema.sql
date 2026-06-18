@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     full_name TEXT NOT NULL,
     role_id INT REFERENCES public.roles(id) DEFAULT 3,
     avatar_url TEXT,
+    phone TEXT,
+    address TEXT,
+    dorsal INT,
+    birth_date DATE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -172,6 +176,10 @@ CREATE TABLE IF NOT EXISTS public.matches (
     score_us INT,
     score_them INT,
     status TEXT NOT NULL DEFAULT 'Programado' CHECK (status IN ('Programado', 'Jugado', 'Suspendido')),
+    time TIME,
+    location TEXT,
+    objective TEXT,
+    observations TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

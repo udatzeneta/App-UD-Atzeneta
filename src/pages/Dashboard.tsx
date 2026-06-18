@@ -281,13 +281,13 @@ export const Dashboard: React.FC = () => {
                             </a>
                           ) : (
                             <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((evt as any).is_local ? 'Estadio El Regit Atzeneta' : 'Campo Rival')}`}
+                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((evt as any).is_local ? '6R7J+Q2 Adzaneta' : 'Campo Rival')}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="hover:text-brand-red-600 hover:underline transition-colors"
                               title="Ver ubicación en Google Maps"
                             >
-                              {((evt as any).is_local ? 'Estadio El Regit' : 'Campo Rival')}
+                              {((evt as any).is_local ? 'El Porrejat (6R7J+Q2 Adzaneta)' : 'Campo Rival')}
                             </a>
                           )}
                         </span>

@@ -42,6 +42,10 @@ export const Matches: React.FC = () => {
   const [scoreUs, setScoreUs] = useState<string>('');
   const [scoreThem, setScoreThem] = useState<string>('');
   const [status, setStatus] = useState<'Programado' | 'Jugado' | 'Suspendido'>('Programado');
+  const [time, setTime] = useState('18:00');
+  const [location, setLocation] = useState('');
+  const [objective, setObjective] = useState('');
+  const [observations, setObservations] = useState('');
 
   // Consultar partidos
   const { data: matches = [], isLoading } = useQuery({
@@ -89,6 +93,10 @@ export const Matches: React.FC = () => {
     setScoreUs('');
     setScoreThem('');
     setStatus('Programado');
+    setTime('18:00');
+    setLocation('');
+    setObjective('');
+    setObservations('');
     setIsModalOpen(true);
   };
 
@@ -101,6 +109,10 @@ export const Matches: React.FC = () => {
     setScoreUs(match.score_us !== null ? String(match.score_us) : '');
     setScoreThem(match.score_them !== null ? String(match.score_them) : '');
     setStatus(match.status);
+    setTime(match.time || '18:00');
+    setLocation(match.location || '');
+    setObjective(match.objective || '');
+    setObservations(match.observations || '');
     setIsModalOpen(true);
   };
 
@@ -127,7 +139,11 @@ export const Matches: React.FC = () => {
       competition,
       score_us: status === 'Jugado' && scoreUs !== '' ? Number(scoreUs) : null,
       score_them: status === 'Jugado' && scoreThem !== '' ? Number(scoreThem) : null,
-      status
+      status,
+      time,
+      location: location.trim() || (isLocal ? 'Campo Municipal El Porrejat' : 'Visitante'),
+      objective: objective.trim(),
+      observations: observations.trim()
     };
 
     if (editingMatch) {
@@ -390,14 +406,22 @@ export const Matches: React.FC = () => {
                   const hasPlayed = match.status === 'Jugado';
                   return (
                     <tr key={match.id} className="hover:bg-brand-black-hover/20 transition-colors">
-                      <td className="table-td font-medium text-brand-gray-light">{match.date}</td>
+                      <td className="table-td">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-brand-gray-light">{match.date}</span>
+                          {match.time && <span className="text-[11px] text-brand-gray-muted mt-0.5">{match.time} hs</span>}
+                        </div>
+                      </td>
                       <td className="table-td font-semibold text-brand-gray-light">{match.rival}</td>
                       <td className="table-td text-center">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                          match.is_local ? 'bg-indigo-950/30 text-indigo-300 border border-indigo-900/30' : 'bg-orange-950/30 text-orange-300 border border-orange-900/30'
-                        }`}>
-                          {match.is_local ? 'Local' : 'Visitante'}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                            match.is_local ? 'bg-indigo-950/30 text-indigo-300 border border-indigo-900/30' : 'bg-orange-950/30 text-orange-300 border border-orange-900/30'
+                          }`}>
+                            {match.is_local ? 'Local' : 'Visitante'}
+                          </span>
+                          {match.location && <span className="text-[11px] text-brand-gray-muted text-center truncate max-w-[150px]" title={match.location}>{match.location}</span>}
+                        </div>
                       </td>
                       <td className="table-td text-brand-gray-muted">{match.competition}</td>
                       <td className="table-td text-center font-bold text-base">
@@ -462,8 +486,13 @@ export const Matches: React.FC = () => {
                     <div>
                       <h4 className="text-sm font-semibold text-brand-gray-light">{match.rival}</h4>
                       <span className="text-[11px] text-brand-gray-muted flex items-center gap-1 mt-1">
-                        <Calendar className="w-3.5 h-3.5" /> {match.date}
+                        <Calendar className="w-3.5 h-3.5" /> {match.date} {match.time && `| ${match.time} hs`}
                       </span>
+                      {match.location && (
+                        <span className="text-[11px] text-brand-gray-muted block mt-1">
+                          📍 {match.location}
+                        </span>
+                      )}
                     </div>
                     
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
@@ -543,8 +572,8 @@ export const Matches: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
               <label className="form-label">Fecha del Encuentro</label>
               <input
                 type="date"
@@ -553,6 +582,18 @@ export const Matches: React.FC = () => {
                 onChange={(e) => setDate(e.target.value)}
               />
             </div>
+            <div>
+              <label className="form-label">Hora</label>
+              <input
+                type="time"
+                className="form-input"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="form-label">Competición</label>
               <select
@@ -564,20 +605,6 @@ export const Matches: React.FC = () => {
                 <option value="Copa">Copa</option>
                 <option value="Amistoso">Amistoso</option>
                 <option value="Promoción">Promoción</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="form-label">Ubicación</label>
-              <select
-                value={isLocal ? 'true' : 'false'}
-                onChange={(e) => setIsLocal(e.target.value === 'true')}
-                className="form-input bg-brand-black-bg"
-              >
-                <option value="true">Local (El Regit)</option>
-                <option value="false">Visitante</option>
               </select>
             </div>
             <div>
@@ -592,6 +619,51 @@ export const Matches: React.FC = () => {
                 <option value="Suspendido">Suspendido</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="form-label">Ubicación (Tipo)</label>
+              <select
+                value={isLocal ? 'true' : 'false'}
+                onChange={(e) => setIsLocal(e.target.value === 'true')}
+                className="form-input bg-brand-black-bg"
+              >
+                <option value="true">Local (El Porrejat)</option>
+                <option value="false">Visitante</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Estadio / Lugar</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder={isLocal ? 'Campo Municipal El Porrejat' : 'Lugar / Estadio visitante'}
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label">Objetivo del Partido (Opcional)</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Ej. Fase defensiva, contragolpes, balón parado..."
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="form-label">Observaciones (Opcional)</label>
+            <textarea
+              className="form-input h-20 resize-none"
+              placeholder="Detalles sobre convocatoria, indumentaria, autobús..."
+              value={observations}
+              onChange={(e) => setObservations(e.target.value)}
+            />
           </div>
 
           {status === 'Jugado' && (
