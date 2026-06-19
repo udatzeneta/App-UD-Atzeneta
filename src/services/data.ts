@@ -147,6 +147,67 @@ export const dataService = {
     }
   },
 
+  async upsertMatches(items: Omit<Match, 'id'>[]): Promise<Match[]> {
+    if (isMockMode) {
+      await delay(300);
+      const list = MockDatabase.getMatches();
+      const updatedList = [...list];
+      const results: Match[] = [];
+
+      for (const item of items) {
+        // Buscar coincidencia por fecha y rival
+        const existingIdx = updatedList.findIndex(
+          m => m.date === item.date && m.rival.toLowerCase() === item.rival.toLowerCase()
+        );
+        if (existingIdx !== -1) {
+          updatedList[existingIdx] = { ...updatedList[existingIdx], ...item };
+          results.push(updatedList[existingIdx]);
+        } else {
+          const newItem: Match = { ...item, id: `m-${Date.now()}-${Math.random()}` };
+          updatedList.push(newItem);
+          results.push(newItem);
+        }
+      }
+
+      MockDatabase.setMatches(updatedList);
+      return results;
+    } else {
+      const results: Match[] = [];
+      for (const item of items) {
+        // Buscar coincidencia por fecha y rival
+        const { data: existing, error: searchError } = await supabase
+          .from('matches')
+          .select('*')
+          .eq('date', item.date)
+          .ilike('rival', item.rival)
+          .maybeSingle();
+
+        if (searchError) throw searchError;
+
+        if (existing) {
+          const { data, error } = await supabase
+            .from('matches')
+            .update(item)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          results.push(data as Match);
+        } else {
+          const { data, error } = await supabase
+            .from('matches')
+            .insert(item)
+            .select()
+            .single();
+          if (error) throw error;
+          results.push(data as Match);
+        }
+      }
+      return results;
+    }
+  },
+
+
   // =====================================================================
   // MULTAS (FINES)
   // =====================================================================

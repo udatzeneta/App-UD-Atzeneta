@@ -9,7 +9,7 @@ import { Match } from '../types';
 import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 import {
   Trophy, Search, Download, FileText, Plus, Edit2, Trash2,
-  Calendar, CheckCircle, HelpCircle, XCircle
+  Calendar, CheckCircle, HelpCircle, XCircle, RefreshCw
 } from 'lucide-react';
 
 export const Matches: React.FC = () => {
@@ -47,6 +47,10 @@ export const Matches: React.FC = () => {
   const [objective, setObjective] = useState('');
   const [observations, setObservations] = useState('');
 
+  // Estados para sincronización FFCV
+  const [ffcvCompeticion, setFfcvCompeticion] = useState('29509167'); // Primera FFCV por defecto
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // Consultar partidos
   const { data: matches = [], isLoading } = useQuery({
     queryKey: ['matches'],
@@ -82,6 +86,153 @@ export const Matches: React.FC = () => {
     },
     onError: (err) => showToast('error', 'Error', err.message)
   });
+
+  const upsertMatchesMutation = useMutation({
+    mutationFn: (items: Omit<Match, 'id'>[]) => dataService.upsertMatches(items),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['trainings'] });
+      showToast('success', 'Sincronización completada', `Se han sincronizado e importado/actualizado ${data.length} partidos desde la FFCV.`);
+    },
+    onError: (err) => showToast('error', 'Error al sincronizar', err.message)
+  });
+
+  const parseSpanishDate = (dateStr: string): string | null => {
+    const cleanStr = dateStr.toLowerCase().replace(/de\s+/g, '').replace(/·.*/, '').trim();
+    const parts = cleanStr.split(/\s+/);
+    let day = '';
+    let monthName = '';
+    let year = '';
+    
+    const monthsMap: { [key: string]: string } = {
+      'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+      'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+      'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+    };
+
+    for (const part of parts) {
+      if (/^\d{4}$/.test(part)) {
+        year = part;
+      } else if (/^\d{1,2}$/.test(part)) {
+        day = part.padStart(2, '0');
+      } else if (monthsMap[part]) {
+        monthName = monthsMap[part];
+      }
+    }
+
+    if (day && monthName && year) {
+      return `${year}-${monthName}-${day}`;
+    }
+    return null;
+  };
+
+  const handleSyncFFCV = async () => {
+    setIsSyncing(true);
+    try {
+      const targetUrl = `https://ffcv.es/competiciones/equipos/equipo.php?codigo_equipo=18331&competicion=${ffcvCompeticion}`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+      
+      const response = await fetch(proxyUrl);
+      if (!response.ok) throw new Error('Error al conectar con el servidor proxy de FFCV.');
+      
+      const data = await response.json();
+      if (!data.contents) throw new Error('No se pudo obtener el contenido de la página.');
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(data.contents, 'text/html');
+
+      // Buscar todos los enlaces a fichas de partido
+      const matchLinks = doc.querySelectorAll('a[href*="cod_partido="]');
+      if (matchLinks.length === 0) {
+        showToast('info', 'Sincronización', 'No se encontraron partidos para esta competición en FFCV.');
+        setIsSyncing(false);
+        return;
+      }
+
+      const parsedMatches: Omit<Match, 'id'>[] = [];
+
+      matchLinks.forEach(link => {
+        const divs = Array.from(link.querySelectorAll('div'));
+        
+        // Jornada y Fecha
+        const dateDiv = divs.find(d => d.textContent?.includes('Jornada') || d.textContent?.includes('Jornada'));
+        const dateText = dateDiv ? dateDiv.textContent || '' : '';
+        const date = parseSpanishDate(dateText) || new Date().toISOString().split('T')[0];
+
+        // Buscar divs de equipo (los que tienen img de escudo)
+        const teamDivs = divs.filter(d => d.querySelector('img'));
+
+        if (teamDivs.length >= 2) {
+          const homeDiv = teamDivs[0];
+          const awayDiv = teamDivs[1];
+
+          const homeSpans = Array.from(homeDiv.querySelectorAll('span'));
+          const awaySpans = Array.from(awayDiv.querySelectorAll('span'));
+
+          const homeName = homeSpans[0]?.textContent?.trim() || '';
+          const homeScoreText = homeSpans[1]?.textContent?.trim() || '';
+          const homeScore = homeScoreText && !isNaN(Number(homeScoreText)) ? Number(homeScoreText) : null;
+
+          const awayName = awaySpans[0]?.textContent?.trim() || '';
+          const awayScoreText = awaySpans[1]?.textContent?.trim() || '';
+          const awayScore = awayScoreText && !isNaN(Number(awayScoreText)) ? Number(awayScoreText) : null;
+
+          // Estado del partido
+          const statusDiv = divs.find(d => 
+            d.textContent?.includes('Finalizado') || 
+            d.textContent?.includes('Programado') || 
+            d.textContent?.includes('Aplazado') || 
+            d.textContent?.includes('Suspendido')
+          );
+          const statusText = statusDiv ? statusDiv.textContent?.trim() || '' : '';
+          
+          let status: 'Programado' | 'Jugado' | 'Suspendido' = 'Programado';
+          if (statusText.includes('Finalizado')) {
+            status = 'Jugado';
+          } else if (statusText.includes('Suspendido') || statusText.includes('Aplazado')) {
+            status = 'Suspendido';
+          }
+
+          // Determinar local/visitante y oponente
+          const isLocal = homeName.toLowerCase().includes('atzeneta');
+          const rival = isLocal ? awayName : homeName;
+          const scoreUs = isLocal ? homeScore : awayScore;
+          const scoreThem = isLocal ? awayScore : homeScore;
+
+          // Extraer hora si está disponible
+          const timeMatch = dateText.match(/(\d{2}:\d{2})/);
+          const time = timeMatch ? timeMatch[1] : '18:00';
+
+          // Asignar competición correcta
+          const competitionName: 'Liga' | 'Copa' = ffcvCompeticion === '29509167' ? 'Liga' : 'Copa';
+
+          parsedMatches.push({
+            date,
+            rival,
+            is_local: isLocal,
+            competition: competitionName,
+            score_us: scoreUs,
+            score_them: scoreThem,
+            status,
+            time,
+            location: isLocal ? 'Campo Municipal El Porrejat' : 'Visitante',
+            objective: '',
+            observations: `Sincronizado desde la FFCV el ${new Date().toLocaleDateString()}`
+          });
+        }
+      });
+
+      if (parsedMatches.length > 0) {
+        upsertMatchesMutation.mutate(parsedMatches);
+      } else {
+        showToast('info', 'Sincronización', 'No se pudieron procesar partidos con la estructura de la FFCV.');
+      }
+    } catch (error: any) {
+      showToast('error', 'Error al sincronizar', error.message || 'Error desconocido.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Manejo del formulario
   const handleOpenCreateModal = () => {
@@ -258,9 +409,9 @@ export const Matches: React.FC = () => {
       </div>
 
       {/* =====================================================================
-          BLOQUES DE ESTADÍSTICAS (General vs Mensual)
+          BLOQUES DE ESTADÍSTICAS (General vs Mensual vs Sincronización)
           ===================================================================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         
         {/* Acumulado General */}
         <div className="dashboard-card flex flex-col justify-between p-5">
@@ -329,6 +480,37 @@ export const Matches: React.FC = () => {
               <div className="text-xl font-bold text-brand-red-600">{monthlyStats.losses}</div>
               <div className="text-[10px] text-brand-gray-muted mt-1">Derrotas</div>
             </div>
+          </div>
+        </div>
+
+        {/* Sincronizador FFCV */}
+        <div className="dashboard-card flex flex-col justify-between p-5">
+          <div className="border-b border-brand-black-border pb-3 flex justify-between items-center">
+            <span className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted">Sincronización FFCV</span>
+            <RefreshCw className={`w-4 h-4 text-brand-red-600 ${isSyncing ? 'animate-spin' : ''}`} />
+          </div>
+          <div className="flex flex-col gap-3 mt-4 justify-between h-full">
+            <div className="flex gap-2">
+              <select
+                id="team-partidos-competicion"
+                value={ffcvCompeticion}
+                onChange={(e) => setFfcvCompeticion(e.target.value)}
+                className="bg-brand-black text-xs text-brand-gray-light border border-brand-black-border px-2 py-1.5 rounded flex-1 focus:ring-1 focus:ring-brand-red-600 focus:outline-none"
+              >
+                <option value="29509167">Primera FFCV</option>
+                <option value="30204624">V La Nostra Copa</option>
+              </select>
+              <button
+                onClick={handleSyncFFCV}
+                disabled={isSyncing || (!canCreate && !canEdit)}
+                className="btn-primary py-1.5 px-3 text-xs font-semibold shrink-0 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+              </button>
+            </div>
+            <p className="text-[10px] text-brand-gray-muted leading-tight">
+              Sincroniza y actualiza todos los encuentros oficiales de U.D. Atzeneta de Castellón 'A' desde ffcv.es directamente.
+            </p>
           </div>
         </div>
       </div>
