@@ -4,8 +4,14 @@
 
 @layer base {
   body {
-    @apply bg-brand-black-bg text-brand-gray-light antialiased;
+    @apply text-brand-gray-light antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background: linear-gradient(rgba(15, 15, 15, 0.75), rgba(15, 15, 15, 0.75)),
+                url('https://golsmedia.com/wp-content/uploads/2025/05/atzeneta-1-1024x576.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
   }
 
   /* Custom Scrollbar for sleek Linear/Notion dashboard */

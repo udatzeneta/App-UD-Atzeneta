@@ -268,11 +268,12 @@ export const Matches: React.FC = () => {
   });
 
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
-  const exportHeaders = ['Fecha', 'Rival', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
+  const exportHeaders = ['Fecha', 'Rival', 'Campo', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
   const buildExportRows = (): ExportCell[][] =>
     filteredMatches.map(m => [
       m.date,
       m.rival,
+      m.location || (m.is_local ? 'Campo Municipal El Porrejat' : 'Visitante'),
       m.is_local ? 'Local' : 'Visitante',
       m.competition,
       m.score_us ?? '',

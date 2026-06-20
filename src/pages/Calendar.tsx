@@ -33,6 +33,8 @@ interface CalendarEvent {
   subtitle: string;
   time?: string;
   location?: string;
+  is_local?: boolean;
+  rival?: string;
 }
 
 export const Calendar: React.FC = () => {
@@ -134,7 +136,9 @@ export const Calendar: React.FC = () => {
         title: `vs ${m.rival}`,
         subtitle: m.competition,
         time: m.time,
-        location: m.location || (m.is_local ? 'Local (El Porrejat)' : 'Visitante')
+        location: m.location || (m.is_local ? 'Campo Municipal El Porrejat' : 'Visitante'),
+        is_local: m.is_local,
+        rival: m.rival
       }));
 
     return [...dateTrainings, ...dateMatches];
@@ -398,6 +402,7 @@ export const Calendar: React.FC = () => {
                 <div className="flex-1 flex flex-col gap-1.5 overflow-hidden">
                   {day && events.slice(0, 3).map((evt, eIdx) => {
                     const isTraining = evt.type === 'training';
+                    const isMatch = evt.type === 'match';
                     return (
                       <div
                         key={eIdx}
@@ -408,14 +413,14 @@ export const Calendar: React.FC = () => {
                         }`}
                         title={`${evt.title} - ${evt.time || ''} - ${evt.location || ''}`}
                       >
-                        <div className="flex items-center gap-1 font-bold truncate">
+                        <div className="flex items-center justify-center font-bold">
                           {isTraining ? (
                             <Dumbbell className="w-3 h-3 shrink-0 text-brand-red-400" />
                           ) : (
-                            <div className="w-4.5 h-4.5 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
-                              <img 
-                                src={getTeamLogo(evt.title)} 
-                                alt="Rival logo" 
+                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 shrink-0 border border-brand-black-border/10 shadow-sm">
+                              <img
+                                src={getTeamLogo(evt.rival || evt.title)}
+                                alt="Escudo rival"
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
@@ -423,8 +428,16 @@ export const Calendar: React.FC = () => {
                               />
                             </div>
                           )}
-                          <span className="truncate">{evt.title}</span>
                         </div>
+                        {isMatch && (
+                          <div className="text-[9px] font-semibold flex items-center gap-1">
+                            {evt.is_local ? (
+                              <span className="text-green-400">🏟️ Local</span>
+                            ) : (
+                              <span className="text-blue-400">✈️ Visitante</span>
+                            )}
+                          </div>
+                        )}
                         {evt.time && <div className="text-[9px] opacity-90 truncate font-semibold">🕒 {evt.time}</div>}
                         {evt.location && <div className="text-[9px] opacity-90 truncate italic">📍 {evt.location}</div>}
                       </div>
@@ -498,6 +511,7 @@ export const Calendar: React.FC = () => {
                 <div className="space-y-2.5">
                   {events.map((evt, eIdx) => {
                     const isTraining = evt.type === 'training';
+                    const isMatch = evt.type === 'match';
                     return (
                       <div
                         key={eIdx}
@@ -510,9 +524,9 @@ export const Calendar: React.FC = () => {
                             </div>
                           ) : (
                             <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center p-1 border border-brand-black-border/10 shadow-sm">
-                              <img 
-                                src={getTeamLogo(evt.title)} 
-                                alt="Rival logo" 
+                              <img
+                                src={getTeamLogo(evt.rival || evt.title)}
+                                alt="Escudo rival"
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
@@ -526,6 +540,20 @@ export const Calendar: React.FC = () => {
                             {evt.title}
                           </h4>
                           <p className="text-xs text-brand-gray-muted mt-0.5">{evt.subtitle}</p>
+
+                          {isMatch && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              {evt.is_local ? (
+                                <span className="text-[10px] font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full border border-green-400/20">
+                                  🏟️ Local
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full border border-blue-400/20">
+                                  ✈️ Visitante
+                                </span>
+                              )}
+                            </div>
+                          )}
 
                           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5 text-xs text-brand-gray-muted">
                             {evt.time && (
@@ -572,8 +600,9 @@ export const Calendar: React.FC = () => {
               <div className="space-y-2">
                 {getEventsForDate(selectedDay).map((evt, eIdx) => {
                   const isTraining = evt.type === 'training';
+                  const isMatch = evt.type === 'match';
                   return (
-                    <div 
+                    <div
                       key={eIdx}
                       className="bg-brand-black/40 border border-brand-black-border p-3 rounded-lg flex items-start gap-3"
                     >
@@ -584,9 +613,9 @@ export const Calendar: React.FC = () => {
                           </div>
                         ) : (
                           <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 border border-brand-black-border/10 shadow-sm">
-                            <img 
-                              src={getTeamLogo(evt.title)} 
-                              alt="Rival logo" 
+                            <img
+                              src={getTeamLogo(evt.rival || evt.title)}
+                              alt="Escudo rival"
                               className="w-full h-full object-contain"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
@@ -605,6 +634,19 @@ export const Calendar: React.FC = () => {
                           )}
                         </div>
                         <p className="text-[11px] text-brand-gray-muted mt-0.5">{evt.subtitle}</p>
+                        {isMatch && (
+                          <div className="mt-1">
+                            {evt.is_local ? (
+                              <span className="text-[10px] font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full border border-green-400/20">
+                                🏟️ Local
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full border border-blue-400/20">
+                                ✈️ Visitante
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {evt.location && (
                           <div className="mt-2">
                             <a

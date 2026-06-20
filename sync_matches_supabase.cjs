@@ -32,7 +32,7 @@ function loadEnv() {
         env[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   return env;
 }
 
@@ -70,6 +70,9 @@ function parseGoals(val) {
 function mapPartido(p, competicion) {
   const fecha = pick(p, ['fecha', 'Fecha', 'fecha_partido']);
   const hora = pick(p, ['hora', 'Hora', 'hora_partido']);
+
+  const jornadaRaw = pick(p, ['jornada', 'Jornada', 'num_jornada', 'fase', 'Fase']);
+  const matchday = jornadaRaw ? String(jornadaRaw).trim() : null;
 
   const codLocal = String(pick(p, ['CodEquipo_local', 'codigo_equipo_local', 'cod_equipo_local', 'CodEquipoLocal']) || '').replace(/\D/g, '');
   const nombreLocal = String(pick(p, ['Nombre_equipo_local', 'equipo_local', 'local', 'NombreLocal']) || '').trim();
@@ -126,7 +129,7 @@ async function handleCookies(page) {
     'button:has-text("Aceptar todas")', '.cc-btn.cc-allow', '.cm-btn-success',
   ];
   for (const sel of selectors) {
-    try { await page.locator(sel).first().click({ timeout: 2000 }); return; } catch (e) {}
+    try { await page.locator(sel).first().click({ timeout: 2000 }); return; } catch (e) { }
   }
 }
 
@@ -136,7 +139,7 @@ async function handleCookies(page) {
   try {
     const existingLogos = JSON.parse(fs.readFileSync(logosPath, 'utf8'));
     Object.assign(logosMap, existingLogos);
-  } catch (e) {}
+  } catch (e) { }
   const supabaseUrl = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -249,7 +252,7 @@ async function handleCookies(page) {
         partidos = await page.evaluate((codGrupo) => {
           const sel = document.getElementById('team-partidos-competicion');
           if (sel) sel.value = codGrupo; // asegurar selección
-          const MESES = { enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,octubre:10,noviembre:11,diciembre:12 };
+          const MESES = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
           const cards = Array.from(document.querySelectorAll('#team-partidos .match-card'));
           return cards.map(card => {
             try {
@@ -258,9 +261,14 @@ async function handleCookies(page) {
               const fechaM = meta.match(/(\d{1,2})\s+(\w+)\s+de\s+(\d{4})/);
               let fecha = null;
               if (fechaM) {
-                const dia = fechaM[1].padStart(2,'0');
-                const mes = String(MESES[fechaM[2].toLowerCase()] || 1).padStart(2,'0');
+                const dia = fechaM[1].padStart(2, '0');
+                const mes = String(MESES[fechaM[2].toLowerCase()] || 1).padStart(2, '0');
                 fecha = `${fechaM[3]}-${mes}-${dia}`;
+              }
+              let matchday = null;
+              const partesMeta = meta.split('·');
+              if (partesMeta.length > 1) {
+                matchday = partesMeta[1].trim(); // Esto extraerá "Jornada 1", "Ida", etc.
               }
               const filas = Array.from(card.querySelectorAll('.team-row'));
               const local = filas.find(r => !r.classList.contains('is-team'));
@@ -284,14 +292,14 @@ async function handleCookies(page) {
               const visitanteImg = allRows[1]?.querySelector('img')?.getAttribute('src');
 
               return {
-                fecha, nombreRival, isLocal,
+                fecha, matchday, nombreRival, isLocal,
                 golesAtzeneta: hasScore ? golesAtzeneta : null,
                 golesRival: hasScore ? golesRival : null,
                 status,
                 localName, localImg,
                 visitanteName, visitanteImg
               };
-            } catch(e) { return null; }
+            } catch (e) { return null; }
           }).filter(Boolean);
         }, comp.codGrupo);
 
@@ -315,6 +323,7 @@ async function handleCookies(page) {
 
           return {
             date: p.fecha,
+            matchday: p.matchday, // 👈 NUEVO: Enviamos a Supabase
             rival: p.nombreRival,
             is_local: p.isLocal,
             competition: competicion,
