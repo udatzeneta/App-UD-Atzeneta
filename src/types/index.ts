@@ -167,4 +167,67 @@ export interface TacticalBoard {
   players: TacticalPlayer[];
 }
 
+export interface Player {
+  id: string;
+  profile_id?: string;
+  full_name: string;
+  nickname?: string;
+  photo_url?: string;
+  dorsal?: number;
+  position?: string;
+  dominant_foot?: 'Derecho' | 'Izquierdo' | 'Ambidiestro';
+  height?: number;
+  weight?: number;
+  birth_date?: string;
+  phone?: string;
+  email?: string;
+  physio_notes?: string;
+  physical_status?: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja';
+  
+  // Estadísticas
+  matches_played: number;
+  minutes_played: number;
+  goals: number;
+  assists: number;
+  yellow_cards: number;
+  red_cards: number;
+  
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlayerWeight {
+  id: string;
+  player_id: string;
+  date: string;
+  weight: number;
+  created_at?: string;
+}
+
+export interface PlayerPhysioRecord {
+  id: string;
+  player_id: string;
+  date: string;
+  status: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja';
+  notes: string;
+  treatment?: string;
+  created_at?: string;
+}
+
+export interface PlayerInjury {
+  id: string;
+  player_id: string;
+  body_zone: string;
+  body_side: 'frontal' | 'posterior';
+  severity: 'Leve' | 'Moderada' | 'Grave';
+  status: 'Activa' | 'En tratamiento' | 'Recuperado' | 'Baja';
+  diagnosis: string;
+  treatment?: string;
+  injury_date: string;
+  estimated_return?: string;
+  actual_return?: string;
+  follow_up_notes?: string;
+  created_at?: string;
+}
+
 

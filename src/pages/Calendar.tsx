@@ -9,6 +9,19 @@ import {
   Dumbbell, Trophy, ChevronLeft, ChevronRight, Calendar as CalendarIcon,
   Clock, MapPin, Plus, Target, Users
 } from 'lucide-react';
+import logos from '../assets/logos.json';
+
+const getTeamLogo = (teamName: string): string => {
+  const cleanName = teamName.replace('vs ', '').trim();
+  const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+  const target = normalize(cleanName);
+  
+  const matchKey = Object.keys(logos).find(key => normalize(key) === target);
+  if (matchKey) {
+    return (logos as Record<string, string>)[matchKey];
+  }
+  return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+};
 
 type EventType = 'training' | 'match';
 
@@ -396,7 +409,20 @@ export const Calendar: React.FC = () => {
                         title={`${evt.title} - ${evt.time || ''} - ${evt.location || ''}`}
                       >
                         <div className="flex items-center gap-1 font-bold truncate">
-                          {isTraining ? <Dumbbell className="w-3 h-3 shrink-0 text-brand-red-400" /> : <Trophy className="w-3 h-3 shrink-0 text-yellow-400" />}
+                          {isTraining ? (
+                            <Dumbbell className="w-3 h-3 shrink-0 text-brand-red-400" />
+                          ) : (
+                            <div className="w-4.5 h-4.5 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
+                              <img 
+                                src={getTeamLogo(evt.title)} 
+                                alt="Rival logo" 
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+                                }}
+                              />
+                            </div>
+                          )}
                           <span className="truncate">{evt.title}</span>
                         </div>
                         {evt.time && <div className="text-[9px] opacity-90 truncate font-semibold">🕒 {evt.time}</div>}
@@ -477,10 +503,23 @@ export const Calendar: React.FC = () => {
                         key={eIdx}
                         className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex gap-3.5 items-start shadow-premium"
                       >
-                        <div className={`p-2.5 rounded-lg shrink-0 ${
-                          isTraining ? 'bg-brand-red-600/10 text-brand-red-600' : 'bg-yellow-500/10 text-yellow-500'
-                        }`}>
-                          {isTraining ? <Dumbbell className="w-5 h-5" /> : <Trophy className="w-5 h-5" />}
+                        <div className="shrink-0">
+                          {isTraining ? (
+                            <div className="p-2.5 rounded-lg bg-brand-red-600/10 text-brand-red-600">
+                              <Dumbbell className="w-5 h-5" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center p-1 border border-brand-black-border/10 shadow-sm">
+                              <img 
+                                src={getTeamLogo(evt.title)} 
+                                alt="Rival logo" 
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="text-sm font-semibold text-brand-gray-light leading-snug">
@@ -538,10 +577,23 @@ export const Calendar: React.FC = () => {
                       key={eIdx}
                       className="bg-brand-black/40 border border-brand-black-border p-3 rounded-lg flex items-start gap-3"
                     >
-                      <div className={`p-1.5 rounded-lg shrink-0 ${
-                        isTraining ? 'bg-brand-red-600/10 text-brand-red-600' : 'bg-yellow-500/10 text-yellow-500'
-                      }`}>
-                        {isTraining ? <Dumbbell className="w-4 h-4" /> : <Trophy className="w-4 h-4" />}
+                      <div className="shrink-0">
+                        {isTraining ? (
+                          <div className="p-1.5 rounded-lg bg-brand-red-600/10 text-brand-red-600">
+                            <Dumbbell className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 border border-brand-black-border/10 shadow-sm">
+                            <img 
+                              src={getTeamLogo(evt.title)} 
+                              alt="Rival logo" 
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start gap-2">

@@ -1,6 +1,6 @@
 import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
-import { Training, Match, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard } from '../types';
+import { Training, Match, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury } from '../types';
 
 export const dataService = {
   // =====================================================================
@@ -75,136 +75,77 @@ export const dataService = {
     }
   },
 
-  // =====================================================================
-  // PARTIDOS (MATCHES)
-  // =====================================================================
   async getMatches(): Promise<Match[]> {
-    if (isMockMode) {
-      await delay(300);
-      return MockDatabase.getMatches().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    } else {
-      const { data, error } = await supabase
-        .from('matches')
-        .select('*')
-        .order('date', { ascending: false });
-      if (error) throw error;
-      return data as Match[];
-    }
+    const { data, error } = await supabase
+      .from('matches')
+      .select('*')
+      .order('date', { ascending: false });
+    if (error) throw error;
+    return data as Match[];
   },
 
   async createMatch(item: Omit<Match, 'id'>): Promise<Match> {
-    if (isMockMode) {
-      await delay(300);
-      const list = MockDatabase.getMatches();
-      const newItem: Match = { ...item, id: `m-${Date.now()}` };
-      list.push(newItem);
-      MockDatabase.setMatches(list);
-      return newItem;
-    } else {
-      const { data, error } = await supabase
-        .from('matches')
-        .insert(item)
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Match;
-    }
+    const { data, error } = await supabase
+      .from('matches')
+      .insert(item)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Match;
   },
 
   async updateMatch(id: string, item: Partial<Match>): Promise<Match> {
-    if (isMockMode) {
-      await delay(300);
-      const list = MockDatabase.getMatches();
-      const idx = list.findIndex(x => x.id === id);
-      if (idx === -1) throw new Error('Partido no encontrado');
-      list[idx] = { ...list[idx], ...item };
-      MockDatabase.setMatches(list);
-      return list[idx];
-    } else {
-      const { data, error } = await supabase
-        .from('matches')
-        .update(item)
-        .eq('id', id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data as Match;
-    }
+    const { data, error } = await supabase
+      .from('matches')
+      .update(item)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Match;
   },
 
   async deleteMatch(id: string): Promise<void> {
-    if (isMockMode) {
-      await delay(300);
-      let list = MockDatabase.getMatches();
-      list = list.filter(x => x.id !== id);
-      MockDatabase.setMatches(list);
-    } else {
-      const { error } = await supabase
-        .from('matches')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-    }
+    const { error } = await supabase
+      .from('matches')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
   },
 
   async upsertMatches(items: Omit<Match, 'id'>[]): Promise<Match[]> {
-    if (isMockMode) {
-      await delay(300);
-      const list = MockDatabase.getMatches();
-      const updatedList = [...list];
-      const results: Match[] = [];
+    const results: Match[] = [];
+    for (const item of items) {
+      // Buscar coincidencia por fecha y rival
+      const { data: existing, error: searchError } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('date', item.date)
+        .ilike('rival', item.rival)
+        .maybeSingle();
 
-      for (const item of items) {
-        // Buscar coincidencia por fecha y rival
-        const existingIdx = updatedList.findIndex(
-          m => m.date === item.date && m.rival.toLowerCase() === item.rival.toLowerCase()
-        );
-        if (existingIdx !== -1) {
-          updatedList[existingIdx] = { ...updatedList[existingIdx], ...item };
-          results.push(updatedList[existingIdx]);
-        } else {
-          const newItem: Match = { ...item, id: `m-${Date.now()}-${Math.random()}` };
-          updatedList.push(newItem);
-          results.push(newItem);
-        }
-      }
+      if (searchError) throw searchError;
 
-      MockDatabase.setMatches(updatedList);
-      return results;
-    } else {
-      const results: Match[] = [];
-      for (const item of items) {
-        // Buscar coincidencia por fecha y rival
-        const { data: existing, error: searchError } = await supabase
+      if (existing) {
+        const { data, error } = await supabase
           .from('matches')
-          .select('*')
-          .eq('date', item.date)
-          .ilike('rival', item.rival)
-          .maybeSingle();
-
-        if (searchError) throw searchError;
-
-        if (existing) {
-          const { data, error } = await supabase
-            .from('matches')
-            .update(item)
-            .eq('id', existing.id)
-            .select()
-            .single();
-          if (error) throw error;
-          results.push(data as Match);
-        } else {
-          const { data, error } = await supabase
-            .from('matches')
-            .insert(item)
-            .select()
-            .single();
-          if (error) throw error;
-          results.push(data as Match);
-        }
+          .update(item)
+          .eq('id', existing.id)
+          .select()
+          .single();
+        if (error) throw error;
+        results.push(data as Match);
+      } else {
+        const { data, error } = await supabase
+          .from('matches')
+          .insert(item)
+          .select()
+          .single();
+        if (error) throw error;
+        results.push(data as Match);
       }
-      return results;
     }
+    return results;
   },
 
 
@@ -555,6 +496,19 @@ export const dataService = {
   // =====================================================================
   // ASISTENCIAS (TRAINING ATTENDANCE)
   // =====================================================================
+  async getTrainingAttendance(): Promise<TrainingAttendance[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getTrainingAttendance();
+    } else {
+      const { data, error } = await supabase
+        .from('training_attendance')
+        .select('*, profiles(*)');
+      if (error) throw error;
+      return data as TrainingAttendance[];
+    }
+  },
+
   async getAttendanceByTraining(trainingId: string): Promise<TrainingAttendance[]> {
     if (isMockMode) {
       await delay(300);
@@ -722,5 +676,263 @@ export const dataService = {
   async saveTacticalBoard(board: TacticalBoard): Promise<TacticalBoard> {
     localStorage.setItem('ud_atzeneta_tactical_board', JSON.stringify(board));
     return board;
+  },
+
+  // =====================================================================
+  // JUGADORES (PLAYERS)
+  // =====================================================================
+  async getPlayers(): Promise<Player[]> {
+    if (isMockMode) {
+      await delay(300);
+      return MockDatabase.getPlayers();
+    } else {
+      const { data, error } = await supabase
+        .from('players')
+        .select('*')
+        .order('dorsal', { ascending: true });
+      if (error) throw error;
+      return data as Player[];
+    }
+  },
+
+  async createPlayer(item: Omit<Player, 'id'>): Promise<Player> {
+    if (isMockMode) {
+      await delay(300);
+      const list = MockDatabase.getPlayers();
+      const newItem: Player = { ...item, id: `p-${Date.now()}` };
+      list.push(newItem);
+      MockDatabase.setPlayers(list);
+      return newItem;
+    } else {
+      const { data, error } = await supabase
+        .from('players')
+        .insert(item)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Player;
+    }
+  },
+
+  async updatePlayer(id: string, item: Partial<Player>): Promise<Player> {
+    if (isMockMode) {
+      await delay(300);
+      const list = MockDatabase.getPlayers();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx === -1) throw new Error('Jugador no encontrado');
+      list[idx] = { ...list[idx], ...item };
+      MockDatabase.setPlayers(list);
+      return list[idx];
+    } else {
+      const { data, error } = await supabase
+        .from('players')
+        .update(item)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Player;
+    }
+  },
+
+  async deletePlayer(id: string): Promise<void> {
+    if (isMockMode) {
+      await delay(300);
+      let list = MockDatabase.getPlayers();
+      list = list.filter(x => x.id !== id);
+      MockDatabase.setPlayers(list);
+    } else {
+      const { error } = await supabase
+        .from('players')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    }
+  },
+
+  // =====================================================================
+  // HISTORIAL DE PESOS
+  // =====================================================================
+  async getPlayerWeights(playerId: string): Promise<PlayerWeight[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getPlayerWeights()
+        .filter(w => w.player_id === playerId)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    } else {
+      const { data, error } = await supabase
+        .from('player_weights')
+        .select('*')
+        .eq('player_id', playerId)
+        .order('date', { ascending: true });
+      if (error) throw error;
+      return data as PlayerWeight[];
+    }
+  },
+
+  async createPlayerWeight(item: Omit<PlayerWeight, 'id'>): Promise<PlayerWeight> {
+    if (isMockMode) {
+      await delay(200);
+      const list = MockDatabase.getPlayerWeights();
+      const newItem: PlayerWeight = { ...item, id: `w-${Date.now()}` };
+      list.push(newItem);
+      MockDatabase.setPlayerWeights(list);
+      
+      // Actualizar también el peso de la ficha principal del jugador
+      const players = MockDatabase.getPlayers();
+      const pIdx = players.findIndex(p => p.id === item.player_id);
+      if (pIdx !== -1) {
+        players[pIdx].weight = item.weight;
+        MockDatabase.setPlayers(players);
+      }
+      return newItem;
+    } else {
+      const { data, error } = await supabase
+        .from('player_weights')
+        .insert(item)
+        .select()
+        .single();
+      if (error) throw error;
+      
+      // Actualizar también el peso de la ficha principal del jugador
+      await supabase
+        .from('players')
+        .update({ weight: item.weight })
+        .eq('id', item.player_id);
+        
+      return data as PlayerWeight;
+    }
+  },
+
+  // =====================================================================
+  // HISTORIAL DE FISIOTERAPIA
+  // =====================================================================
+  async getPlayerPhysioRecords(playerId: string): Promise<PlayerPhysioRecord[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getPlayerPhysioRecords()
+        .filter(r => r.player_id === playerId)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    } else {
+      const { data, error } = await supabase
+        .from('player_physio_records')
+        .select('*')
+        .eq('player_id', playerId)
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data as PlayerPhysioRecord[];
+    }
+  },
+
+  async createPlayerPhysioRecord(item: Omit<PlayerPhysioRecord, 'id'>): Promise<PlayerPhysioRecord> {
+    if (isMockMode) {
+      await delay(200);
+      const list = MockDatabase.getPlayerPhysioRecords();
+      const newItem: PlayerPhysioRecord = { ...item, id: `ph-${Date.now()}` };
+      list.push(newItem);
+      MockDatabase.setPlayerPhysioRecords(list);
+      
+      // Actualizar estado de la ficha principal del jugador
+      const players = MockDatabase.getPlayers();
+      const pIdx = players.findIndex(p => p.id === item.player_id);
+      if (pIdx !== -1) {
+        players[pIdx].physical_status = item.status;
+        if (item.notes) {
+          players[pIdx].physio_notes = item.notes;
+        }
+        MockDatabase.setPlayers(players);
+      }
+      return newItem;
+    } else {
+      const { data, error } = await supabase
+        .from('player_physio_records')
+        .insert(item)
+        .select()
+        .single();
+      if (error) throw error;
+      
+      // Actualizar estado de la ficha principal del jugador
+      await supabase
+        .from('players')
+        .update({ physical_status: item.status, physio_notes: item.notes })
+        .eq('id', item.player_id);
+
+      return data as PlayerPhysioRecord;
+    }
+  },
+
+  // =====================================================================
+  // LESIONES (PLAYER INJURIES)
+  // =====================================================================
+  async getPlayerInjuries(playerId: string): Promise<PlayerInjury[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getPlayerInjuries()
+        .filter(i => i.player_id === playerId)
+        .sort((a, b) => new Date(b.injury_date).getTime() - new Date(a.injury_date).getTime());
+    } else {
+      const { data, error } = await supabase
+        .from('player_injuries')
+        .select('*')
+        .eq('player_id', playerId)
+        .order('injury_date', { ascending: false });
+      if (error) throw error;
+      return data as PlayerInjury[];
+    }
+  },
+
+  async createPlayerInjury(item: Omit<PlayerInjury, 'id'>): Promise<PlayerInjury> {
+    if (isMockMode) {
+      await delay(200);
+      const list = MockDatabase.getPlayerInjuries();
+      const newItem: PlayerInjury = { ...item, id: `inj-${Date.now()}` };
+      list.push(newItem);
+      MockDatabase.setPlayerInjuries(list);
+      return newItem;
+    } else {
+      const { data, error } = await supabase
+        .from('player_injuries')
+        .insert(item)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as PlayerInjury;
+    }
+  },
+
+  async updatePlayerInjury(id: string, item: Partial<PlayerInjury>): Promise<PlayerInjury> {
+    if (isMockMode) {
+      await delay(200);
+      const list = MockDatabase.getPlayerInjuries();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx === -1) throw new Error('Lesión no encontrada');
+      list[idx] = { ...list[idx], ...item };
+      MockDatabase.setPlayerInjuries(list);
+      return list[idx];
+    } else {
+      const { data, error } = await supabase
+        .from('player_injuries')
+        .update(item)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as PlayerInjury;
+    }
+  },
+
+  async deletePlayerInjury(id: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      let list = MockDatabase.getPlayerInjuries();
+      list = list.filter(x => x.id !== id);
+      MockDatabase.setPlayerInjuries(list);
+    } else {
+      const { error } = await supabase
+        .from('player_injuries')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    }
   }
 };

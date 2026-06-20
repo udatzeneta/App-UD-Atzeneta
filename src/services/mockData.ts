@@ -1,11 +1,11 @@
 import { 
   Role, Profile, Permission, Training, Match, Fine, PointLog, 
   ScoutingPlayer, OpponentAnalysis, Settings, RolePermission, UserPermission,
-  TrainingAttendance
+  TrainingAttendance, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
-const MOCK_DATA_VERSION = '6';
+const MOCK_DATA_VERSION = '9';
 
 // IDs fijos para los perfiles Mock
 export const MOCK_USER_IDS = {
@@ -378,6 +378,179 @@ const DEFAULT_ATTENDANCE: TrainingAttendance[] = [
   { id: 'att-6', training_id: 't-4', user_id: MOCK_USER_IDS.player3, status: 'L', observations: 'Esguince de tobillo' },
 ];
 
+// 13. Jugadores por defecto
+const DEFAULT_PLAYERS: Player[] = [
+  {
+    id: 'p-1',
+    profile_id: MOCK_USER_IDS.player,
+    full_name: 'Paco Alcácer',
+    nickname: 'Paco',
+    photo_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80',
+    dorsal: 9,
+    position: 'Delantero Centro',
+    dominant_foot: 'Derecho',
+    height: 175,
+    weight: 72.5,
+    birth_date: '1993-08-30',
+    phone: '612345678',
+    email: 'paco@atzeneta.com',
+    physio_notes: 'Molestias leves en el isquiotibial izquierdo. Realizando trabajo preventivo.',
+    physical_status: 'En duda',
+    matches_played: 18,
+    minutes_played: 1450,
+    goals: 12,
+    assists: 4,
+    yellow_cards: 2,
+    red_cards: 0
+  },
+  {
+    id: 'p-2',
+    profile_id: MOCK_USER_IDS.player2,
+    full_name: 'Sergio Gómez',
+    nickname: 'Gómez',
+    photo_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=100&q=80',
+    dorsal: 8,
+    position: 'Mediocentro',
+    dominant_foot: 'Izquierdo',
+    height: 171,
+    weight: 68.0,
+    birth_date: '2000-09-04',
+    phone: '622987654',
+    email: 'sergio@atzeneta.com',
+    physio_notes: 'Ninguna molestia reportada. Parámetros óptimos.',
+    physical_status: 'Disponible',
+    matches_played: 20,
+    minutes_played: 1680,
+    goals: 3,
+    assists: 8,
+    yellow_cards: 4,
+    red_cards: 0
+  },
+  {
+    id: 'p-3',
+    profile_id: MOCK_USER_IDS.player3,
+    full_name: 'Nacho Porcar',
+    nickname: 'Porcar',
+    photo_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=100&q=80',
+    dorsal: 4,
+    position: 'Defensa Central',
+    dominant_foot: 'Derecho',
+    height: 185,
+    weight: 81.2,
+    birth_date: '1994-01-28',
+    phone: '633456789',
+    email: 'nacho@atzeneta.com',
+    physio_notes: 'Esguince de tobillo grado 1 en recuperación.',
+    physical_status: 'Lesionado',
+    matches_played: 15,
+    minutes_played: 1350,
+    goals: 1,
+    assists: 1,
+    yellow_cards: 6,
+    red_cards: 1
+  }
+];
+
+// 14. Historial de Pesos por defecto
+const DEFAULT_PLAYER_WEIGHTS: PlayerWeight[] = [
+  { id: 'w-1', player_id: 'p-1', date: '2026-05-15', weight: 73.8 },
+  { id: 'w-2', player_id: 'p-1', date: '2026-05-30', weight: 73.1 },
+  { id: 'w-3', player_id: 'p-1', date: '2026-06-10', weight: 72.8 },
+  { id: 'w-4', player_id: 'p-1', date: '2026-06-20', weight: 72.5 },
+  
+  { id: 'w-5', player_id: 'p-2', date: '2026-05-15', weight: 67.5 },
+  { id: 'w-6', player_id: 'p-2', date: '2026-05-30', weight: 67.8 },
+  { id: 'w-7', player_id: 'p-2', date: '2026-06-10', weight: 68.1 },
+  { id: 'w-8', player_id: 'p-2', date: '2026-06-20', weight: 68.0 },
+
+  { id: 'w-9', player_id: 'p-3', date: '2026-05-15', weight: 82.5 },
+  { id: 'w-10', player_id: 'p-3', date: '2026-05-30', weight: 81.9 },
+  { id: 'w-11', player_id: 'p-3', date: '2026-06-10', weight: 81.5 },
+  { id: 'w-12', player_id: 'p-3', date: '2026-06-20', weight: 81.2 }
+];
+
+// 15. Notas de Fisio por defecto
+const DEFAULT_PHYSIO_RECORDS: PlayerPhysioRecord[] = [
+  { id: 'ph-1', player_id: 'p-1', date: '2026-06-15', status: 'En duda', notes: 'Sobrecarga leve en isquiotibial izquierdo.', treatment: 'Masaje de descarga e hidroterapia.' },
+  { id: 'ph-2', player_id: 'p-3', date: '2026-06-10', status: 'Lesionado', notes: 'Esguince de ligamento lateral externo del tobillo derecho grado 1.', treatment: 'Vendaje compresivo, reposo deportivo y magnetoterapia.' },
+  { id: 'ph-3', player_id: 'p-3', date: '2026-06-18', status: 'Lesionado', notes: 'Evolución favorable del tobillo. Empieza carrera continua.', treatment: 'Readaptación en campo y fortalecimiento propioceptivo.' }
+];
+
+// 16. Lesiones por defecto
+const DEFAULT_PLAYER_INJURIES: PlayerInjury[] = [
+  {
+    id: 'inj-1',
+    player_id: 'p-1',
+    body_zone: 'isquiotibial_izquierdo',
+    body_side: 'posterior',
+    severity: 'Moderada',
+    status: 'En tratamiento',
+    diagnosis: 'Sobrecarga muscular grado I en isquiotibial izquierdo.',
+    treatment: 'Masaje de descarga, crioterapia y trabajo excéntrico progresivo.',
+    injury_date: '2026-06-12',
+    estimated_return: '2026-06-25',
+    follow_up_notes: '15/06: Mejora en la movilidad. Empieza carrera suave.\n18/06: Puede entrenar con limitaciones.',
+    created_at: '2026-06-12T10:00:00Z'
+  },
+  {
+    id: 'inj-2',
+    player_id: 'p-3',
+    body_zone: 'tobillo_derecho',
+    body_side: 'frontal',
+    severity: 'Grave',
+    status: 'Baja',
+    diagnosis: 'Esguince de ligamento lateral externo del tobillo derecho, grado II.',
+    treatment: 'Inmovilización parcial, vendaje compresivo, magnetoterapia y readaptación funcional.',
+    injury_date: '2026-06-08',
+    estimated_return: '2026-07-05',
+    follow_up_notes: '10/06: Inflamación importante. Reposo absoluto.\n15/06: Baja inflamación. Inicia movilidad pasiva.\n18/06: Ejercicios propioceptivos en piscina.',
+    created_at: '2026-06-08T14:00:00Z'
+  },
+  {
+    id: 'inj-3',
+    player_id: 'p-3',
+    body_zone: 'rodilla_derecha',
+    body_side: 'frontal',
+    severity: 'Leve',
+    status: 'Recuperado',
+    diagnosis: 'Contusión en la rodilla derecha tras choque en entrenamiento.',
+    treatment: 'Hielo, antiinflamatorios y reposo 3 días.',
+    injury_date: '2026-05-20',
+    estimated_return: '2026-05-25',
+    actual_return: '2026-05-24',
+    follow_up_notes: '22/05: Sin dolor. Alta deportiva.',
+    created_at: '2026-05-20T09:30:00Z'
+  },
+  {
+    id: 'inj-4',
+    player_id: 'p-2',
+    body_zone: 'gemelo_izquierdo',
+    body_side: 'posterior',
+    severity: 'Leve',
+    status: 'Recuperado',
+    diagnosis: 'Contractura leve en gemelo izquierdo tras partido.',
+    treatment: 'Estiramientos, masaje descontracturante.',
+    injury_date: '2026-05-28',
+    actual_return: '2026-06-01',
+    follow_up_notes: '30/05: Sin molestias. Entrena con normalidad.',
+    created_at: '2026-05-28T18:00:00Z'
+  },
+  {
+    id: 'inj-5',
+    player_id: 'p-1',
+    body_zone: 'cabeza',
+    body_side: 'frontal',
+    severity: 'Moderada',
+    status: 'Recuperado',
+    diagnosis: 'Traumatismo craneal leve por choque de cabezas en partido.',
+    treatment: 'Protocolo de conmoción cerebral. Reposo cognitivo 48h.',
+    injury_date: '2026-04-15',
+    actual_return: '2026-04-22',
+    follow_up_notes: '17/04: Sin síntomas. Pruebas cognitivas correctas.\n20/04: Retorno gradual al ejercicio.',
+    created_at: '2026-04-15T20:00:00Z'
+  }
+];
+
 
 // =====================================================================
 // MOTOR DE PERSISTENCIA MOCK EN LOCALSTORAGE
@@ -510,6 +683,38 @@ export class MockDatabase {
 
   static setTrainingAttendance(data: TrainingAttendance[]): void {
     this.set('training_attendance', data);
+  }
+
+  static getPlayers(): Player[] {
+    return this.get('players', DEFAULT_PLAYERS);
+  }
+
+  static setPlayers(data: Player[]): void {
+    this.set('players', data);
+  }
+
+  static getPlayerWeights(): PlayerWeight[] {
+    return this.get('player_weights', DEFAULT_PLAYER_WEIGHTS);
+  }
+
+  static setPlayerWeights(data: PlayerWeight[]): void {
+    this.set('player_weights', data);
+  }
+
+  static getPlayerPhysioRecords(): PlayerPhysioRecord[] {
+    return this.get('player_physio_records', DEFAULT_PHYSIO_RECORDS);
+  }
+
+  static setPlayerPhysioRecords(data: PlayerPhysioRecord[]): void {
+    this.set('player_physio_records', data);
+  }
+
+  static getPlayerInjuries(): PlayerInjury[] {
+    return this.get('player_injuries', DEFAULT_PLAYER_INJURIES);
+  }
+
+  static setPlayerInjuries(data: PlayerInjury[]): void {
+    this.set('player_injuries', data);
   }
 
   // Sesión actual mockeada
