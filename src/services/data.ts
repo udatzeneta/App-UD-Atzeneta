@@ -1,6 +1,6 @@
 import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
-import { Training, Match, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury } from '../types';
+import { Training, Match, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent } from '../types';
 
 export const dataService = {
   // =====================================================================
@@ -933,6 +933,118 @@ export const dataService = {
         .delete()
         .eq('id', id);
       if (error) throw error;
+    }
+  },
+
+  // =====================================================================
+  // EVENTOS SOCIALES (SOCIAL EVENTS)
+  // =====================================================================
+  async getSocialEvents(): Promise<SocialEvent[]> {
+    if (isMockMode) {
+      await delay(200);
+      const list = localStorage.getItem('ud_atzeneta_social_events');
+      return list ? JSON.parse(list) : [];
+    } else {
+      try {
+        const { data, error } = await supabase
+          .from('social_events')
+          .select('*')
+          .order('date', { ascending: false });
+        if (error) {
+          if (error.code === '42P01' || error.message.includes('relation "social_events" does not exist')) {
+            console.warn('⚠️ La tabla "social_events" no existe en Supabase. Usando localStorage como fallback.');
+            const list = localStorage.getItem('ud_atzeneta_social_events');
+            return list ? JSON.parse(list) : [];
+          }
+          throw error;
+        }
+        return data as SocialEvent[];
+      } catch (err) {
+        console.warn('⚠️ Fallback a localStorage por error en Supabase:', err);
+        const list = localStorage.getItem('ud_atzeneta_social_events');
+        return list ? JSON.parse(list) : [];
+      }
+    }
+  },
+
+  async createSocialEvent(item: Omit<SocialEvent, 'id'>): Promise<SocialEvent> {
+    if (isMockMode) {
+      await delay(200);
+      const listRaw = localStorage.getItem('ud_atzeneta_social_events');
+      const list: SocialEvent[] = listRaw ? JSON.parse(listRaw) : [];
+      const newItem: SocialEvent = { ...item, id: `se-${Date.now()}` };
+      list.push(newItem);
+      localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+      return newItem;
+    } else {
+      try {
+        const { data, error } = await supabase
+          .from('social_events')
+          .insert(item)
+          .select()
+          .single();
+        if (error) {
+          if (error.code === '42P01' || error.message.includes('relation "social_events" does not exist')) {
+            console.warn('⚠️ Guardando en localStorage fallback. Crea la tabla en Supabase para sincronizar.');
+            const listRaw = localStorage.getItem('ud_atzeneta_social_events');
+            const list: SocialEvent[] = listRaw ? JSON.parse(listRaw) : [];
+            const newItem: SocialEvent = { ...item, id: `se-${Date.now()}` };
+            list.push(newItem);
+            localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+            return newItem;
+          }
+          throw error;
+        }
+        return data as SocialEvent;
+      } catch (err) {
+        console.warn('⚠️ Error guardando en Supabase, usando localStorage fallback:', err);
+        const listRaw = localStorage.getItem('ud_atzeneta_social_events');
+        const list: SocialEvent[] = listRaw ? JSON.parse(listRaw) : [];
+        const newItem: SocialEvent = { ...item, id: `se-${Date.now()}` };
+        list.push(newItem);
+        localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+        return newItem;
+      }
+    }
+  },
+
+  async deleteSocialEvent(id: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      const listRaw = localStorage.getItem('ud_atzeneta_social_events');
+      if (listRaw) {
+        let list: SocialEvent[] = JSON.parse(listRaw);
+        list = list.filter(x => x.id !== id);
+        localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+      }
+      return;
+    } else {
+      try {
+        const { error } = await supabase
+          .from('social_events')
+          .delete()
+          .eq('id', id);
+        if (error) {
+          if (error.code === '42P01' || error.message.includes('relation "social_events" does not exist')) {
+            const listRaw = localStorage.getItem('ud_atzeneta_social_events');
+            if (listRaw) {
+              let list: SocialEvent[] = JSON.parse(listRaw);
+              list = list.filter(x => x.id !== id);
+              localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+            }
+            return;
+          }
+          throw error;
+        }
+      } catch (err) {
+        console.warn('⚠️ Error eliminando en Supabase, usando localStorage fallback:', err);
+        const listRaw = localStorage.getItem('ud_atzeneta_social_events');
+        if (listRaw) {
+          let list: SocialEvent[] = JSON.parse(listRaw);
+          list = list.filter(x => x.id !== id);
+          localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+        }
+      }
     }
   }
 };

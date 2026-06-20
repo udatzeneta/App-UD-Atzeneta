@@ -64,6 +64,7 @@ export interface Match {
   location?: string;
   objective?: string;
   observations?: string;
+  matchday?: string | null;
   created_at?: string;
 }
 
@@ -227,6 +228,16 @@ export interface PlayerInjury {
   estimated_return?: string;
   actual_return?: string;
   follow_up_notes?: string;
+  created_at?: string;
+}
+
+export interface SocialEvent {
+  id: string;
+  date: string;
+  time: string;
+  type: 'Cena' | 'Comida' | 'Fiesta' | 'Otro';
+  location: string;
+  observations?: string;
   created_at?: string;
 }
 

@@ -110,6 +110,7 @@ function mapPartido(p, competicion) {
 
   return {
     date,
+    matchday,
     rival,
     is_local: isLocal,
     competition: competicion,
@@ -249,12 +250,14 @@ async function handleCookies(page) {
 
       // Si la API devuelve vacío, parsear las tarjetas del DOM (ocurre en Copa)
       if (partidos.length === 0) {
-        partidos = await page.evaluate((codGrupo) => {
+        partidos = await page.evaluate(async (codGrupo) => {
           const sel = document.getElementById('team-partidos-competicion');
           if (sel) sel.value = codGrupo; // asegurar selección
           const MESES = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
           const cards = Array.from(document.querySelectorAll('#team-partidos .match-card'));
-          return cards.map(card => {
+          
+          const results = [];
+          for (const card of cards) {
             try {
               const meta = (card.querySelector('.m-meta')?.textContent || '').trim();
               // Extraer fecha: "7 septiembre de 2025"
@@ -268,13 +271,11 @@ async function handleCookies(page) {
               let matchday = null;
               const partesMeta = meta.split('·');
               if (partesMeta.length > 1) {
-                matchday = partesMeta[1].trim(); // Esto extraerá "Jornada 1", "Ida", etc.
+                const matchdayText = partesMeta[1].trim();
+                const numMatch = matchdayText.match(/\d+/);
+                matchday = numMatch ? numMatch[0] : matchdayText;
               }
               const filas = Array.from(card.querySelectorAll('.team-row'));
-              const local = filas.find(r => !r.classList.contains('is-team'));
-              const visitante = filas.find(r => r.classList.contains('is-team'));
-              // is-team marca a Atzeneta (siempre visitante en Copa por ahora)
-              // Necesitamos saber si Atzeneta es local o visitante
               const allRows = filas;
               const atzeneta = filas.find(r => r.classList.contains('is-team'));
               const rival = filas.find(r => !r.classList.contains('is-team'));
@@ -291,16 +292,62 @@ async function handleCookies(page) {
               const visitanteName = allRows[1]?.querySelector('.team-name')?.textContent?.trim() || '';
               const visitanteImg = allRows[1]?.querySelector('img')?.getAttribute('src');
 
-              return {
+              // ── Extraer hora y campo haciendo fetch al detalle del partido ──────────
+              let parsedTime = null;
+              let parsedLocation = null;
+
+              const anchor = card.closest('a');
+              const href = anchor ? anchor.getAttribute('href') : '';
+              const matchCod = href.match(/cod_partido=(\d+)/);
+              const codPartido = matchCod ? matchCod[1] : null;
+
+              if (codPartido) {
+                try {
+                  const res = await fetch(`../partidos/partido.php?cod_partido=${codPartido}`);
+                  if (res.ok) {
+                    const html = await res.text();
+                    const startMarker = 'window.__FFCV_BOOTSTRAP_JSON = ';
+                    const startIdx = html.indexOf(startMarker);
+                    if (startIdx !== -1) {
+                      const jsonStart = startIdx + startMarker.length;
+                      const rest = html.slice(jsonStart);
+                      const matchEnd = rest.match(/([\s\S]*?)\};\r?\n/);
+                      if (matchEnd) {
+                        const jsonText = matchEnd[1] + '}';
+                        const data = JSON.parse(jsonText);
+                        
+                        if (data.hora) {
+                          const m = String(data.hora).trim().match(/^(\d{1,2}):(\d{2})/);
+                          if (m) {
+                            parsedTime = `${m[1].padStart(2, '0')}:${m[2]}:00`;
+                          }
+                        }
+                        if (data.campo) {
+                          parsedLocation = String(data.campo).trim();
+                        }
+                      }
+                    }
+                  }
+                } catch (fetchErr) {
+                  // ignorar error del fetch individual y seguir
+                }
+              }
+
+              results.push({
                 fecha, matchday, nombreRival, isLocal,
                 golesAtzeneta: hasScore ? golesAtzeneta : null,
                 golesRival: hasScore ? golesRival : null,
                 status,
                 localName, localImg,
-                visitanteName, visitanteImg
-              };
-            } catch (e) { return null; }
-          }).filter(Boolean);
+                visitanteName, visitanteImg,
+                time: parsedTime,
+                location: parsedLocation
+              });
+            } catch (e) {
+              // ignorar error de tarjeta individual
+            }
+          }
+          return results;
         }, comp.codGrupo);
 
         if (partidos.length > 0) {
@@ -323,15 +370,15 @@ async function handleCookies(page) {
 
           return {
             date: p.fecha,
-            matchday: p.matchday, // 👈 NUEVO: Enviamos a Supabase
+            matchday: p.matchday,
             rival: p.nombreRival,
             is_local: p.isLocal,
             competition: competicion,
             score_us: p.golesAtzeneta,
             score_them: p.golesRival,
             status: p.status,
-            time: null,
-            location: null,
+            time: p.time,
+            location: p.location,
             objective: null,
             observations: null,
           };

@@ -4,10 +4,10 @@ import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { Modal } from '../components/Modal';
-import { Training, Match } from '../types';
+import { Training, Match, SocialEvent } from '../types';
 import {
   Dumbbell, Trophy, ChevronLeft, ChevronRight, Calendar as CalendarIcon,
-  Clock, MapPin, Plus, Target, Users
+  Clock, MapPin, Plus, Target, Users, Sparkles, Trash2, FileText
 } from 'lucide-react';
 import logos from '../assets/logos.json';
 
@@ -20,10 +20,19 @@ const getTeamLogo = (teamName: string): string => {
   if (matchKey) {
     return (logos as Record<string, string>)[matchKey];
   }
-  return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+  return '/club-logo.png';
 };
 
-type EventType = 'training' | 'match';
+const formatTime = (timeStr?: string): string => {
+  if (!timeStr) return '';
+  const match = timeStr.match(/^(\d{2}):(\d{2})(:\d{2})?$/);
+  if (match) {
+    return `${match[1]}:${match[2]}h`;
+  }
+  return timeStr.endsWith('h') ? timeStr : `${timeStr}h`;
+};
+
+type EventType = 'training' | 'match' | 'social';
 
 interface CalendarEvent {
   id: string;
@@ -35,6 +44,8 @@ interface CalendarEvent {
   location?: string;
   is_local?: boolean;
   rival?: string;
+  matchday?: string | null;
+  eventType?: 'Cena' | 'Comida' | 'Fiesta' | 'Otro';
 }
 
 export const Calendar: React.FC = () => {
@@ -45,7 +56,12 @@ export const Calendar: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'select' | 'training' | 'match'>('select');
+  const [modalType, setModalType] = useState<'select' | 'training' | 'match' | 'social'>('select');
+
+  // Estados para exportación por lotes PDF
+  const [isPDFModalOpen, setIsPDFModalOpen] = useState(false);
+  const [pdfSelectedMonths, setPdfSelectedMonths] = useState<number[]>([]);
+  const [pdfSelectedYear, setPdfSelectedYear] = useState<number>(new Date().getFullYear());
 
   // Permisos
   const canCreateTraining = hasPermission('trainings', 'crear');
@@ -60,6 +76,11 @@ export const Calendar: React.FC = () => {
   const { data: matches = [] } = useQuery({
     queryKey: ['matches'],
     queryFn: () => dataService.getMatches()
+  });
+
+  const { data: socialEvents = [] } = useQuery({
+    queryKey: ['socialEvents'],
+    queryFn: () => dataService.getSocialEvents()
   });
 
   // Mutaciones
@@ -82,6 +103,32 @@ export const Calendar: React.FC = () => {
     },
     onError: (err) => showToast('error', 'Error', err.message)
   });
+
+  const createSocialEventMutation = useMutation({
+    mutationFn: (item: Omit<SocialEvent, 'id'>) => dataService.createSocialEvent(item),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['socialEvents'] });
+      showToast('success', 'Evento creado', 'Se ha añadido el evento social al calendario.');
+      handleCloseModal();
+    },
+    onError: (err) => showToast('error', 'Error', err.message)
+  });
+
+  const deleteSocialEventMutation = useMutation({
+    mutationFn: (id: string) => dataService.deleteSocialEvent(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['socialEvents'] });
+      showToast('success', 'Evento eliminado', 'El evento social ha sido eliminado.');
+    },
+    onError: (err) => showToast('error', 'Error', err.message)
+  });
+
+  const handleDeleteSocial = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (window.confirm('¿Estás seguro de que deseas eliminar este evento social?')) {
+      deleteSocialEventMutation.mutate(id);
+    }
+  };
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -110,10 +157,10 @@ export const Calendar: React.FC = () => {
     setCurrentDate(new Date(year, month + 1, 1));
   };
 
-  const getEventsForDate = (day: number): CalendarEvent[] => {
-    const monthStr = String(month + 1).padStart(2, '0');
+  const getEventsForMonthAndDate = (targetYear: number, targetMonth: number, day: number): CalendarEvent[] => {
+    const monthStr = String(targetMonth + 1).padStart(2, '0');
     const dayStr = String(day).padStart(2, '0');
-    const targetDateStr = `${year}-${monthStr}-${dayStr}`;
+    const targetDateStr = `${targetYear}-${monthStr}-${dayStr}`;
 
     const dateTrainings: CalendarEvent[] = trainings
       .filter(t => t.date === targetDateStr)
@@ -138,10 +185,28 @@ export const Calendar: React.FC = () => {
         time: m.time,
         location: m.location || (m.is_local ? 'Campo Municipal El Porrejat' : 'Visitante'),
         is_local: m.is_local,
-        rival: m.rival
+        rival: m.rival,
+        matchday: m.matchday
       }));
 
-    return [...dateTrainings, ...dateMatches];
+    const dateSocialEvents: CalendarEvent[] = socialEvents
+      .filter(se => se.date === targetDateStr)
+      .map(se => ({
+        id: se.id,
+        type: 'social' as EventType,
+        date: se.date,
+        title: `${se.type}: ${se.location}`,
+        subtitle: se.observations || 'Evento Social',
+        time: se.time,
+        location: se.location,
+        eventType: se.type
+      }));
+
+    return [...dateTrainings, ...dateMatches, ...dateSocialEvents];
+  };
+
+  const getEventsForDate = (day: number): CalendarEvent[] => {
+    return getEventsForMonthAndDate(year, month, day);
   };
 
   const handleDayClick = (day: number) => {
@@ -156,15 +221,20 @@ export const Calendar: React.FC = () => {
     setModalType('select');
   };
 
-  const getMonthEvents = () => {
+  const getEventsListForMonth = (targetYear: number, targetMonth: number) => {
+    const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
     const list: { day: number; events: CalendarEvent[] }[] = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dayEvts = getEventsForDate(d);
+    for (let d = 1; d <= daysInTargetMonth; d++) {
+      const dayEvts = getEventsForMonthAndDate(targetYear, targetMonth, d);
       if (dayEvts.length > 0) {
         list.push({ day: d, events: dayEvts });
       }
     }
     return list.sort((a, b) => a.day - b.day);
+  };
+
+  const getMonthEvents = () => {
+    return getEventsListForMonth(year, month);
   };
 
   const monthEventsList = getMonthEvents();
@@ -198,6 +268,16 @@ export const Calendar: React.FC = () => {
     competition: 'Liga' as const,
     status: 'Programado' as const,
     objective: '',
+    observations: '',
+    matchday: ''
+  });
+
+  // Formulario de evento social
+  const [socialForm, setSocialForm] = useState({
+    date: '',
+    time: '21:00',
+    type: 'Cena' as 'Cena' | 'Comida' | 'Fiesta' | 'Otro',
+    location: '',
     observations: ''
   });
 
@@ -235,7 +315,8 @@ export const Calendar: React.FC = () => {
       competition: 'Liga',
       status: 'Programado',
       objective: '',
-      observations: ''
+      observations: '',
+      matchday: ''
     });
   };
 
@@ -258,9 +339,78 @@ export const Calendar: React.FC = () => {
       ...matchForm,
       rival: matchForm.rival.trim(),
       location: matchForm.location.trim() || (matchForm.is_local ? 'Campo Municipal El Porrejat' : 'Visitante'),
+      matchday: matchForm.matchday.trim() || null,
       score_us: null,
       score_them: null
     });
+  };
+
+  const handleOpenSocialForm = () => {
+    setModalType('social');
+    const today = new Date();
+    const defaultDay = today.getMonth() === month && today.getFullYear() === year ? today.getDate() : 1;
+    const targetDay = selectedDay || defaultDay;
+    const monthStr = String(month + 1).padStart(2, '0');
+    const dayStr = String(targetDay).padStart(2, '0');
+    setSocialForm({
+      date: `${year}-${monthStr}-${dayStr}`,
+      time: '21:00',
+      type: 'Cena',
+      location: '',
+      observations: ''
+    });
+  };
+
+  const handleSaveSocial = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!socialForm.location.trim()) {
+      showToast('error', 'Validación', 'El lugar del evento es obligatorio.');
+      return;
+    }
+    createSocialEventMutation.mutate(socialForm);
+  };
+
+  const handleExportPDF = () => {
+    setPdfSelectedMonths([month]);
+    setPdfSelectedYear(year);
+    setIsPDFModalOpen(true);
+  };
+
+  const handleExportPDFSubmit = async () => {
+    if (pdfSelectedMonths.length === 0) {
+      showToast('error', 'Selección vacía', 'Por favor, selecciona al menos un mes para exportar.');
+      return;
+    }
+
+    setIsPDFModalOpen(false);
+    showToast('info', 'Generando PDF', 'Estamos preparando tu calendario, por favor espera...');
+
+    try {
+      const { exportCalendarToPDF } = await import('../utils/export');
+      
+      const sortedMonths = [...pdfSelectedMonths].sort((a, b) => a - b);
+      const monthsPayload = sortedMonths.map((mIdx) => {
+        const eventsList = getEventsListForMonth(pdfSelectedYear, mIdx);
+        return {
+          monthName: monthNames[mIdx],
+          year: pdfSelectedYear,
+          eventsData: eventsList
+        };
+      });
+
+      const filename = sortedMonths.length === 1
+        ? `calendario_${monthNames[sortedMonths[0]].toLowerCase()}_${pdfSelectedYear}`
+        : `calendario_deportivo_${pdfSelectedYear}`;
+
+      await exportCalendarToPDF(
+        `Calendario Deportivo ${pdfSelectedYear}`,
+        filename,
+        monthsPayload
+      );
+      showToast('success', 'PDF Descargado', 'Se ha descargado el archivo PDF con éxito.');
+    } catch (error: any) {
+      showToast('error', 'Error al exportar', error.message || 'Ocurrió un error al generar el PDF.');
+    }
   };
 
   return (
@@ -299,6 +449,15 @@ export const Calendar: React.FC = () => {
             </button>
           </div>
 
+          <button
+            onClick={handleExportPDF}
+            className="px-4 py-2 text-xs font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover text-brand-gray-light rounded-lg flex items-center gap-1.5 transition-colors shrink-0"
+            title="Exportar calendario del mes a PDF"
+          >
+            <FileText className="w-4 h-4 text-brand-red-600" />
+            PDF
+          </button>
+
           {(canCreateTraining || canCreateMatch) && (
             <button
               onClick={() => {
@@ -316,7 +475,7 @@ export const Calendar: React.FC = () => {
       </div>
 
       {/* Leyenda */}
-      <div className="flex items-center gap-4 bg-brand-black border border-brand-black-border px-4 py-3 rounded-xl">
+      <div className="flex flex-wrap items-center gap-4 bg-brand-black border border-brand-black-border px-4 py-3 rounded-xl">
         <span className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted">Leyenda:</span>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded bg-brand-red-600/20 border border-brand-red-600/30"></div>
@@ -326,8 +485,12 @@ export const Calendar: React.FC = () => {
           <div className="w-3 h-3 rounded bg-yellow-500/20 border border-yellow-500/30"></div>
           <span className="text-xs text-brand-gray-muted">Partido</span>
         </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded bg-purple-600/20 border border-purple-600/30"></div>
+          <span className="text-xs text-brand-gray-muted">Evento Social</span>
+        </div>
         {(canCreateTraining || canCreateMatch) && (
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2 md:ml-auto">
             <Plus className="w-3.5 h-3.5 text-brand-gray-muted" />
             <span className="text-xs text-brand-gray-muted">Click en un día para añadir</span>
           </div>
@@ -349,8 +512,10 @@ export const Calendar: React.FC = () => {
             const events = day ? getEventsForDate(day) : [];
             const trainingCount = events.filter(e => e.type === 'training').length;
             const matchCount = events.filter(e => e.type === 'match').length;
+            const socialCount = events.filter(e => e.type === 'social').length;
             const hasTraining = trainingCount > 0;
             const hasMatch = matchCount > 0;
+            const hasSocial = socialCount > 0;
             const hasToday = day && isToday(day);
 
             let cellClass = '';
@@ -359,12 +524,12 @@ export const Calendar: React.FC = () => {
             } else {
               cellClass = 'min-h-[150px] p-2 flex flex-col gap-1.5 transition-all duration-200 border-t-4 relative ';
               
-              if (hasMatch && hasTraining) {
-                cellClass += 'bg-gradient-to-br from-yellow-600/30 to-brand-red-600/30 border-t-yellow-500 hover:from-yellow-600/40 hover:to-brand-red-600/40';
-              } else if (hasMatch) {
-                cellClass += 'bg-yellow-500/25 border-t-yellow-500 hover:bg-yellow-500/35';
+              if (hasMatch) {
+                cellClass += 'bg-yellow-500/15 border-t-yellow-500 hover:bg-yellow-500/25';
               } else if (hasTraining) {
-                cellClass += 'bg-brand-red-600/25 border-t-brand-red-600 hover:bg-brand-red-600/35';
+                cellClass += 'bg-brand-red-600/15 border-t-brand-red-600 hover:bg-brand-red-600/25';
+              } else if (hasSocial) {
+                cellClass += 'bg-purple-600/15 border-t-purple-500 hover:bg-purple-600/25';
               } else {
                 cellClass += 'bg-brand-black-card border-t-brand-black-border hover:bg-brand-black-hover/50';
               }
@@ -403,42 +568,63 @@ export const Calendar: React.FC = () => {
                   {day && events.slice(0, 3).map((evt, eIdx) => {
                     const isTraining = evt.type === 'training';
                     const isMatch = evt.type === 'match';
+                    const isSocial = evt.type === 'social';
                     return (
                       <div
                         key={eIdx}
                         className={`text-[10px] p-1.5 rounded-lg border flex flex-col gap-0.5 leading-tight ${
                           isTraining
                             ? 'bg-brand-red-600/40 text-brand-red-200 border-brand-red-500/40 font-medium'
-                            : 'bg-yellow-600/40 text-yellow-200 border-yellow-500/40 font-medium'
+                            : isMatch
+                            ? 'bg-yellow-600/40 text-yellow-200 border-yellow-500/40 font-medium'
+                            : 'bg-purple-600/40 text-purple-200 border-purple-500/40 font-medium shadow-[0_0_8px_rgba(168,85,247,0.2)]'
                         }`}
-                        title={`${evt.title} - ${evt.time || ''} - ${evt.location || ''}`}
+                        title={`${evt.title} - ${formatTime(evt.time)} - ${evt.location || ''}`}
                       >
-                        <div className="flex items-center justify-center font-bold">
+                        <div className="flex items-center gap-1.5 font-bold">
                           {isTraining ? (
-                            <Dumbbell className="w-3 h-3 shrink-0 text-brand-red-400" />
+                            <>
+                              <Dumbbell className="w-3 h-3 shrink-0 text-brand-red-400" />
+                              <span className="truncate text-brand-red-200">{evt.title}</span>
+                            </>
+                          ) : isMatch ? (
+                            <>
+                              <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
+                                <img
+                                  src={getTeamLogo(evt.rival || evt.title)}
+                                  alt="Escudo rival"
+                                  className="w-full h-full object-contain"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = '/club-logo.png';
+                                  }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-white font-extrabold truncate" title={evt.rival}>
+                                {evt.rival}
+                              </span>
+                            </>
                           ) : (
-                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 shrink-0 border border-brand-black-border/10 shadow-sm">
-                              <img
-                                src={getTeamLogo(evt.rival || evt.title)}
-                                alt="Escudo rival"
-                                className="w-full h-full object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
-                                }}
-                              />
-                            </div>
+                            <>
+                              <Sparkles className="w-3 h-3 shrink-0 text-purple-400" />
+                              <span className="truncate text-white font-extrabold">{evt.title}</span>
+                            </>
                           )}
                         </div>
                         {isMatch && (
-                          <div className="text-[9px] font-semibold flex items-center gap-1">
+                          <div className="text-[9px] font-semibold flex flex-wrap items-center gap-1">
                             {evt.is_local ? (
                               <span className="text-green-400">🏟️ Local</span>
                             ) : (
                               <span className="text-blue-400">✈️ Visitante</span>
                             )}
+                            {evt.matchday && (
+                              <span className="text-[9px] font-extrabold text-cyan-400 bg-cyan-950/80 px-1 py-0.2 rounded border border-cyan-400/40 shadow-[0_0_8px_rgba(34,211,238,0.25)]">
+                                J. {evt.matchday}
+                              </span>
+                            )}
                           </div>
                         )}
-                        {evt.time && <div className="text-[9px] opacity-90 truncate font-semibold">🕒 {evt.time}</div>}
+                        {evt.time && <div className="text-[9px] opacity-90 truncate font-semibold">🕒 {formatTime(evt.time)}</div>}
                         {evt.location && <div className="text-[9px] opacity-90 truncate italic">📍 {evt.location}</div>}
                       </div>
                     );
@@ -461,6 +647,11 @@ export const Calendar: React.FC = () => {
                     {matchCount > 0 && (
                       <span className="text-yellow-400 flex items-center gap-0.5 font-bold">
                         <Trophy className="w-2.5 h-2.5" /> {matchCount}
+                      </span>
+                    )}
+                    {socialCount > 0 && (
+                      <span className="text-purple-400 flex items-center gap-0.5 font-bold">
+                        <Sparkles className="w-2.5 h-2.5" /> {socialCount}
                       </span>
                     )}
                   </div>
@@ -512,6 +703,7 @@ export const Calendar: React.FC = () => {
                   {events.map((evt, eIdx) => {
                     const isTraining = evt.type === 'training';
                     const isMatch = evt.type === 'match';
+                    const isSocial = evt.type === 'social';
                     return (
                       <div
                         key={eIdx}
@@ -522,7 +714,7 @@ export const Calendar: React.FC = () => {
                             <div className="p-2.5 rounded-lg bg-brand-red-600/10 text-brand-red-600">
                               <Dumbbell className="w-5 h-5" />
                             </div>
-                          ) : (
+                          ) : isMatch ? (
                             <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center p-1 border border-brand-black-border/10 shadow-sm">
                               <img
                                 src={getTeamLogo(evt.rival || evt.title)}
@@ -533,12 +725,27 @@ export const Calendar: React.FC = () => {
                                 }}
                               />
                             </div>
+                          ) : (
+                            <div className="p-2.5 rounded-lg bg-purple-600/10 text-purple-400 border border-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.15)]">
+                              <Sparkles className="w-5 h-5" />
+                            </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-brand-gray-light leading-snug">
-                            {evt.title}
-                          </h4>
+                          <div className="flex justify-between items-start">
+                            <h4 className="text-sm font-semibold text-brand-gray-light leading-snug">
+                              {evt.title}
+                            </h4>
+                            {isSocial && (canCreateTraining || canCreateMatch) && (
+                              <button
+                                onClick={(e) => handleDeleteSocial(e, evt.id)}
+                                className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded hover:bg-brand-red-600/10 transition-colors"
+                                title="Eliminar evento"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                           <p className="text-xs text-brand-gray-muted mt-0.5">{evt.subtitle}</p>
 
                           {isMatch && (
@@ -552,13 +759,26 @@ export const Calendar: React.FC = () => {
                                   ✈️ Visitante
                                 </span>
                               )}
+                              {evt.matchday && (
+                                <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-400/30 shadow-[0_0_8px_rgba(34,211,238,0.15)]">
+                                  Jornada {evt.matchday}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {isSocial && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-800/30 shadow-[0_0_8px_rgba(168,85,247,0.15)]">
+                                🎉 Evento Social
+                              </span>
                             </div>
                           )}
 
                           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5 text-xs text-brand-gray-muted">
                             {evt.time && (
                               <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5" /> {evt.time}
+                                <Clock className="w-3.5 h-3.5" /> {formatTime(evt.time)}
                               </span>
                             )}
                             {evt.location && (
@@ -601,6 +821,7 @@ export const Calendar: React.FC = () => {
                 {getEventsForDate(selectedDay).map((evt, eIdx) => {
                   const isTraining = evt.type === 'training';
                   const isMatch = evt.type === 'match';
+                  const isSocial = evt.type === 'social';
                   return (
                     <div
                       key={eIdx}
@@ -611,7 +832,7 @@ export const Calendar: React.FC = () => {
                           <div className="p-1.5 rounded-lg bg-brand-red-600/10 text-brand-red-600">
                             <Dumbbell className="w-4 h-4" />
                           </div>
-                        ) : (
+                        ) : isMatch ? (
                           <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center p-0.5 border border-brand-black-border/10 shadow-sm">
                             <img
                               src={getTeamLogo(evt.rival || evt.title)}
@@ -622,20 +843,35 @@ export const Calendar: React.FC = () => {
                               }}
                             />
                           </div>
+                        ) : (
+                          <div className="p-1.5 rounded-lg bg-purple-600/10 text-purple-400 border border-purple-500/20">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start gap-2">
                           <h5 className="text-xs font-semibold text-brand-gray-light truncate">{evt.title}</h5>
-                          {evt.time && (
-                            <span className="text-[10px] text-brand-gray-muted flex items-center gap-1 shrink-0 font-medium">
-                              <Clock className="w-3.5 h-3.5" /> {evt.time}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {evt.time && (
+                              <span className="text-[10px] text-brand-gray-muted flex items-center gap-1 shrink-0 font-medium">
+                                <Clock className="w-3.5 h-3.5" /> {formatTime(evt.time)}
+                              </span>
+                            )}
+                            {isSocial && (canCreateTraining || canCreateMatch) && (
+                              <button
+                                onClick={(e) => handleDeleteSocial(e, evt.id)}
+                                className="text-brand-gray-muted hover:text-brand-red-600 p-1 rounded hover:bg-brand-red-600/10 transition-colors"
+                                title="Eliminar evento social"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-[11px] text-brand-gray-muted mt-0.5">{evt.subtitle}</p>
                         {isMatch && (
-                          <div className="mt-1">
+                          <div className="mt-1 flex items-center gap-2">
                             {evt.is_local ? (
                               <span className="text-[10px] font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full border border-green-400/20">
                                 🏟️ Local
@@ -645,6 +881,18 @@ export const Calendar: React.FC = () => {
                                 ✈️ Visitante
                               </span>
                             )}
+                            {evt.matchday && (
+                              <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-400/30 shadow-[0_0_8px_rgba(34,211,238,0.15)]">
+                                Jornada {evt.matchday}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {isSocial && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-800/30 shadow-[0_0_8px_rgba(168,85,247,0.15)]">
+                              🎉 Evento Social
+                            </span>
                           </div>
                         )}
                         {evt.location && (
@@ -675,28 +923,34 @@ export const Calendar: React.FC = () => {
               <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted text-center">
                 {selectedDay && getEventsForDate(selectedDay).length > 0 ? 'Añadir otro evento:' : 'Selecciona el tipo de evento:'}
               </h4>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {canCreateTraining && (
                   <button
                     onClick={handleOpenTrainingForm}
-                    className="p-4 bg-brand-black-card border border-brand-black-border rounded-xl hover:border-brand-red-600/50 hover:bg-brand-red-600/5 transition-all group"
+                    className="p-3 bg-brand-black-card border border-brand-black-border rounded-xl hover:border-brand-red-600/50 hover:bg-brand-red-600/5 transition-all group"
                   >
-                    <Dumbbell className="w-8 h-8 text-brand-red-600 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                    <span className="text-sm font-semibold text-brand-gray-light block">Entrenamiento</span>
-                    <span className="text-xs text-brand-gray-muted">Sesión de entrenamiento</span>
+                    <Dumbbell className="w-6 h-6 text-brand-red-600 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                    <span className="text-[11px] font-semibold text-brand-gray-light block text-center">Entrenamiento</span>
                   </button>
                 )}
 
                 {canCreateMatch && (
                   <button
                     onClick={handleOpenMatchForm}
-                    className="p-4 bg-brand-black-card border border-brand-black-border rounded-xl hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all group"
+                    className="p-3 bg-brand-black-card border border-brand-black-border rounded-xl hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all group"
                   >
-                    <Trophy className="w-8 h-8 text-yellow-500 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                    <span className="text-sm font-semibold text-brand-gray-light block">Partido</span>
-                    <span className="text-xs text-brand-gray-muted">Competición oficial</span>
+                    <Trophy className="w-6 h-6 text-yellow-500 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                    <span className="text-[11px] font-semibold text-brand-gray-light block text-center">Partido</span>
                   </button>
                 )}
+
+                <button
+                  onClick={handleOpenSocialForm}
+                  className="p-3 bg-brand-black-card border border-brand-black-border rounded-xl hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
+                >
+                  <Sparkles className="w-6 h-6 text-purple-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-semibold text-brand-gray-light block text-center">Ev. Social</span>
+                </button>
               </div>
             </div>
           ) : (
@@ -829,7 +1083,7 @@ export const Calendar: React.FC = () => {
         title="Programar Partido"
       >
         <form onSubmit={handleSaveMatch} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="form-label">Fecha</label>
               <input
@@ -848,6 +1102,16 @@ export const Calendar: React.FC = () => {
                 value={matchForm.time}
                 onChange={(e) => setMatchForm(prev => ({ ...prev, time: e.target.value }))}
                 required
+              />
+            </div>
+            <div>
+              <label className="form-label">Jornada</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Ej. 1"
+                value={matchForm.matchday}
+                onChange={(e) => setMatchForm(prev => ({ ...prev, matchday: e.target.value }))}
               />
             </div>
           </div>
@@ -966,6 +1230,196 @@ export const Calendar: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL - FORMULARIO DE EVENTO SOCIAL
+          ===================================================================== */}
+      <Modal
+        isOpen={isModalOpen && modalType === 'social'}
+        onClose={handleCloseModal}
+        title="Programar Evento Social"
+      >
+        <form onSubmit={handleSaveSocial} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="form-label">Fecha</label>
+              <input
+                type="date"
+                className="form-input"
+                value={socialForm.date}
+                onChange={(e) => setSocialForm(prev => ({ ...prev, date: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="form-label">Hora</label>
+              <input
+                type="time"
+                className="form-input"
+                value={socialForm.time}
+                onChange={(e) => setSocialForm(prev => ({ ...prev, time: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="form-label">Tipo de Evento</label>
+              <select
+                className="form-input bg-brand-black-bg"
+                value={socialForm.type}
+                onChange={(e) => setSocialForm(prev => ({ ...prev, type: e.target.value as any }))}
+              >
+                <option value="Cena">Cena 🍽️</option>
+                <option value="Comida">Comida 🍲</option>
+                <option value="Fiesta">Fiesta 🎉</option>
+                <option value="Otro">Otro 🎈</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Lugar / Establecimiento</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Ej. Restaurante El Racó"
+                value={socialForm.location}
+                onChange={(e) => setSocialForm(prev => ({ ...prev, location: e.target.value }))}
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label">
+              Observaciones / Detalles (Opcional)
+            </label>
+            <textarea
+              className="form-input h-20 resize-none"
+              placeholder="Detalles sobre precio, menú, reservas o vestimenta..."
+              value={socialForm.observations}
+              onChange={(e) => setSocialForm(prev => ({ ...prev, observations: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4 justify-end">
+            <button type="button" onClick={handleCloseModal} className="btn-secondary py-2 text-xs">
+              Cancelar
+            </button>
+            <button type="submit" className="btn-primary py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white shadow-glow-purple border-none">
+              Guardar Evento
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL DE SELECCIÓN DE EXPORTACIÓN PDF */}
+      <Modal
+        isOpen={isPDFModalOpen}
+        onClose={() => setIsPDFModalOpen(false)}
+        title="Exportar Calendario a PDF"
+      >
+        <div className="flex flex-col gap-4 text-brand-gray-light">
+          <p className="text-xs text-brand-gray-muted leading-relaxed">
+            Selecciona el año y los meses que deseas exportar. Cada mes se generará en una página individual (formato horizontal A4) dentro del archivo PDF.
+          </p>
+
+          {/* Selector de Año */}
+          <div className="flex items-center gap-3 bg-brand-black-hover/40 p-3 rounded-lg border border-brand-black-border">
+            <label className="text-xs font-semibold text-brand-gray-muted">Año a exportar:</label>
+            <select
+              value={pdfSelectedYear}
+              onChange={(e) => setPdfSelectedYear(Number(e.target.value))}
+              className="bg-brand-black border border-brand-black-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-red-600"
+            >
+              {[year - 1, year, year + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Acciones Rápidas */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setPdfSelectedMonths([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])}
+              className="px-2.5 py-1 text-[11px] font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded text-brand-gray-light transition-colors"
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setPdfSelectedMonths([])}
+              className="px-2.5 py-1 text-[11px] font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded text-brand-gray-light transition-colors"
+            >
+              Ninguno
+            </button>
+            <button
+              type="button"
+              onClick={() => setPdfSelectedMonths([month])}
+              className="px-2.5 py-1 text-[11px] font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded text-brand-gray-light transition-colors"
+            >
+              Solo mes actual ({monthNames[month]})
+            </button>
+          </div>
+
+          {/* Cuadrícula de Meses */}
+          <div className="grid grid-cols-3 gap-2">
+            {monthNames.map((mName, mIdx) => {
+              const isSelected = pdfSelectedMonths.includes(mIdx);
+              return (
+                <label
+                  key={mIdx}
+                  className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all select-none ${
+                    isSelected
+                      ? 'bg-brand-red-600/10 border-brand-red-600 text-white shadow-glow-red'
+                      : 'bg-brand-black-card border-brand-black-border text-brand-gray-muted hover:border-brand-gray-light/30 hover:text-brand-gray-light'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => {
+                      if (isSelected) {
+                        setPdfSelectedMonths(pdfSelectedMonths.filter((m) => m !== mIdx));
+                      } else {
+                        setPdfSelectedMonths([...pdfSelectedMonths, mIdx]);
+                      }
+                    }}
+                    className="sr-only"
+                  />
+                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] font-bold ${
+                    isSelected ? 'border-brand-red-500 bg-brand-red-600 text-white' : 'border-brand-black-border bg-brand-black text-transparent'
+                  }`}>
+                    {isSelected && '✓'}
+                  </div>
+                  {mName}
+                </label>
+              );
+            })}
+          </div>
+
+          {/* Acciones del Modal */}
+          <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-brand-black-border">
+            <button
+              type="button"
+              onClick={() => setIsPDFModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded-lg transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPDFSubmit}
+              className="px-4 py-2 text-xs font-semibold bg-brand-red-600 hover:bg-brand-red-700 text-white rounded-lg transition-colors shadow-glow-red"
+            >
+              Descargar PDF
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

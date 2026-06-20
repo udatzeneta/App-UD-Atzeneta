@@ -56,6 +56,7 @@ export const Matches: React.FC = () => {
   const [scoreThem, setScoreThem] = useState<string>('');
   const [status, setStatus] = useState<'Programado' | 'Jugado' | 'Suspendido'>('Programado');
   const [time, setTime] = useState('18:00');
+  const [matchday, setMatchday] = useState('');
   const [location, setLocation] = useState('');
   const [objective, setObjective] = useState('');
   const [observations, setObservations] = useState('');
@@ -173,6 +174,7 @@ export const Matches: React.FC = () => {
     setScoreThem('');
     setStatus('Programado');
     setTime('18:00');
+    setMatchday('');
     setLocation('');
     setObjective('');
     setObservations('');
@@ -189,6 +191,7 @@ export const Matches: React.FC = () => {
     setScoreThem(match.score_them !== null ? String(match.score_them) : '');
     setStatus(match.status);
     setTime(match.time || '18:00');
+    setMatchday(match.matchday || '');
     setLocation(match.location || '');
     setObjective(match.objective || '');
     setObservations(match.observations || '');
@@ -220,6 +223,7 @@ export const Matches: React.FC = () => {
       score_them: status === 'Jugado' && scoreThem !== '' ? Number(scoreThem) : null,
       status,
       time,
+      matchday: matchday.trim() || null,
       location: location.trim() || (isLocal ? 'Campo Municipal El Porrejat' : 'Visitante'),
       objective: objective.trim(),
       observations: observations.trim()
@@ -268,9 +272,10 @@ export const Matches: React.FC = () => {
   });
 
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
-  const exportHeaders = ['Fecha', 'Rival', 'Campo', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
+  const exportHeaders = ['Jornada', 'Fecha', 'Rival', 'Campo', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
   const buildExportRows = (): ExportCell[][] =>
     filteredMatches.map(m => [
+      m.matchday ?? '',
       m.date,
       m.rival,
       m.location || (m.is_local ? 'Campo Municipal El Porrejat' : 'Visitante'),
@@ -498,6 +503,7 @@ export const Matches: React.FC = () => {
               <thead>
                 <tr>
                   <th className="table-th">Fecha</th>
+                  <th className="table-th text-center">Jornada</th>
                   <th className="table-th">Rival</th>
                   <th className="table-th text-center">Ubicación</th>
                   <th className="table-th">Competición</th>
@@ -514,8 +520,21 @@ export const Matches: React.FC = () => {
                       <td className="table-td">
                         <div className="flex flex-col">
                           <span className="font-semibold text-brand-gray-light">{match.date}</span>
-                          {match.time && <span className="text-[11px] text-brand-gray-muted mt-0.5">{match.time} hs</span>}
+                          {match.time && (
+                            <span className="text-[11px] text-brand-gray-muted mt-0.5">
+                              {match.time} hs
+                            </span>
+                          )}
                         </div>
+                      </td>
+                      <td className="table-td text-center">
+                        {match.matchday ? (
+                          <span className="font-semibold text-brand-gray-light bg-brand-black-border px-2 py-0.5 rounded text-xs">
+                            J. {match.matchday}
+                          </span>
+                        ) : (
+                          <span className="text-brand-gray-dark">-</span>
+                        )}
                       </td>
                       <td className="table-td font-semibold text-brand-gray-light">
                         <div className="flex items-center gap-2.5">
@@ -615,7 +634,7 @@ export const Matches: React.FC = () => {
                       </div>
                       <div>
                         <h4 className="text-sm font-semibold text-brand-gray-light">{match.rival}</h4>
-                        <span className="text-[11px] text-brand-gray-muted flex items-center gap-1 mt-1">
+                        <span className="text-[11px] text-brand-gray-muted flex flex-wrap items-center gap-1 mt-1">
                           <Calendar className="w-3.5 h-3.5" /> {match.date} {match.time && `| ${match.time} hs`}
                         </span>
                         {match.location && (
@@ -626,11 +645,18 @@ export const Matches: React.FC = () => {
                       </div>
                     </div>
                     
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                      match.is_local ? 'bg-indigo-950/30 text-indigo-300' : 'bg-orange-950/30 text-orange-300'
-                    }`}>
-                      {match.is_local ? 'Local' : 'Visitante'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                        match.is_local ? 'bg-indigo-950/30 text-indigo-300' : 'bg-orange-950/30 text-orange-300'
+                      }`}>
+                        {match.is_local ? 'Local' : 'Visitante'}
+                      </span>
+                      {match.matchday && (
+                        <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-400/30 shadow-[0_0_8px_rgba(34,211,238,0.15)]">
+                          Jornada {match.matchday}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex justify-between items-center border-t border-brand-black-border pt-3">
@@ -704,7 +730,7 @@ export const Matches: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
+            <div>
               <label className="form-label">Fecha del Encuentro</label>
               <input
                 type="date"
@@ -720,6 +746,16 @@ export const Matches: React.FC = () => {
                 className="form-input"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Jornada</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Ej. 1"
+                value={matchday}
+                onChange={(e) => setMatchday(e.target.value)}
               />
             </div>
           </div>
