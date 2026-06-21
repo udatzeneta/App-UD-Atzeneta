@@ -434,3 +434,176 @@ export const exportCalendarToPDF = async (
   // Guardar archivo PDF
   doc.save(`${filename}.pdf`);
 };
+
+/**
+ * Exporta una convocatoria a PDF, incluyendo los equipos, jornada, fecha, hora, lugar y los jugadores convocados.
+ */
+export const exportCallupToPDF = async (
+  match: import('../types').Match,
+  players: import('../types').Player[]
+): Promise<void> => {
+  const { jsPDF } = await import('jspdf');
+  const autoTable = (await import('jspdf-autotable')).default;
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Escudo
+  try {
+    const logoResponse = await fetch(CLUB_LOGO_URL);
+    const logoBlob = await logoResponse.blob();
+    const logoReader = new FileReader();
+    await new Promise<void>((resolve, reject) => {
+      logoReader.onload = () => {
+        // x=14, y=12 (más abajo), w=18 (más estrecho), h=20
+        doc.addImage(logoReader.result as string, 'PNG', 14, 12, 18, 20, undefined, 'FAST');
+        resolve();
+      };
+      logoReader.onerror = reject;
+      logoReader.readAsDataURL(logoBlob);
+    });
+  } catch (e) {
+    console.warn('No se pudo cargar el logo del club para el PDF:', e);
+  }
+
+  doc.setFillColor(...BRAND_RED);
+  doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
+
+  doc.setFontSize(16);
+  doc.setTextColor(...BRAND_RED);
+  doc.text('CONVOCATORIA OFICIAL', 40, 18);
+
+  doc.setFontSize(12);
+  doc.setTextColor(50);
+  const title = match.is_local ? `UD Atzeneta vs ${match.rival}` : `${match.rival} vs UD Atzeneta`;
+  doc.text(title, 40, 25);
+
+  if (match.matchday) {
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Jornada ${match.matchday}`, 40, 31);
+  }
+
+  doc.setFontSize(10);
+  doc.setTextColor(30);
+  doc.text(`Fecha del Partido: ${match.date} ${match.time ? '| ' + match.time + ' hs' : ''}`, 14, 45);
+  if (match.location) doc.text(`Lugar del Partido: ${match.location}`, 14, 51);
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Hora de Convocatoria: ${match.callup_time || '--:--'} hs`, 14, 60);
+  doc.text(`Lugar de Reunión: ${match.callup_location || 'No especificado'}`, 14, 66);
+  doc.setFont('helvetica', 'normal');
+
+  // --- DIBUJAR MANIQUÍ (EQUIPACIÓN) ---
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? [
+      parseInt(result[1], 16),
+      parseInt(result[2], 16),
+      parseInt(result[3], 16)
+    ] : [0, 0, 0];
+  };
+
+  const drawMannequin = (d: any, x: number, y: number, w: number, h: number, shirtHex: string, shortsHex: string, socksHex: string) => {
+    const sw = w / 160;
+    const sh = h / 250;
+
+    const drawPoly = (pts: number[][], color: [number, number, number]) => {
+      d.setFillColor(...color);
+      d.setDrawColor(30, 41, 55);
+      d.setLineWidth(0.3);
+      
+      const vectors = [];
+      for (let i = 1; i < pts.length; i++) {
+        vectors.push([
+          (pts[i][0] - pts[i-1][0]) * sw,
+          (pts[i][1] - pts[i-1][1]) * sh
+        ]);
+      }
+      // vectors, x, y, scale, style, closed
+      d.lines(vectors, x + pts[0][0] * sw, y + pts[0][1] * sh, [1, 1], 'FD', true);
+    };
+
+    const shirt = hexToRgb(shirtHex);
+    const shorts = hexToRgb(shortsHex);
+    const socks = hexToRgb(socksHex);
+
+    // Manga izquierda
+    drawPoly([[50,50], [30,75], [42,82], [55,65]], shirt);
+    // Manga derecha
+    drawPoly([[110,50], [130,75], [118,82], [105,65]], shirt);
+    // Cuerpo
+    drawPoly([[50,50], [110,50], [110,125], [50,125]], shirt);
+    // Pantalón
+    drawPoly([[50,125], [110,125], [112,160], [83,160], [80,145], [77,160], [48,160]], shorts);
+    // Calcetín 1
+    drawPoly([[54,175], [66,175], [66,225], [54,225]], socks);
+    // Calcetín 2
+    drawPoly([[94,175], [106,175], [106,225], [94,225]], socks);
+  };
+
+  const shirtColor = match.kit_shirt_color || '#C1121F';
+  const shortsColor = match.kit_shorts_color || '#000000';
+  const socksColor = match.kit_socks_color || '#000000';
+
+  drawMannequin(doc, doc.internal.pageSize.width - 30, 16, 16, 25, shirtColor, shortsColor, socksColor);
+  // ------------------------------------
+
+  // Pre-cargar fotos de los jugadores
+  const playerPhotos = await Promise.all(
+    players.map(async (p) => {
+      if (!p.photo_url) return null;
+      try {
+        const res = await fetch(p.photo_url);
+        const blob = await res.blob();
+        return await new Promise<string | null>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {
+        return null;
+      }
+    })
+  );
+
+  // Tabla de jugadores
+  const headers = ['Foto', 'Dorsal', 'Nombre'];
+  const rows = players.map(p => [
+    '', // Espacio para la foto
+    p.dorsal?.toString() || '-',
+    p.full_name
+  ]);
+
+  autoTable(doc, {
+    head: [headers],
+    body: rows,
+    startY: 75,
+    styles: { fontSize: 10, cellPadding: 3, minCellHeight: 15, valign: 'middle' },
+    columnStyles: {
+      0: { cellWidth: 20, halign: 'center' },
+      1: { cellWidth: 20, halign: 'center' },
+      2: { halign: 'left' }
+    },
+    headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold', minCellHeight: 8 },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    theme: 'grid',
+    tableLineColor: BRAND_BLACK,
+    tableLineWidth: 0.1,
+    didDrawCell: (data: any) => {
+      if (data.column.index === 0 && data.cell.section === 'body') {
+        const photoData = playerPhotos[data.row.index];
+        if (photoData) {
+          // Extraemos el tipo de la data URI si es posible, por defecto PNG
+          const match = photoData.match(/^data:image\/(png|jpeg|jpg);/);
+          const format = match ? match[1].toUpperCase() : 'PNG';
+          
+          doc.addImage(photoData, format, data.cell.x + 4, data.cell.y + 1.5, 12, 12, undefined, 'FAST');
+        }
+      }
+    }
+  });
+
+  const filename = `Convocatoria_${match.date}_vs_${match.rival.replace(/\s+/g, '_')}`;
+  doc.save(`${filename}.pdf`);
+};

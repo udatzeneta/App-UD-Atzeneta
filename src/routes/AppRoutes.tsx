@@ -8,6 +8,7 @@ import { Calendar } from '../pages/Calendar';
 import { Matches } from '../pages/Matches';
 import { MatchesStats } from '../pages/MatchesStats';
 import { Players } from '../pages/Players';
+import { PlayerDetail } from '../pages/PlayerDetail';
 import { Trainings } from '../pages/Trainings';
 import { Attendance } from '../pages/Attendance';
 import { Fines } from '../pages/Fines';
@@ -88,6 +89,7 @@ export const AppRoutes: React.FC = () => {
 
           <Route element={<ProtectedRoute pageKey="players" />}>
             <Route path="/players" element={<Players />} />
+            <Route path="/players/:playerId" element={<PlayerDetail />} />
           </Route>
 
           <Route element={<ProtectedRoute pageKey="trainings" />}>

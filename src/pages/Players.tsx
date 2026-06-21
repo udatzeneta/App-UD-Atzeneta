@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +15,7 @@ import { useToast } from '../context/ToastContext';
 import { exportToCSV, exportToPDF } from '../utils/export';
 
 export const Players: React.FC = () => {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -699,7 +701,7 @@ export const Players: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Listado de Jugadores */}
-        <div className={`${selectedPlayer ? 'lg:col-span-6 xl:col-span-5' : 'lg:col-span-12'} space-y-4`}>
+        <div className="lg:col-span-12 space-y-4">
           {isLoading ? (
             <TableSkeleton />
           ) : filteredPlayers.length === 0 ? (
@@ -719,12 +721,9 @@ export const Players: React.FC = () => {
                   <div 
                     key={player.id} 
                     onClick={() => {
-                      setSelectedPlayer(player);
-                      setDetailTab('ficha');
+                      navigate(`/players/${player.id}`);
                     }}
-                    className={`dashboard-card p-4 flex flex-col justify-between cursor-pointer border hover:border-brand-red-600/35 transition-all group ${
-                      isSelected ? 'border-brand-red-600 bg-brand-black-card shadow-glow-red' : 'border-brand-black-border'
-                    }`}
+                    className={`dashboard-card p-4 flex flex-col justify-between cursor-pointer border hover:border-brand-red-600/35 transition-all group border-brand-black-border`}
                   >
                     <div className="flex gap-3">
                       {/* Foto */}

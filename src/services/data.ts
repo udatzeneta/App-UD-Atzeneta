@@ -1,6 +1,6 @@
 import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
-import { Training, Match, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent } from '../types';
+import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent } from '../types';
 
 export const dataService = {
   // =====================================================================
@@ -75,42 +75,177 @@ export const dataService = {
     }
   },
 
+  async getTeams(): Promise<Team[]> {
+    if (isMockMode) {
+      await delay(200);
+      return [
+        { id: '1', ffcv_cod: '123', name: 'CD Alcoyano', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000030064_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2025-2026' },
+        { id: '2', ffcv_cod: '456', name: 'Ontinyent 1931 CF', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000055106_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2025-2026' },
+        { id: '3', ffcv_cod: '789', name: 'CD Castellón B', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000030026_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2025-2026' }
+      ];
+    } else {
+      const { data, error } = await supabase
+        .from('teams')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return data as Team[];
+    }
+  },
+
+  async createTeam(item: Omit<Team, 'id' | 'created_at' | 'updated_at'>): Promise<Team> {
+    if (isMockMode) {
+      await delay(200);
+      return { ...item, id: `team-${Date.now()}` } as Team;
+    } else {
+      const { data, error } = await supabase
+        .from('teams')
+        .insert(item)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Team;
+    }
+  },
+
   async getMatches(): Promise<Match[]> {
-    const { data, error } = await supabase
-      .from('matches')
-      .select('*')
-      .order('date', { ascending: false });
-    if (error) throw error;
-    return data as Match[];
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getMatches().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } else {
+      const { data, error } = await supabase
+        .from('matches')
+        .select('*')
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data as Match[];
+    }
+  },
+
+  async getPlayerMatchStats(matchId: string): Promise<PlayerMatchStats[]> {
+    if (isMockMode) {
+      await delay(200);
+      try {
+        const data = localStorage.getItem('ud_atzeneta_player_match_stats');
+        const list = data ? JSON.parse(data) : [];
+        return list.filter((x: any) => x.match_id === matchId) as PlayerMatchStats[];
+      } catch (e) {
+        console.error("Error parseando player_match_stats:", e);
+        return [];
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('player_match_stats')
+        .select('*')
+        .eq('match_id', matchId);
+      if (error) throw error;
+      return data as PlayerMatchStats[];
+    }
+  },
+
+  async savePlayerMatchStats(matchId: string, items: Omit<PlayerMatchStats, 'id' | 'created_at' | 'updated_at'>[]): Promise<PlayerMatchStats[]> {
+    if (isMockMode) {
+      await delay(300);
+      const data = localStorage.getItem('ud_atzeneta_player_match_stats');
+      let list = data ? JSON.parse(data) : [];
+      // Eliminar previos de este partido
+      list = list.filter((x: any) => x.match_id !== matchId);
+      
+      // Agregar nuevos
+      const newItems = items.map((x, idx) => ({
+        ...x,
+        id: `pms-${Date.now()}-${idx}`
+      }));
+      list.push(...newItems);
+      localStorage.setItem('ud_atzeneta_player_match_stats', JSON.stringify(list));
+
+      // Actualizar estadísticas globales del jugador simulado
+      const mockPlayersData = MockDatabase.getPlayers();
+      const updatedPlayers = mockPlayersData.map((player: Player) => {
+        const playerStats = list.filter((x: any) => x.player_id === player.id);
+        const matches_played = playerStats.filter((x: any) => x.minutes_played > 0).length;
+        const minutes_played = playerStats.reduce((sum: number, x: any) => sum + (x.minutes_played || 0), 0);
+        const goals = playerStats.reduce((sum: number, x: any) => sum + (x.goals || 0), 0);
+        const assists = playerStats.reduce((sum: number, x: any) => sum + (x.assists || 0), 0);
+        const yellow_cards = playerStats.reduce((sum: number, x: any) => sum + (x.yellow_cards || 0), 0);
+        const red_cards = playerStats.filter((x: any) => x.red_card === true).length;
+        
+        return {
+          ...player,
+          matches_played,
+          minutes_played,
+          goals,
+          assists,
+          yellow_cards,
+          red_cards
+        };
+      });
+      MockDatabase.setPlayers(updatedPlayers);
+      
+      return newItems as PlayerMatchStats[];
+    } else {
+      const { data, error } = await supabase
+        .from('player_match_stats')
+        .upsert(items, { onConflict: 'player_id,match_id' })
+        .select();
+      if (error) throw error;
+      return data as PlayerMatchStats[];
+    }
   },
 
   async createMatch(item: Omit<Match, 'id'>): Promise<Match> {
-    const { data, error } = await supabase
-      .from('matches')
-      .insert(item)
-      .select()
-      .single();
-    if (error) throw error;
-    return data as Match;
+    if (isMockMode) {
+      await delay(300);
+      const list = MockDatabase.getMatches();
+      const newItem: Match = { ...item, id: `m-${Date.now()}` };
+      list.push(newItem);
+      MockDatabase.setMatches(list);
+      return newItem;
+    } else {
+      const { data, error } = await supabase
+        .from('matches')
+        .insert(item)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Match;
+    }
   },
 
   async updateMatch(id: string, item: Partial<Match>): Promise<Match> {
-    const { data, error } = await supabase
-      .from('matches')
-      .update(item)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
-    return data as Match;
+    if (isMockMode) {
+      await delay(300);
+      const list = MockDatabase.getMatches();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx === -1) throw new Error('Partido no encontrado');
+      list[idx] = { ...list[idx], ...item };
+      MockDatabase.setMatches(list);
+      return list[idx];
+    } else {
+      const { data, error } = await supabase
+        .from('matches')
+        .update(item)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Match;
+    }
   },
 
   async deleteMatch(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('matches')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
+    if (isMockMode) {
+      await delay(300);
+      let list = MockDatabase.getMatches();
+      list = list.filter(x => x.id !== id);
+      MockDatabase.setMatches(list);
+    } else {
+      const { error } = await supabase
+        .from('matches')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    }
   },
 
   async upsertMatches(items: Omit<Match, 'id'>[]): Promise<Match[]> {

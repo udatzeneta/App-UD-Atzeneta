@@ -6,9 +6,10 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  maxWidth?: string;
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidth = 'max-w-lg' }) => {
   // Manejar escape de teclado
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -35,7 +36,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
       />
       
       {/* Caja de Diálogo Modal */}
-      <div className="bg-brand-black-card border border-brand-black-border w-full max-w-lg rounded-xl shadow-premium overflow-hidden z-10 animate-slide-up flex flex-col max-h-[90vh]">
+      <div className={`bg-brand-black-card border border-brand-black-border w-full ${maxWidth} rounded-xl shadow-premium overflow-hidden z-10 animate-slide-up flex flex-col max-h-[90vh]`}>
         
         {/* Cabecera del Modal */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-brand-black-border bg-brand-black-hover/40">

@@ -4,7 +4,7 @@ import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { Modal } from '../components/Modal';
-import { Training, Match, SocialEvent } from '../types';
+import { Training, Match, SocialEvent, Team } from '../types';
 import {
   Dumbbell, Trophy, ChevronLeft, ChevronRight, Calendar as CalendarIcon,
   Clock, MapPin, Plus, Target, Users, Sparkles, Trash2, FileText
@@ -77,6 +77,33 @@ export const Calendar: React.FC = () => {
     queryKey: ['matches'],
     queryFn: () => dataService.getMatches()
   });
+
+  const { data: dbTeams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => dataService.getTeams()
+  });
+
+  const [isCustomRival, setIsCustomRival] = useState(false);
+
+  // Redefinición local de getTeamLogo para usar los escudos de la base de datos
+  const getTeamLogo = (teamName: string): string => {
+    const cleanName = teamName.replace('vs ', '').trim();
+    const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const target = normalize(cleanName);
+    
+    // 1. Buscar en los equipos de la base de datos
+    const dbTeam = dbTeams.find(t => normalize(t.name) === target);
+    if (dbTeam?.shield_url) {
+      return dbTeam.shield_url;
+    }
+    
+    // 2. Buscar en logos.json
+    const matchKey = Object.keys(logos).find(key => normalize(key) === target);
+    if (matchKey) {
+      return (logos as Record<string, string>)[matchKey];
+    }
+    return '/club-logo.png';
+  };
 
   const { data: socialEvents = [] } = useQuery({
     queryKey: ['socialEvents'],
@@ -301,6 +328,7 @@ export const Calendar: React.FC = () => {
 
   const handleOpenMatchForm = () => {
     setModalType('match');
+    setIsCustomRival(false);
     const today = new Date();
     const defaultDay = today.getMonth() === month && today.getFullYear() === year ? today.getDate() : 1;
     const targetDay = selectedDay || defaultDay;
@@ -612,10 +640,8 @@ export const Calendar: React.FC = () => {
                         </div>
                         {isMatch && (
                           <div className="text-[9px] font-semibold flex flex-wrap items-center gap-1">
-                            {evt.is_local ? (
-                              <span className="text-green-400">🏟️ Local</span>
-                            ) : (
-                              <span className="text-blue-400">✈️ Visitante</span>
+                            {evt.subtitle && (
+                              <span className="text-yellow-400">🏆 {evt.subtitle}</span>
                             )}
                             {evt.matchday && (
                               <span className="text-[9px] font-extrabold text-cyan-400 bg-cyan-950/80 px-1 py-0.2 rounded border border-cyan-400/40 shadow-[0_0_8px_rgba(34,211,238,0.25)]">
@@ -1149,14 +1175,52 @@ export const Calendar: React.FC = () => {
               <Users className="w-3.5 h-3.5 inline mr-1" />
               Equipo Rival
             </label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Ej. CD Alcoyano, Ontinyent 1931 CF..."
-              value={matchForm.rival}
-              onChange={(e) => setMatchForm(prev => ({ ...prev, rival: e.target.value }))}
-              required
-            />
+            {!isCustomRival ? (
+              <div className="flex gap-2">
+                <select
+                  className="form-input bg-brand-black-bg flex-1"
+                  value={matchForm.rival}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "custom") {
+                      setIsCustomRival(true);
+                      setMatchForm(prev => ({ ...prev, rival: "" }));
+                    } else {
+                      setMatchForm(prev => ({ ...prev, rival: val }));
+                    }
+                  }}
+                  required
+                >
+                  <option value="">-- Selecciona un rival --</option>
+                  {dbTeams.map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                  <option value="custom">✍️ Otro (Escribir nombre)...</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="form-input flex-1"
+                  placeholder="Escribe el nombre del rival"
+                  value={matchForm.rival}
+                  onChange={(e) => setMatchForm(prev => ({ ...prev, rival: e.target.value }))}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomRival(false);
+                    setMatchForm(prev => ({ ...prev, rival: "" }));
+                  }}
+                  className="btn-secondary px-3.5 py-2 text-xs font-semibold hover:bg-brand-black-hover border border-brand-black-border"
+                  title="Volver a la lista de equipos"
+                >
+                  Lista
+                </button>
+              </div>
+            )}
           </div>
 
           <div>

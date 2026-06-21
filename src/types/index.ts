@@ -51,6 +51,27 @@ export interface Training {
   created_at?: string;
 }
 
+export interface Team {
+  id: string;
+  ffcv_cod: string;
+  name: string;
+  shield_url: string | null;
+  competition: string;
+  cod_competicion?: string;
+  cod_grupo: string;
+  season: string;
+  club?: string | null;
+  campo?: string | null;
+  web?: string | null;
+  email?: string | null;
+  telefono?: string | null;
+  horario?: string | null;
+  staff_tecnicos?: string[];
+  staff_auxiliares?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Match {
   id: string;
   date: string;
@@ -65,7 +86,33 @@ export interface Match {
   objective?: string;
   observations?: string;
   matchday?: string | null;
+  callup_time?: string | null;
+  callup_location?: string | null;
+  kit_shirt_color?: string | null;
+  kit_shorts_color?: string | null;
+  kit_socks_color?: string | null;
+  tactical_system?: string | null;
   created_at?: string;
+}
+
+export interface PlayerMatchStats {
+  id: string;
+  player_id: string;
+  match_id: string;
+  is_called_up: boolean;
+  position?: string;
+  is_starter?: boolean;
+  substituted_for?: string;
+  substituted_minute?: number;
+  minutes_played: number;
+  goals: number;
+  assists: number;
+  yellow_cards: number;
+  red_card: boolean;
+  rating?: number;
+  comments?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Fine {

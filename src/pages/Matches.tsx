@@ -6,11 +6,12 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
-import { Match } from '../types';
-import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
+import { Match, Team, Player } from '../types';
+import { exportToCSV, exportToPDF, ExportCell, exportCallupToPDF } from '../utils/export';
 import {
   Trophy, Search, Download, FileText, Plus, Edit2, Trash2,
-  Calendar, CheckCircle, HelpCircle, XCircle, RefreshCw
+  Calendar, CheckCircle, HelpCircle, XCircle, RefreshCw,
+  Check, Users, Clock, Upload, Star
 } from 'lucide-react';
 import logos from '../assets/logos.json';
 
@@ -60,6 +61,10 @@ export const Matches: React.FC = () => {
   const [location, setLocation] = useState('');
   const [objective, setObjective] = useState('');
   const [observations, setObservations] = useState('');
+  const [isCustomRival, setIsCustomRival] = useState(false);
+  const [customShieldUrl, setCustomShieldUrl] = useState('');
+  
+  const [tacticalSystem, setTacticalSystem] = useState('');
 
   // Estados para sincronización FFCV
   const [ffcvCompeticion, setFfcvCompeticion] = useState('29509167'); // Primera FFCV por defecto
@@ -71,7 +76,261 @@ export const Matches: React.FC = () => {
     queryFn: () => dataService.getMatches()
   });
 
+  // Consultar equipos de la base de datos
+  const { data: dbTeams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => dataService.getTeams()
+  });
+
+  // Consultar plantilla de jugadores
+  const { data: dbPlayers = [] } = useQuery<Player[]>({
+    queryKey: ['players'],
+    queryFn: () => dataService.getPlayers()
+  });
+
+
+  // Estados para Convocatoria y Estadísticas por Partido
+  const [selectedMatchForActions, setSelectedMatchForActions] = useState<Match | null>(null);
+  const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+
+  const [selectedSquadPlayerIds, setSelectedSquadPlayerIds] = useState<string[]>([]);
+  const [playerStatsForm, setPlayerStatsForm] = useState<Record<string, { minutes_played: number; goals: number; assists: number; yellow_cards: number; red_card: boolean }>>({});
+
+  // Estados para Convocatoria y Ropa de Juego
+  const [callupTime, setCallupTime] = useState('');
+  const [callupLocation, setCallupLocation] = useState('');
+  const [kitShirtColor, setKitShirtColor] = useState('#C1121F'); // Rojo por defecto
+  const [kitShortsColor, setKitShortsColor] = useState('#000000'); // Negro por defecto
+  const [kitSocksColor, setKitSocksColor] = useState('#000000'); // Negro por defecto
+
+  // Redefinición local de getTeamLogo para usar los escudos de la base de datos
+  const getTeamLogo = (teamName: string): string => {
+    const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const target = normalize(teamName);
+    
+    // 1. Buscar en los equipos de la base de datos
+    const dbTeam = dbTeams.find(t => normalize(t.name) === target);
+    if (dbTeam?.shield_url) {
+      return dbTeam.shield_url;
+    }
+    
+    // 2. Buscar en logos.json
+    const matchKey = Object.keys(logos).find(key => normalize(key) === target);
+    if (matchKey) {
+      return (logos as Record<string, string>)[matchKey];
+    }
+    return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+  };
+
+  // Handlers para acciones de partido
+  const handleMatchClick = (match: Match) => {
+    setSelectedMatchForActions(match);
+    setIsActionModalOpen(true);
+  };
+
+  const handleOpenSquadModal = async () => {
+    if (!selectedMatchForActions) return;
+    setIsActionModalOpen(false);
+    try {
+      const currentStats = await dataService.getPlayerMatchStats(selectedMatchForActions.id);
+      const calledUpIds = currentStats.filter(x => x.is_called_up).map(x => x.player_id);
+      setSelectedSquadPlayerIds(calledUpIds);
+
+      // Cargar valores actuales del partido
+      setCallupTime(selectedMatchForActions.callup_time || '');
+      setCallupLocation(selectedMatchForActions.callup_location || '');
+      setKitShirtColor(selectedMatchForActions.kit_shirt_color || '#C1121F');
+      setKitShortsColor(selectedMatchForActions.kit_shorts_color || '#000000');
+      setKitSocksColor(selectedMatchForActions.kit_socks_color || '#000000');
+
+      setIsSquadModalOpen(true);
+    } catch (err: any) {
+      showToast('error', 'Error', 'No se pudieron cargar las convocatorias.');
+    }
+  };
+
+  const handleOpenStatsModal = async (match: Match) => {
+    setSelectedMatchForActions(match);
+    setIsStatsModalOpen(true);
+    setTacticalSystem(match.tactical_system || '');
+    
+    try {
+      const stats = await dataService.getPlayerMatchStats(match.id);
+      
+      const formState: Record<string, any> = {};
+      stats.forEach(st => {
+        formState[st.player_id] = {
+          position: st.position || '',
+          is_starter: st.is_starter !== false,
+          substituted_for: st.substituted_for || '',
+          substituted_minute: st.substituted_minute || 0,
+          minutes_played: st.minutes_played || 0,
+          goals: st.goals || 0,
+          assists: st.assists || 0,
+          yellow_cards: st.yellow_cards || 0,
+          red_card: st.red_card || false,
+          rating: st.rating || 0,
+          comments: st.comments || ''
+        };
+      });
+      setPlayerStatsForm(formState);
+      
+      const calledUpIds = stats.filter(st => st.is_called_up).map(st => st.player_id);
+      setSelectedSquadPlayerIds(calledUpIds);
+    } catch (err: any) {
+      console.error("Error fetching match stats:", err);
+    }
+  };
+
+  const saveSquadMutation = useMutation({
+    mutationFn: async ({ 
+      matchId, 
+      playerIds,
+      callupTime,
+      callupLocation,
+      kitShirtColor,
+      kitShortsColor,
+      kitSocksColor
+    }: { 
+      matchId: string; 
+      playerIds: string[];
+      callupTime: string;
+      callupLocation: string;
+      kitShirtColor: string;
+      kitShortsColor: string;
+      kitSocksColor: string;
+    }) => {
+      const payload = dbPlayers.map(p => {
+        const isCalledUp = playerIds.includes(p.id);
+        return {
+          match_id: matchId,
+          player_id: p.id,
+          is_called_up: isCalledUp,
+          minutes_played: 0,
+          goals: 0,
+          assists: 0,
+          yellow_cards: 0,
+          red_card: false
+        };
+      });
+      
+      // 1. Guardar convocatoria
+      await dataService.savePlayerMatchStats(matchId, payload);
+      
+      // 2. Guardar detalles de la convocatoria en el partido
+      await dataService.updateMatch(matchId, {
+        callup_time: callupTime || null,
+        callup_location: callupLocation || null,
+        kit_shirt_color: kitShirtColor,
+        kit_shorts_color: kitShortsColor,
+        kit_socks_color: kitSocksColor
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      showToast('success', 'Convocatoria guardada', 'La convocatoria y equipación del partido se han guardado correctamente.');
+      setIsSquadModalOpen(false);
+    },
+    onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo guardar la convocatoria.')
+  });
+
+  const saveStatsMutation = useMutation({
+    mutationFn: ({ matchId, payload }: { matchId: string; payload: any[] }) => {
+      return dataService.savePlayerMatchStats(matchId, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      showToast('success', 'Estadísticas guardadas', 'Las estadísticas se han guardado y los récords globales se han actualizado.');
+      setIsStatsModalOpen(false);
+    },
+    onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudieron guardar las estadísticas.')
+  });
+
+  const handleSaveSquad = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMatchForActions) return;
+    saveSquadMutation.mutate({
+      matchId: selectedMatchForActions.id,
+      playerIds: selectedSquadPlayerIds,
+      callupTime,
+      callupLocation,
+      kitShirtColor,
+      kitShortsColor,
+      kitSocksColor
+    });
+  };
+
+  const handleExportCallupPDF = async () => {
+    if (!selectedMatchForActions) return;
+    const calledUpPlayers = dbPlayers.filter(p => selectedSquadPlayerIds.includes(p.id));
+    if (calledUpPlayers.length === 0) {
+      showToast('info', 'Exportar', 'Debes seleccionar al menos un jugador para exportar la convocatoria.');
+      return;
+    }
+    await exportCallupToPDF(selectedMatchForActions, calledUpPlayers);
+    showToast('success', 'PDF Descargado', 'Se ha exportado la convocatoria.');
+  };
+
+  const handleSaveStats = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMatchForActions) return;
+
+    // Actualizar sistema táctico en el partido
+    try {
+      await updateMutation.mutateAsync({
+        id: selectedMatchForActions.id,
+        item: { tactical_system: tacticalSystem }
+      });
+    } catch (err) {
+      console.error("Error updating match tactical system", err);
+    }
+
+    const payload = Object.entries(playerStatsForm).map(([playerId, stats]) => ({
+      player_id: playerId,
+      match_id: selectedMatchForActions.id,
+      is_called_up: selectedSquadPlayerIds.includes(playerId),
+      position: stats.position || null,
+      is_starter: stats.is_starter !== false,
+      substituted_for: stats.substituted_for || null,
+      substituted_minute: stats.substituted_minute || 0,
+      minutes_played: stats.minutes_played || 0,
+      goals: stats.goals || 0,
+      assists: stats.assists || 0,
+      yellow_cards: stats.yellow_cards || 0,
+      red_card: stats.red_card || false,
+      rating: stats.rating || 0,
+      comments: stats.comments || ''
+    }));
+
+    saveStatsMutation.mutate({ matchId: selectedMatchForActions.id, payload });
+  };
+
+  const togglePlayerInSquad = (playerId: string) => {
+    setSelectedSquadPlayerIds(prev => 
+      prev.includes(playerId)
+        ? prev.filter(id => id !== playerId)
+        : [...prev, playerId]
+    );
+  };
+
+  const handlePlayerStatChange = (playerId: string, field: keyof typeof playerStatsForm[string], value: any) => {
+    setPlayerStatsForm(prev => ({
+      ...prev,
+      [playerId]: {
+        ...prev[playerId],
+        [field]: value
+      }
+    }));
+  };
+
   // Mutaciones
+  const createTeamMutation = useMutation({
+    mutationFn: (newTeam: Omit<Team, 'id' | 'created_at' | 'updated_at'>) => dataService.createTeam(newTeam),
+  });
+
   const createMutation = useMutation({
     mutationFn: (newMatch: Omit<Match, 'id'>) => dataService.createMatch(newMatch),
     onSuccess: () => {
@@ -167,6 +426,8 @@ export const Matches: React.FC = () => {
   const handleOpenCreateModal = () => {
     setEditingMatch(null);
     setRival('');
+    setIsCustomRival(false);
+    setCustomShieldUrl('');
     setDate(new Date().toISOString().split('T')[0]);
     setIsLocal(true);
     setCompetition('Liga');
@@ -184,6 +445,14 @@ export const Matches: React.FC = () => {
   const handleOpenEditModal = (match: Match) => {
     setEditingMatch(match);
     setRival(match.rival);
+
+    // Comprobar si el rival ya existe en los equipos de la base de datos
+    const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const target = normalize(match.rival);
+    const inDb = dbTeams.some(t => normalize(t.name) === target);
+    setIsCustomRival(match.rival ? !inDb : false);
+    setCustomShieldUrl('');
+
     setDate(match.date);
     setIsLocal(match.is_local);
     setCompetition(match.competition);
@@ -201,9 +470,10 @@ export const Matches: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingMatch(null);
+    setCustomShieldUrl('');
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rival.trim()) {
       showToast('error', 'Validación', 'El nombre del rival es obligatorio.');
@@ -214,8 +484,29 @@ export const Matches: React.FC = () => {
       return;
     }
 
+    let finalRivalName = rival.trim();
+
+    if (isCustomRival) {
+      const exists = dbTeams.some(t => t.name.toLowerCase() === finalRivalName.toLowerCase());
+      if (!exists) {
+        try {
+          await createTeamMutation.mutateAsync({
+            ffcv_cod: `CUSTOM-${Date.now()}`,
+            name: finalRivalName,
+            shield_url: customShieldUrl || null,
+            competition: competition,
+            cod_grupo: 'CUSTOM',
+            season: '2025-2026'
+          });
+          queryClient.invalidateQueries({ queryKey: ['teams'] });
+        } catch (err) {
+          console.error("Error creando equipo custom:", err);
+        }
+      }
+    }
+
     const payload = {
-      rival: rival.trim(),
+      rival: finalRivalName,
       date,
       is_local: isLocal,
       competition,
@@ -516,7 +807,11 @@ export const Matches: React.FC = () => {
                 {filteredMatches.map((match) => {
                   const hasPlayed = match.status === 'Jugado';
                   return (
-                    <tr key={match.id} className="hover:bg-brand-black-hover/20 transition-colors">
+                    <tr 
+                      key={match.id} 
+                      onClick={() => handleMatchClick(match)}
+                      className="hover:bg-brand-black-hover/20 transition-colors cursor-pointer"
+                    >
                       <td className="table-td">
                         <div className="flex flex-col">
                           <span className="font-semibold text-brand-gray-light">{match.date}</span>
@@ -537,18 +832,25 @@ export const Matches: React.FC = () => {
                         )}
                       </td>
                       <td className="table-td font-semibold text-brand-gray-light">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 shrink-0 border border-brand-black-border/10 shadow-sm">
-                            <img 
-                              src={getTeamLogo(match.rival)} 
-                              alt={match.rival} 
-                              className="w-full h-full object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
-                              }}
-                            />
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 shrink-0 border border-brand-black-border/10 shadow-sm">
+                              <img 
+                                src={getTeamLogo(match.rival)} 
+                                alt={match.rival} 
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+                                }}
+                              />
+                            </div>
+                            <span>{match.rival}</span>
                           </div>
-                          <span>{match.rival}</span>
+                          {(match.callup_time || match.callup_location) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit">
+                              <Users className="w-3 h-3" /> Convocatoria
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="table-td text-center">
@@ -590,7 +892,7 @@ export const Matches: React.FC = () => {
                           <div className="flex gap-2 justify-end">
                             {canEdit && (
                               <button 
-                                onClick={() => handleOpenEditModal(match)}
+                                onClick={(e) => { e.stopPropagation(); handleOpenEditModal(match); }}
                                 className="text-brand-gray-muted hover:text-brand-gray-light p-1.5 rounded bg-brand-black-hover hover:bg-brand-black-border border border-brand-black-border transition-all"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -598,7 +900,7 @@ export const Matches: React.FC = () => {
                             )}
                             {canDelete && (
                               <button 
-                                onClick={() => handleDelete(match.id)}
+                                onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }}
                                 className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded bg-brand-black-hover hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/20 transition-all"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -619,7 +921,11 @@ export const Matches: React.FC = () => {
             {filteredMatches.map((match) => {
               const hasPlayed = match.status === 'Jugado';
               return (
-                <div key={match.id} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3">
+                <div 
+                  key={match.id} 
+                  onClick={() => handleMatchClick(match)}
+                  className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3 cursor-pointer hover:border-brand-black-border/80 transition-colors"
+                >
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
@@ -633,7 +939,14 @@ export const Matches: React.FC = () => {
                         />
                       </div>
                       <div>
-                        <h4 className="text-sm font-semibold text-brand-gray-light">{match.rival}</h4>
+                        <h4 className="text-sm font-semibold text-brand-gray-light flex flex-col gap-1">
+                          {match.rival}
+                          {(match.callup_time || match.callup_location) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit">
+                              <Users className="w-3 h-3" /> Convocatoria
+                            </span>
+                          )}
+                        </h4>
                         <span className="text-[11px] text-brand-gray-muted flex flex-wrap items-center gap-1 mt-1">
                           <Calendar className="w-3.5 h-3.5" /> {match.date} {match.time && `| ${match.time} hs`}
                         </span>
@@ -686,7 +999,7 @@ export const Matches: React.FC = () => {
                     <div className="flex gap-2">
                       {canEdit && (
                         <button 
-                          onClick={() => handleOpenEditModal(match)}
+                          onClick={(e) => { e.stopPropagation(); handleOpenEditModal(match); }}
                           className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" /> Editar
@@ -694,7 +1007,7 @@ export const Matches: React.FC = () => {
                       )}
                       {canDelete && (
                         <button 
-                          onClick={() => handleDelete(match.id)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }}
                           className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-red-600 flex items-center gap-1"
                         >
                           <Trash2 className="w-3 h-3" /> Borrar
@@ -720,13 +1033,91 @@ export const Matches: React.FC = () => {
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="form-label">Nombre del Club Rival</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="CD Alcoyano"
-              value={rival}
-              onChange={(e) => setRival(e.target.value)}
-            />
+            {!isCustomRival ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  list="teams-list"
+                  className="form-input bg-brand-black-bg flex-1"
+                  placeholder="-- Buscar y seleccionar un rival --"
+                  value={rival}
+                  onChange={(e) => setRival(e.target.value)}
+                  required
+                />
+                <datalist id="teams-list">
+                  {dbTeams.map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                </datalist>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomRival(true);
+                    setRival("");
+                  }}
+                  className="btn-secondary px-3.5 py-2 text-xs font-semibold hover:bg-brand-black-hover border border-brand-black-border"
+                  title="Añadir rival no existente"
+                >
+                  Nuevo
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="form-input flex-1"
+                    placeholder="Escribe el nombre del rival"
+                    value={rival}
+                    onChange={(e) => setRival(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomRival(false);
+                      setRival("");
+                      setCustomShieldUrl("");
+                    }}
+                    className="btn-secondary px-3.5 py-2 text-xs font-semibold hover:bg-brand-black-hover border border-brand-black-border"
+                    title="Volver a la lista de equipos"
+                  >
+                    Lista
+                  </button>
+                </div>
+                <div>
+                   <label className="text-[10px] text-brand-gray-muted block mb-1">Escudo del Rival (Opcional)</label>
+                   <div className="flex gap-2">
+                     <input 
+                       type="text" 
+                       className="form-input flex-1 text-xs py-2" 
+                       placeholder="URL o subir imagen ➔" 
+                       value={customShieldUrl}
+                       onChange={(e) => setCustomShieldUrl(e.target.value)}
+                     />
+                     <label className="btn-secondary px-3 py-2 text-xs font-semibold cursor-pointer flex items-center justify-center hover:bg-brand-black-hover border border-brand-black-border">
+                       <Upload className="w-3.5 h-3.5 mr-1" />
+                       Subir
+                       <input 
+                         type="file" 
+                         accept="image/*" 
+                         className="hidden" 
+                         onChange={(e) => {
+                           const file = e.target.files?.[0];
+                           if (file) {
+                             const reader = new FileReader();
+                             reader.onload = (ev) => {
+                               setCustomShieldUrl(ev.target?.result as string);
+                             };
+                             reader.readAsDataURL(file);
+                           }
+                         }} 
+                       />
+                     </label>
+                   </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -869,6 +1260,495 @@ export const Matches: React.FC = () => {
             </button>
             <button type="submit" className="btn-primary py-2 text-xs font-semibold">
               Guardar Partido
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL DE ACCIONES (ELEGIR ENTRE CONVOCATORIA O PASAR DATOS)
+          ===================================================================== */}
+      <Modal
+        isOpen={isActionModalOpen}
+        onClose={() => setIsActionModalOpen(false)}
+        title="Acciones de Partido"
+      >
+        <div className="space-y-4 text-center">
+          <p className="text-sm text-brand-gray-light font-medium">
+            ¿Qué deseas hacer con el partido contra <span className="text-brand-red-600 font-bold">{selectedMatchForActions?.rival}</span>?
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <button
+              onClick={handleOpenSquadModal}
+              className="flex flex-col items-center justify-center p-5 bg-brand-black/50 border border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover rounded-xl group transition-all"
+            >
+              <Users className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
+              <span className="text-sm font-bold text-brand-gray-light">Preparar Convocatoria</span>
+              <span className="text-xs text-brand-gray-muted mt-1 text-center">
+                Selecciona la lista de jugadores convocados.
+              </span>
+            </button>
+
+            <button
+              onClick={handleOpenStatsModal}
+              className="flex flex-col items-center justify-center p-5 bg-brand-black/50 border border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover rounded-xl group transition-all"
+            >
+              <Clock className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
+              <span className="text-sm font-bold text-brand-gray-light">Pasar Datos</span>
+              <span className="text-xs text-brand-gray-muted mt-1 text-center">
+                Introduce las estadísticas de rendimiento de los jugadores.
+              </span>
+            </button>
+          </div>
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setIsActionModalOpen(false)}
+              className="btn-secondary py-2 text-xs"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL DE CONVOCATORIA (PREPARAR CONVOCATORIA)
+          ===================================================================== */}
+      <Modal
+        isOpen={isSquadModalOpen}
+        onClose={() => setIsSquadModalOpen(false)}
+        title={`Convocatoria - vs ${selectedMatchForActions?.rival}`}
+      >
+        <form onSubmit={handleSaveSquad} className="space-y-4">
+          
+          {/* Cabecera de Convocatoria con Escudo del Club */}
+          <div className="flex flex-col items-center border-b border-brand-black-border pb-4 mb-4 text-center">
+            <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center p-1.5 mb-2 shadow-premium">
+              <img 
+                src="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png" 
+                alt="UD Atzeneta" 
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <h4 className="text-base font-bold text-brand-gray-light leading-tight">
+              {selectedMatchForActions?.is_local 
+                ? `UD Atzeneta vs ${selectedMatchForActions?.rival}` 
+                : `${selectedMatchForActions?.rival} vs UD Atzeneta`}
+            </h4>
+            {selectedMatchForActions?.matchday && (
+              <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-800/40 px-2 py-0.5 rounded-full mt-1">
+                Jornada {selectedMatchForActions.matchday}
+              </span>
+            )}
+            <span className="text-[11px] text-brand-gray-muted mt-1">
+              🗓️ {selectedMatchForActions?.date} {selectedMatchForActions?.time && `| ⏰ ${selectedMatchForActions.time} hs`}
+            </span>
+          </div>
+
+          {/* Detalles de Convocatoria y Ropa de Juego (Maniquí Interactivo) */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 border-b border-brand-black-border pb-4 mb-4 bg-brand-black-card/40 p-3.5 rounded-xl border border-brand-black-border/60">
+            {/* Columna Maniquí */}
+            <div className="md:col-span-5 flex flex-col items-center justify-center bg-brand-black/30 rounded-lg p-2.5 border border-brand-black-border/40">
+              <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider mb-2">Equipación Oficial</span>
+              <svg width="110" height="185" viewBox="0 0 160 240" className="mx-auto drop-shadow-md">
+                {/* Cabeza del Maniquí */}
+                <circle cx="80" cy="25" r="12" fill="#4B5563" opacity="0.35" />
+                <rect x="76" y="37" width="8" height="14" fill="#4B5563" opacity="0.35" />
+
+                {/* Brazos del Maniquí */}
+                <path d="M 35 75 L 20 120 L 28 123 L 42 80 Z" fill="#4B5563" opacity="0.35" />
+                <path d="M 125 75 L 140 120 L 132 123 L 118 80 Z" fill="#4B5563" opacity="0.35" />
+
+                {/* Piernas del Maniquí (Piel expuesta) */}
+                <rect x="55" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
+                <rect x="95" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
+
+                {/* Camiseta (Mangas) */}
+                <path d="M 50 50 L 30 75 L 42 82 L 55 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+                <path d="M 110 50 L 130 75 L 118 82 L 105 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+
+                {/* Camiseta (Cuerpo) */}
+                <path d="M 50 50 L 110 50 L 110 125 L 50 125 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+
+                {/* Cuello de la Camiseta */}
+                <path d="M 70 50 Q 80 62 90 50 Z" fill="#1F2937" stroke="#1F2937" strokeWidth="1" />
+
+                {/* Escudo del Club en el pecho */}
+                <image
+                  href="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png"
+                  x="82"
+                  y="65"
+                  width="16"
+                  height="16"
+                />
+
+                {/* Pantalón Corto */}
+                <path d="M 50 125 L 110 125 L 112 160 L 83 160 L 80 145 L 77 160 L 48 160 Z" fill={kitShortsColor} stroke="#1F2937" strokeWidth="1" />
+
+                {/* Medias/Calzas */}
+                <path d="M 54 175 L 66 175 L 66 225 L 54 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
+                <path d="M 94 175 L 106 175 L 106 225 L 94 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
+
+                {/* Botas */}
+                <path d="M 54 225 L 46 228 L 54 234 L 68 234 L 66 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
+                <path d="M 94 225 L 92 234 L 106 234 L 114 228 L 106 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
+              </svg>
+            </div>
+
+            {/* Configuración */}
+            <div className="md:col-span-7 space-y-3 text-left">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Convocatoria (Hora)</label>
+                  <input
+                    type="time"
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                    value={callupTime}
+                    onChange={(e) => setCallupTime(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Reunión (Lugar)</label>
+                  <input
+                    type="text"
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                    placeholder="Ej. Campo de fútbol"
+                    value={callupLocation}
+                    onChange={(e) => setCallupLocation(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-brand-black-border/40">
+                <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block">Ropa de Juego</span>
+                
+                {/* Camiseta */}
+                <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
+                  <span className="text-xs text-brand-gray-light font-medium">Camiseta</span>
+                  <div className="flex items-center gap-1.5">
+                    {['#C1121F', '#000000', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setKitShirtColor(col)}
+                        className={`w-4 h-4 rounded-full border transition-all ${
+                          kitShirtColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
+                        }`}
+                        style={{ backgroundColor: col }}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
+                      value={kitShirtColor}
+                      onChange={(e) => setKitShirtColor(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Pantalón */}
+                <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
+                  <span className="text-xs text-brand-gray-light font-medium">Pantalón Corto</span>
+                  <div className="flex items-center gap-1.5">
+                    {['#000000', '#C1121F', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setKitShortsColor(col)}
+                        className={`w-4 h-4 rounded-full border transition-all ${
+                          kitShortsColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
+                        }`}
+                        style={{ backgroundColor: col }}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
+                      value={kitShortsColor}
+                      onChange={(e) => setKitShortsColor(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Medias */}
+                <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
+                  <span className="text-xs text-brand-gray-light font-medium">Medias / Calzas</span>
+                  <div className="flex items-center gap-1.5">
+                    {['#000000', '#C1121F', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setKitSocksColor(col)}
+                        className={`w-4 h-4 rounded-full border transition-all ${
+                          kitSocksColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
+                        }`}
+                        style={{ backgroundColor: col }}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
+                      value={kitSocksColor}
+                      onChange={(e) => setKitSocksColor(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-xs text-brand-gray-muted flex justify-between items-center mb-1 text-left">
+            <span>Selección de Jugadores Convocados:</span>
+            <span className="font-bold text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded">
+              {selectedSquadPlayerIds.length} convocados
+            </span>
+          </div>
+
+          <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 no-scrollbar border border-brand-black-border p-2 rounded-lg bg-brand-black/20">
+            {dbPlayers.length === 0 ? (
+              <div className="text-center py-8 text-brand-gray-muted text-xs italic">
+                No hay jugadores registrados en la plantilla.
+              </div>
+            ) : (
+              dbPlayers.map((player) => {
+                const isSelected = selectedSquadPlayerIds.includes(player.id);
+                return (
+                  <div
+                    key={player.id}
+                    onClick={() => togglePlayerInSquad(player.id)}
+                    className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-brand-red-600/10 border-brand-red-600/50'
+                        : 'bg-brand-black/40 border-brand-black-border hover:border-brand-black-border/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Avatar */}
+                      <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                        {player.photo_url ? (
+                          <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Users className="w-4 h-4 text-brand-gray-dark" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          {player.dorsal && (
+                            <span className="text-[10px] font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none">
+                              {player.dorsal}
+                            </span>
+                          )}
+                          <span className="text-xs font-semibold text-brand-gray-light leading-none">
+                            {player.nickname || player.full_name}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center">
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
+                        isSelected
+                          ? 'bg-brand-red-600 border-brand-red-600 text-white'
+                          : 'border-brand-gray-dark bg-transparent'
+                      }`}>
+                        {isSelected && <Check className="w-3.5 h-3.5" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-2 justify-end">
+            <button
+              type="button"
+              onClick={handleExportCallupPDF}
+              className="btn-secondary py-2 text-xs flex items-center gap-1"
+            >
+              <FileText className="w-3.5 h-3.5" /> Descargar PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSquadModalOpen(false)}
+              className="btn-secondary py-2 text-xs"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saveSquadMutation.isPending}
+              className="btn-primary py-2 text-xs font-semibold flex items-center gap-1"
+            >
+              {saveSquadMutation.isPending ? 'Guardando...' : 'Guardar Convocatoria'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL DE ESTADÍSTICAS (PASAR DATOS)
+          ===================================================================== */}
+      <Modal
+        isOpen={isStatsModalOpen}
+        onClose={() => setIsStatsModalOpen(false)}
+        title={`Pasar Datos - vs ${selectedMatchForActions?.rival}`}
+      >
+        <form onSubmit={handleSaveStats} className="space-y-4">
+          <div className="text-xs text-brand-gray-muted">
+            Introduce las estadísticas para los jugadores convocados para este partido.
+          </div>
+
+          <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1 no-scrollbar border border-brand-black-border p-3 rounded-lg bg-brand-black/20">
+            {dbPlayers.filter(p => selectedSquadPlayerIds.includes(p.id)).length === 0 ? (
+              <div className="text-center py-8 text-brand-gray-muted text-xs italic">
+                No hay jugadores en la convocatoria para este partido.
+              </div>
+            ) : (
+              dbPlayers
+                .filter(p => selectedSquadPlayerIds.includes(p.id))
+                .map((player) => {
+                  const form = playerStatsForm[player.id] || {
+                    minutes_played: 0,
+                    goals: 0,
+                    assists: 0,
+                    yellow_cards: 0,
+                    red_card: false,
+                  };
+                  return (
+                    <div
+                      key={player.id}
+                      className="p-3 rounded-xl border border-brand-black-border bg-brand-black/40 space-y-3"
+                    >
+                      {/* Player info summary */}
+                      <div className="flex items-center gap-3 border-b border-brand-black-border/30 pb-2">
+                        <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                          {player.photo_url ? (
+                            <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <Users className="w-3.5 h-3.5 text-brand-gray-dark" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            {player.dorsal && (
+                              <span className="text-[9px] font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none">
+                                {player.dorsal}
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-brand-gray-light leading-none">
+                              {player.nickname || player.full_name}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stats grid inputs */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                        <div>
+                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
+                            Minutos
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="120"
+                            required
+                            className="form-input text-xs py-1 px-2 w-full text-center"
+                            value={form.minutes_played}
+                            onChange={(e) =>
+                              handlePlayerStatChange(player.id, 'minutes_played', Math.max(0, parseInt(e.target.value) || 0))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
+                            Goles
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="20"
+                            required
+                            className="form-input text-xs py-1 px-2 w-full text-center"
+                            value={form.goals}
+                            onChange={(e) =>
+                              handlePlayerStatChange(player.id, 'goals', Math.max(0, parseInt(e.target.value) || 0))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
+                            Asist.
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="20"
+                            required
+                            className="form-input text-xs py-1 px-2 w-full text-center"
+                            value={form.assists}
+                            onChange={(e) =>
+                              handlePlayerStatChange(player.id, 'assists', Math.max(0, parseInt(e.target.value) || 0))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
+                            Amarillas
+                          </label>
+                          <select
+                            className="form-input text-xs py-1 px-1.5 w-full bg-brand-black-bg"
+                            value={form.yellow_cards}
+                            onChange={(e) =>
+                              handlePlayerStatChange(player.id, 'yellow_cards', parseInt(e.target.value) || 0)
+                            }
+                          >
+                            <option value={0}>0</option>
+                            <option value={1}>1</option>
+                            <option value={2}>2</option>
+                          </select>
+                        </div>
+                        <div className="flex flex-col items-center justify-center">
+                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
+                            Roja
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handlePlayerStatChange(player.id, 'red_card', !form.red_card)
+                            }
+                            className={`w-full py-1 text-xs font-semibold rounded border transition-all ${
+                              form.red_card
+                                ? 'bg-red-950/40 text-red-500 border-red-800'
+                                : 'bg-transparent text-brand-gray-muted border-brand-black-border hover:border-brand-gray-dark'
+                            }`}
+                          >
+                            {form.red_card ? 'Sí' : 'No'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-4 justify-end">
+            <button
+              type="button"
+              onClick={() => setIsStatsModalOpen(false)}
+              className="btn-secondary py-2 text-xs"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saveStatsMutation.isPending}
+              className="btn-primary py-2 text-xs font-semibold flex items-center gap-1"
+            >
+              {saveStatsMutation.isPending ? 'Guardando...' : 'Guardar Estadísticas'}
             </button>
           </div>
         </form>
