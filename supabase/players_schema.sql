@@ -52,6 +52,23 @@ CREATE TABLE IF NOT EXISTS public.player_physio_records (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 4. Crear Tabla de Lesiones (Mapa Corporal)
+CREATE TABLE IF NOT EXISTS public.player_injuries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    player_id UUID NOT NULL REFERENCES public.players(id) ON DELETE CASCADE,
+    body_zone TEXT NOT NULL,
+    body_side TEXT NOT NULL CHECK (body_side IN ('frontal', 'posterior')),
+    severity TEXT NOT NULL CHECK (severity IN ('Leve', 'Moderada', 'Grave')),
+    status TEXT NOT NULL CHECK (status IN ('Activa', 'En tratamiento', 'Recuperado', 'Baja')),
+    diagnosis TEXT NOT NULL,
+    treatment TEXT,
+    injury_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    estimated_return DATE,
+    actual_return DATE,
+    follow_up_notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================================
 -- PERMISOS PARA LA PÁGINA "PLAYERS"
 -- =====================================================================
@@ -168,4 +185,19 @@ CREATE POLICY "Ver registros fisio" ON public.player_physio_records
     );
 
 CREATE POLICY "Gestionar registros fisio" ON public.player_physio_records
+    FOR ALL USING (public.has_user_permission(auth.uid(), 'players', 'editar'));
+
+-- Políticas para public.player_injuries
+ALTER TABLE public.player_injuries ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Ver registros de lesiones" ON public.player_injuries
+    FOR SELECT USING (
+        public.has_user_permission(auth.uid(), 'players', 'ver') AND
+        (
+            (SELECT slug FROM public.roles WHERE id = (SELECT role_id FROM public.profiles WHERE id = auth.uid())) != 'player'
+            OR player_id IN (SELECT id FROM public.players WHERE profile_id = auth.uid())
+        )
+    );
+
+CREATE POLICY "Gestionar registros de lesiones" ON public.player_injuries
     FOR ALL USING (public.has_user_permission(auth.uid(), 'players', 'editar'));

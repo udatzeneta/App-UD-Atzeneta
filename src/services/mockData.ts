@@ -5,7 +5,7 @@ import {
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
-const MOCK_DATA_VERSION = '9';
+const MOCK_DATA_VERSION = '10';
 
 // IDs fijos para los perfiles Mock
 export const MOCK_USER_IDS = {
@@ -213,7 +213,9 @@ const DEFAULT_MATCHES: Match[] = [
     score_them: null,
     status: 'Programado',
     time: '18:00',
-    location: 'El Porrejat (6R7J+Q2 Adzaneta)'
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)',
+    team_positive_aspects: null,
+    team_improve_aspects: null
   },
   {
     id: 'm-2',
@@ -225,7 +227,9 @@ const DEFAULT_MATCHES: Match[] = [
     score_them: 1,
     status: 'Jugado',
     time: '17:00',
-    location: 'Estadio El Collao'
+    location: 'Estadio El Collao',
+    team_positive_aspects: null,
+    team_improve_aspects: null
   },
   {
     id: 'm-3',
@@ -237,7 +241,9 @@ const DEFAULT_MATCHES: Match[] = [
     score_them: 1,
     status: 'Jugado',
     time: '18:00',
-    location: 'El Porrejat (6R7J+Q2 Adzaneta)'
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)',
+    team_positive_aspects: null,
+    team_improve_aspects: null
   },
   {
     id: 'm-4',
@@ -249,7 +255,9 @@ const DEFAULT_MATCHES: Match[] = [
     score_them: 2,
     status: 'Jugado',
     time: '12:00',
-    location: 'Ciudad Deportiva Facsa'
+    location: 'Ciudad Deportiva Facsa',
+    team_positive_aspects: null,
+    team_improve_aspects: null
   },
   {
     id: 'm-5',
@@ -261,7 +269,9 @@ const DEFAULT_MATCHES: Match[] = [
     score_them: 0,
     status: 'Jugado',
     time: '18:00',
-    location: 'El Porrejat (6R7J+Q2 Adzaneta)'
+    location: 'El Porrejat (6R7J+Q2 Adzaneta)',
+    team_positive_aspects: null,
+    team_improve_aspects: null
   }
 ];
 

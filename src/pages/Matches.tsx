@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
@@ -26,10 +26,22 @@ const getTeamLogo = (teamName: string): string => {
   return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
 };
 
+const TACTICAL_SYSTEMS = [
+  '1-4-4-2', '1-4-3-3', '1-4-2-3-1', '1-4-1-4-1', '1-3-5-2', 
+  '1-3-4-3', '1-5-3-2', '1-5-4-1', '1-4-5-1', '1-4-4-2 (Rombo)', 
+  '1-3-4-2-1', '1-4-3-2-1', '1-3-3-1-3'
+];
+
+const POSITIONS = [
+  'POR', 'DFD', 'DFC', 'DFI', 'LD', 'LI', 'CA', 
+  'MCD', 'MC', 'MCO', 'MI', 'MD', 'ED', 'EI', 'SD', 'DC'
+];
+
 export const Matches: React.FC = () => {
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   // Permisos específicos
   const canCreate = hasPermission('matches', 'crear');
@@ -93,10 +105,9 @@ export const Matches: React.FC = () => {
   const [selectedMatchForActions, setSelectedMatchForActions] = useState<Match | null>(null);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
   const [isSquadModalOpen, setIsSquadModalOpen] = useState(false);
-  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
 
   const [selectedSquadPlayerIds, setSelectedSquadPlayerIds] = useState<string[]>([]);
-  const [playerStatsForm, setPlayerStatsForm] = useState<Record<string, { minutes_played: number; goals: number; assists: number; yellow_cards: number; red_card: boolean }>>({});
+
 
   // Estados para Convocatoria y Ropa de Juego
   const [callupTime, setCallupTime] = useState('');
@@ -130,20 +141,19 @@ export const Matches: React.FC = () => {
     setIsActionModalOpen(true);
   };
 
-  const handleOpenSquadModal = async () => {
-    if (!selectedMatchForActions) return;
-    setIsActionModalOpen(false);
+  const openSquadModal = async (match: Match) => {
+    setSelectedMatchForActions(match);
     try {
-      const currentStats = await dataService.getPlayerMatchStats(selectedMatchForActions.id);
+      const currentStats = await dataService.getPlayerMatchStats(match.id);
       const calledUpIds = currentStats.filter(x => x.is_called_up).map(x => x.player_id);
       setSelectedSquadPlayerIds(calledUpIds);
 
       // Cargar valores actuales del partido
-      setCallupTime(selectedMatchForActions.callup_time || '');
-      setCallupLocation(selectedMatchForActions.callup_location || '');
-      setKitShirtColor(selectedMatchForActions.kit_shirt_color || '#C1121F');
-      setKitShortsColor(selectedMatchForActions.kit_shorts_color || '#000000');
-      setKitSocksColor(selectedMatchForActions.kit_socks_color || '#000000');
+      setCallupTime(match.callup_time || '');
+      setCallupLocation(match.callup_location || '');
+      setKitShirtColor(match.kit_shirt_color || '#C1121F');
+      setKitShortsColor(match.kit_shorts_color || '#000000');
+      setKitSocksColor(match.kit_socks_color || '#000000');
 
       setIsSquadModalOpen(true);
     } catch (err: any) {
@@ -151,37 +161,16 @@ export const Matches: React.FC = () => {
     }
   };
 
-  const handleOpenStatsModal = async (match: Match) => {
-    setSelectedMatchForActions(match);
-    setIsStatsModalOpen(true);
-    setTacticalSystem(match.tactical_system || '');
-    
-    try {
-      const stats = await dataService.getPlayerMatchStats(match.id);
-      
-      const formState: Record<string, any> = {};
-      stats.forEach(st => {
-        formState[st.player_id] = {
-          position: st.position || '',
-          is_starter: st.is_starter !== false,
-          substituted_for: st.substituted_for || '',
-          substituted_minute: st.substituted_minute || 0,
-          minutes_played: st.minutes_played || 0,
-          goals: st.goals || 0,
-          assists: st.assists || 0,
-          yellow_cards: st.yellow_cards || 0,
-          red_card: st.red_card || false,
-          rating: st.rating || 0,
-          comments: st.comments || ''
-        };
-      });
-      setPlayerStatsForm(formState);
-      
-      const calledUpIds = stats.filter(st => st.is_called_up).map(st => st.player_id);
-      setSelectedSquadPlayerIds(calledUpIds);
-    } catch (err: any) {
-      console.error("Error fetching match stats:", err);
-    }
+  const handleOpenSquadModal = async () => {
+    if (!selectedMatchForActions) return;
+    setIsActionModalOpen(false);
+    await openSquadModal(selectedMatchForActions);
+  };
+
+  const handleOpenStatsModal = () => {
+    if (!selectedMatchForActions) return;
+    setIsActionModalOpen(false);
+    navigate(`/matches/${selectedMatchForActions.id}/report`);
   };
 
   const saveSquadMutation = useMutation({
@@ -237,18 +226,6 @@ export const Matches: React.FC = () => {
     onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo guardar la convocatoria.')
   });
 
-  const saveStatsMutation = useMutation({
-    mutationFn: ({ matchId, payload }: { matchId: string; payload: any[] }) => {
-      return dataService.savePlayerMatchStats(matchId, payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['players'] });
-      showToast('success', 'Estadísticas guardadas', 'Las estadísticas se han guardado y los récords globales se han actualizado.');
-      setIsStatsModalOpen(false);
-    },
-    onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudieron guardar las estadísticas.')
-  });
-
   const handleSaveSquad = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMatchForActions) return;
@@ -274,39 +251,6 @@ export const Matches: React.FC = () => {
     showToast('success', 'PDF Descargado', 'Se ha exportado la convocatoria.');
   };
 
-  const handleSaveStats = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedMatchForActions) return;
-
-    // Actualizar sistema táctico en el partido
-    try {
-      await updateMutation.mutateAsync({
-        id: selectedMatchForActions.id,
-        item: { tactical_system: tacticalSystem }
-      });
-    } catch (err) {
-      console.error("Error updating match tactical system", err);
-    }
-
-    const payload = Object.entries(playerStatsForm).map(([playerId, stats]) => ({
-      player_id: playerId,
-      match_id: selectedMatchForActions.id,
-      is_called_up: selectedSquadPlayerIds.includes(playerId),
-      position: stats.position || null,
-      is_starter: stats.is_starter !== false,
-      substituted_for: stats.substituted_for || null,
-      substituted_minute: stats.substituted_minute || 0,
-      minutes_played: stats.minutes_played || 0,
-      goals: stats.goals || 0,
-      assists: stats.assists || 0,
-      yellow_cards: stats.yellow_cards || 0,
-      red_card: stats.red_card || false,
-      rating: stats.rating || 0,
-      comments: stats.comments || ''
-    }));
-
-    saveStatsMutation.mutate({ matchId: selectedMatchForActions.id, payload });
-  };
 
   const togglePlayerInSquad = (playerId: string) => {
     setSelectedSquadPlayerIds(prev => 
@@ -316,15 +260,6 @@ export const Matches: React.FC = () => {
     );
   };
 
-  const handlePlayerStatChange = (playerId: string, field: keyof typeof playerStatsForm[string], value: any) => {
-    setPlayerStatsForm(prev => ({
-      ...prev,
-      [playerId]: {
-        ...prev[playerId],
-        [field]: value
-      }
-    }));
-  };
 
   // Mutaciones
   const createTeamMutation = useMutation({
@@ -846,10 +781,17 @@ export const Matches: React.FC = () => {
                             </div>
                             <span>{match.rival}</span>
                           </div>
-                          {(match.callup_time || match.callup_location) && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit">
+                           {(match.callup_time || match.callup_location) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSquadModal(match);
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
+                            >
                               <Users className="w-3 h-3" /> Convocatoria
-                            </span>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -942,9 +884,16 @@ export const Matches: React.FC = () => {
                         <h4 className="text-sm font-semibold text-brand-gray-light flex flex-col gap-1">
                           {match.rival}
                           {(match.callup_time || match.callup_location) && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSquadModal(match);
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
+                            >
                               <Users className="w-3 h-3" /> Convocatoria
-                            </span>
+                            </button>
                           )}
                         </h4>
                         <span className="text-[11px] text-brand-gray-muted flex flex-wrap items-center gap-1 mt-1">
@@ -1587,172 +1536,6 @@ export const Matches: React.FC = () => {
         </form>
       </Modal>
 
-      {/* =====================================================================
-          MODAL DE ESTADÍSTICAS (PASAR DATOS)
-          ===================================================================== */}
-      <Modal
-        isOpen={isStatsModalOpen}
-        onClose={() => setIsStatsModalOpen(false)}
-        title={`Pasar Datos - vs ${selectedMatchForActions?.rival}`}
-      >
-        <form onSubmit={handleSaveStats} className="space-y-4">
-          <div className="text-xs text-brand-gray-muted">
-            Introduce las estadísticas para los jugadores convocados para este partido.
-          </div>
-
-          <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1 no-scrollbar border border-brand-black-border p-3 rounded-lg bg-brand-black/20">
-            {dbPlayers.filter(p => selectedSquadPlayerIds.includes(p.id)).length === 0 ? (
-              <div className="text-center py-8 text-brand-gray-muted text-xs italic">
-                No hay jugadores en la convocatoria para este partido.
-              </div>
-            ) : (
-              dbPlayers
-                .filter(p => selectedSquadPlayerIds.includes(p.id))
-                .map((player) => {
-                  const form = playerStatsForm[player.id] || {
-                    minutes_played: 0,
-                    goals: 0,
-                    assists: 0,
-                    yellow_cards: 0,
-                    red_card: false,
-                  };
-                  return (
-                    <div
-                      key={player.id}
-                      className="p-3 rounded-xl border border-brand-black-border bg-brand-black/40 space-y-3"
-                    >
-                      {/* Player info summary */}
-                      <div className="flex items-center gap-3 border-b border-brand-black-border/30 pb-2">
-                        <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                          {player.photo_url ? (
-                            <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
-                          ) : (
-                            <Users className="w-3.5 h-3.5 text-brand-gray-dark" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            {player.dorsal && (
-                              <span className="text-[9px] font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none">
-                                {player.dorsal}
-                              </span>
-                            )}
-                            <span className="text-xs font-bold text-brand-gray-light leading-none">
-                              {player.nickname || player.full_name}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Stats grid inputs */}
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
-                            Minutos
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="120"
-                            required
-                            className="form-input text-xs py-1 px-2 w-full text-center"
-                            value={form.minutes_played}
-                            onChange={(e) =>
-                              handlePlayerStatChange(player.id, 'minutes_played', Math.max(0, parseInt(e.target.value) || 0))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
-                            Goles
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="20"
-                            required
-                            className="form-input text-xs py-1 px-2 w-full text-center"
-                            value={form.goals}
-                            onChange={(e) =>
-                              handlePlayerStatChange(player.id, 'goals', Math.max(0, parseInt(e.target.value) || 0))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
-                            Asist.
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="20"
-                            required
-                            className="form-input text-xs py-1 px-2 w-full text-center"
-                            value={form.assists}
-                            onChange={(e) =>
-                              handlePlayerStatChange(player.id, 'assists', Math.max(0, parseInt(e.target.value) || 0))
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
-                            Amarillas
-                          </label>
-                          <select
-                            className="form-input text-xs py-1 px-1.5 w-full bg-brand-black-bg"
-                            value={form.yellow_cards}
-                            onChange={(e) =>
-                              handlePlayerStatChange(player.id, 'yellow_cards', parseInt(e.target.value) || 0)
-                            }
-                          >
-                            <option value={0}>0</option>
-                            <option value={1}>1</option>
-                            <option value={2}>2</option>
-                          </select>
-                        </div>
-                        <div className="flex flex-col items-center justify-center">
-                          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">
-                            Roja
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handlePlayerStatChange(player.id, 'red_card', !form.red_card)
-                            }
-                            className={`w-full py-1 text-xs font-semibold rounded border transition-all ${
-                              form.red_card
-                                ? 'bg-red-950/40 text-red-500 border-red-800'
-                                : 'bg-transparent text-brand-gray-muted border-brand-black-border hover:border-brand-gray-dark'
-                            }`}
-                          >
-                            {form.red_card ? 'Sí' : 'No'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-            )}
-          </div>
-
-          <div className="flex gap-2 pt-4 justify-end">
-            <button
-              type="button"
-              onClick={() => setIsStatsModalOpen(false)}
-              className="btn-secondary py-2 text-xs"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saveStatsMutation.isPending}
-              className="btn-primary py-2 text-xs font-semibold flex items-center gap-1"
-            >
-              {saveStatsMutation.isPending ? 'Guardando...' : 'Guardar Estadísticas'}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 };

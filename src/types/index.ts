@@ -92,6 +92,8 @@ export interface Match {
   kit_shorts_color?: string | null;
   kit_socks_color?: string | null;
   tactical_system?: string | null;
+  team_positive_aspects?: string | null;
+  team_improve_aspects?: string | null;
   created_at?: string;
 }
 
@@ -106,11 +108,23 @@ export interface PlayerMatchStats {
   substituted_minute?: number;
   minutes_played: number;
   goals: number;
+  conceded_goals?: number;
+  own_goals?: number;
   assists: number;
   yellow_cards: number;
   red_card: boolean;
   rating?: number;
   comments?: string;
+  positive_aspects?: string | null;
+  improve_aspects?: string | null;
+  event_minutes?: {
+    goals?: number[];
+    assists?: number[];
+    yellow_cards?: number[];
+    red_card?: number | null;
+    conceded_goals?: number[];
+    own_goals?: number[];
+  } | null;
   created_at?: string;
   updated_at?: string;
 }
