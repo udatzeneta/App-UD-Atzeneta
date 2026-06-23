@@ -1,7 +1,7 @@
 import { 
   Role, Profile, Permission, Training, Match, Fine, PointLog, 
   ScoutingPlayer, OpponentAnalysis, Settings, RolePermission, UserPermission,
-  TrainingAttendance, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury
+  TrainingAttendance, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, PlayerMatchStats
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
@@ -739,6 +739,14 @@ export class MockDatabase {
 
   static setPlayerInjuries(data: PlayerInjury[]): void {
     this.set('player_injuries', data);
+  }
+
+  static getPlayerMatchStats(): PlayerMatchStats[] {
+    return this.get('player_match_stats', []);
+  }
+
+  static setPlayerMatchStats(data: PlayerMatchStats[]): void {
+    this.set('player_match_stats', data);
   }
 
   // Sesión actual mockeada

@@ -264,7 +264,7 @@ export const dataService = {
         MockDatabase.setMatches(list);
       }
       let stats = MockDatabase.getPlayerMatchStats();
-      stats = stats.filter(s => s.match_id !== matchId);
+      stats = stats.filter((s: import('../types').PlayerMatchStats) => s.match_id !== matchId);
       MockDatabase.setPlayerMatchStats(stats);
     } else {
       await supabase.from('matches').update({
@@ -288,8 +288,8 @@ export const dataService = {
       if (idx !== -1) {
         list[idx] = { 
           ...list[idx], 
-          score_us: undefined, 
-          score_them: undefined, 
+          score_us: null, 
+          score_them: null, 
           status: 'Programado',
           tactical_system: undefined,
           team_positive_aspects: undefined,
@@ -298,7 +298,7 @@ export const dataService = {
         MockDatabase.setMatches(list);
       }
       const stats = MockDatabase.getPlayerMatchStats();
-      stats.forEach(s => {
+      stats.forEach((s: import('../types').PlayerMatchStats) => {
         if (s.match_id === matchId) {
           s.is_starter = false;
           s.position = undefined;
