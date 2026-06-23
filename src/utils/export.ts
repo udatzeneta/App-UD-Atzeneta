@@ -6,6 +6,8 @@
 
 export type ExportCell = string | number | null | undefined;
 
+import { FORMATIONS_SLOTS } from './formations';
+
 // Colores de marca UD Atzeneta para el PDF
 const BRAND_RED: [number, number, number] = [193, 18, 31]; // #C1121F
 const BRAND_BLACK: [number, number, number] = [15, 15, 15];
@@ -608,73 +610,7 @@ export const exportCallupToPDF = async (
   doc.save(`${filename}.pdf`);
 };
 
-const FORMATIONS_SLOTS: Record<string, { role: string; x: number; y: number }[]> = {
-  '4-4-2': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'LI', x: 18, y: 68 },
-    { role: 'DFC', x: 38, y: 71 },
-    { role: 'DFC', x: 62, y: 71 },
-    { role: 'LD', x: 82, y: 68 },
-    { role: 'MI', x: 18, y: 44 },
-    { role: 'MC', x: 38, y: 46 },
-    { role: 'MC', x: 62, y: 46 },
-    { role: 'MD', x: 82, y: 44 },
-    { role: 'DC', x: 35, y: 20 },
-    { role: 'DC', x: 65, y: 20 },
-  ],
-  '4-3-3': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'LI', x: 18, y: 68 },
-    { role: 'DFC', x: 38, y: 71 },
-    { role: 'DFC', x: 62, y: 71 },
-    { role: 'LD', x: 82, y: 68 },
-    { role: 'MC', x: 28, y: 46 },
-    { role: 'MCD', x: 50, y: 54 },
-    { role: 'MC', x: 72, y: 46 },
-    { role: 'EI', x: 22, y: 22 },
-    { role: 'DC', x: 50, y: 16 },
-    { role: 'ED', x: 78, y: 22 },
-  ],
-  '3-5-2': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'DFC', x: 28, y: 71 },
-    { role: 'DFC', x: 50, y: 73 },
-    { role: 'DFC', x: 72, y: 71 },
-    { role: 'MI', x: 15, y: 46 },
-    { role: 'MC', x: 35, y: 49 },
-    { role: 'MCD', x: 50, y: 57 },
-    { role: 'MC', x: 65, y: 49 },
-    { role: 'MD', x: 85, y: 46 },
-    { role: 'DC', x: 35, y: 20 },
-    { role: 'DC', x: 65, y: 20 },
-  ],
-  '4-2-3-1': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'LI', x: 18, y: 68 },
-    { role: 'DFC', x: 38, y: 71 },
-    { role: 'DFC', x: 62, y: 71 },
-    { role: 'LD', x: 82, y: 68 },
-    { role: 'MCD', x: 35, y: 54 },
-    { role: 'MCD', x: 65, y: 54 },
-    { role: 'MI', x: 20, y: 34 },
-    { role: 'MCO', x: 50, y: 32 },
-    { role: 'MD', x: 80, y: 34 },
-    { role: 'DC', x: 50, y: 15 },
-  ],
-  '3-4-3': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'DFC', x: 28, y: 71 },
-    { role: 'DFC', x: 50, y: 73 },
-    { role: 'DFC', x: 72, y: 71 },
-    { role: 'MI', x: 15, y: 48 },
-    { role: 'MC', x: 38, y: 52 },
-    { role: 'MC', x: 62, y: 52 },
-    { role: 'MD', x: 85, y: 48 },
-    { role: 'EI', x: 20, y: 20 },
-    { role: 'DC', x: 50, y: 15 },
-    { role: 'ED', x: 80, y: 20 },
-  ]
-};
+
 
 export const exportMatchReportToPDF = async (
   match: import('../types').Match,
@@ -796,9 +732,18 @@ export const exportMatchReportToPDF = async (
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
 
+  const placedPlayerIds = new Set<string>();
+
   slots.forEach((slot: { role: string; x: number; y: number }) => {
     // Buscar jugador inicial en esta demarcación
-    const playerStat = stats.find(s => s.is_called_up && s.is_starter && s.position === slot.role);
+    const playerStat = stats.find(s => 
+      s.is_called_up && 
+      s.is_starter && 
+      s.position === slot.role && 
+      !placedPlayerIds.has(s.player_id)
+    );
+    if (playerStat) placedPlayerIds.add(playerStat.player_id);
+
     const playerObj = playerStat ? players.find(p => p.id === playerStat.player_id) : null;
 
     const px = pitchX + (slot.x / 100) * pitchW;
@@ -842,7 +787,7 @@ export const exportMatchReportToPDF = async (
 
   // 4. Tabla de Estadísticas de Jugadores (Lado Derecho, x = 105, y = 56, w = 91)
   // Cabecera compacta: Dorsal, Jugador, Min, G, A, Tarjetas
-  const headers = ['Nº', 'Jugador', 'Rol', 'Min', 'G', 'A', '🟨', '🟥'];
+  const headers = ['Nº', 'Jugador', 'Rol', 'Min', 'G', 'A', 'TA', 'TR'];
   const tableRows = stats.map(s => {
     const p = players.find(x => x.id === s.player_id);
     const name = p ? (p.nickname || p.full_name.split(' ')[0]) : 'Jugador';
@@ -1032,5 +977,104 @@ export const exportMatchReportToPDF = async (
   }
 
   const filename = `Informe_Partido_${match.date}_vs_${match.rival.replace(/\s+/g, '_')}`;
+  doc.save(`${filename}.pdf`);
+};
+
+export const exportSquadToPDF = async (
+  players: import('../types').Player[]
+): Promise<void> => {
+  const { jsPDF } = await import('jspdf');
+  const autoTable = (await import('jspdf-autotable')).default;
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Escudo
+  try {
+    const logoResponse = await fetch(CLUB_LOGO_URL);
+    const logoBlob = await logoResponse.blob();
+    const logoReader = new FileReader();
+    await new Promise<void>((resolve, reject) => {
+      logoReader.onload = () => {
+        doc.addImage(logoReader.result as string, 'PNG', 14, 12, 18, 20, undefined, 'FAST');
+        resolve();
+      };
+      logoReader.onerror = reject;
+      logoReader.readAsDataURL(logoBlob);
+    });
+  } catch (e) {
+    console.warn('No se pudo cargar el logo del club para el PDF:', e);
+  }
+
+  doc.setFillColor(...BRAND_RED);
+  doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
+
+  doc.setFontSize(16);
+  doc.setTextColor(...BRAND_RED);
+  doc.text('PLANTILLA UD ATZENETA', 40, 20);
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')}`, 40, 26);
+
+  // Pre-cargar fotos de los jugadores
+  const playerPhotos = await Promise.all(
+    players.map(async (p) => {
+      if (!p.photo_url) return null;
+      try {
+        const res = await fetch(p.photo_url);
+        const blob = await res.blob();
+        return await new Promise<string | null>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {
+        return null;
+      }
+    })
+  );
+
+  // Tabla de jugadores
+  const headers = ['Foto', 'Dorsal', 'Nombre', 'Posición', 'Estado Físico'];
+  const rows = players.map(p => [
+    '', // Espacio para la foto
+    p.dorsal?.toString() || '-',
+    p.full_name,
+    p.position || '-',
+    p.physical_status || 'Disponible'
+  ]);
+
+  autoTable(doc, {
+    head: [headers],
+    body: rows,
+    startY: 40,
+    styles: { fontSize: 10, cellPadding: 3, minCellHeight: 15, valign: 'middle' },
+    columnStyles: {
+      0: { cellWidth: 20, halign: 'center' },
+      1: { cellWidth: 20, halign: 'center' },
+      2: { halign: 'left' },
+      3: { halign: 'left' },
+      4: { halign: 'center' }
+    },
+    headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold', minCellHeight: 8 },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    theme: 'grid',
+    tableLineColor: BRAND_BLACK,
+    tableLineWidth: 0.1,
+    didDrawCell: (data: any) => {
+      if (data.column.index === 0 && data.cell.section === 'body') {
+        const photoData = playerPhotos[data.row.index];
+        if (photoData) {
+          const match = photoData.match(/^data:image\/(png|jpeg|jpg);/);
+          const format = match ? match[1].toUpperCase() : 'PNG';
+          
+          doc.addImage(photoData, format, data.cell.x + 4, data.cell.y + 1.5, 12, 12, undefined, 'FAST');
+        }
+      }
+    }
+  });
+
+  const filename = `Plantilla_UD_Atzeneta_${new Date().toISOString().split('T')[0]}`;
   doc.save(`${filename}.pdf`);
 };

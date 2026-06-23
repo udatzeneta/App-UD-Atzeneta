@@ -7,12 +7,12 @@ import { TableSkeleton } from '../components/Skeletons';
 import { 
   Users, Plus, Edit2, Trash2, Scale, HeartPulse, Trophy, Activity, Calendar,
   TrendingUp, Ruler, UserCheck, AlertTriangle, ShieldCheck, ChevronRight, Phone, Mail, Search,
-  Download, FileText, ChevronDown, Check, X, ShieldAlert
+  Download, FileText, ChevronDown, Check, X, ShieldAlert, LayoutGrid, List as ListIcon
 } from 'lucide-react';
-import { Player, PlayerWeight, PlayerPhysioRecord, TrainingAttendance } from '../types';
+import { Player, PlayerWeight, PlayerPhysioRecord, TrainingAttendance, ScoutingPlayer } from '../types';
 import { Modal } from '../components/Modal';
 import { useToast } from '../context/ToastContext';
-import { exportToCSV, exportToPDF } from '../utils/export';
+import { exportToCSV, exportToPDF, exportSquadToPDF } from '../utils/export';
 
 export const Players: React.FC = () => {
   const navigate = useNavigate();
@@ -32,12 +32,15 @@ export const Players: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('Todos');
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [detailTab, setDetailTab] = useState<'ficha' | 'stats' | 'peso' | 'fisio'>('ficha');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   // Modales
   const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [isPhysioModalOpen, setIsPhysioModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [searchScoutingTerm, setSearchScoutingTerm] = useState('');
 
   // Campos formulario jugador
   const [fullName, setFullName] = useState('');
@@ -51,6 +54,7 @@ export const Players: React.FC = () => {
   const [birthDate, setBirthDate] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [playerPhysicalStatus, setPlayerPhysicalStatus] = useState<'Disponible' | 'Lesionado' | 'En duda' | 'Baja'>('Disponible');
   
   // Campos de estadísticas
   const [matchesPlayed, setMatchesPlayed] = useState('0');
@@ -74,6 +78,13 @@ export const Players: React.FC = () => {
   const { data: players = [], isLoading } = useQuery({
     queryKey: ['players'],
     queryFn: () => dataService.getPlayers()
+  });
+
+  // React Query - Cargar Jugadores de Scouting para Importar
+  const { data: scoutingPlayers = [] } = useQuery({
+    queryKey: ['scoutingForImport'],
+    queryFn: () => dataService.getScouting(),
+    enabled: isImportModalOpen
   });
 
   // React Query - Cargar Pesos del jugador seleccionado
@@ -198,6 +209,7 @@ export const Players: React.FC = () => {
     setBirthDate('');
     setPhone('');
     setEmail('');
+    setPlayerPhysicalStatus('Disponible');
     setMatchesPlayed('0');
     setMinutesPlayed('0');
     setGoals('0');
@@ -205,6 +217,51 @@ export const Players: React.FC = () => {
     setYellowCards('0');
     setRedCards('0');
     setIsPlayerModalOpen(true);
+  };
+
+  const handleImportFromScouting = (scoutingPlayer: ScoutingPlayer) => {
+    const positionMap: Record<string, string> = {
+      'Portero': 'Portero',
+      'Defensa Central': 'Defensa Central',
+      'Lateral Derecho': 'Lateral Derecho',
+      'Lateral Izquierdo': 'Lateral Izquierdo',
+      'LD': 'Lateral Derecho',
+      'LI': 'Lateral Izquierdo',
+      'DFC': 'Defensa Central',
+      'P': 'Portero',
+      'Pivote': 'Pivote Defensivo',
+      'Mediocentro': 'Mediocentro',
+      'Mediapunta': 'Mediapunta',
+      'Extremo Derecho': 'Extremo Derecho',
+      'Extremo Izquierdo': 'Extremo Izquierdo',
+      'ED': 'Extremo Derecho',
+      'EI': 'Extremo Izquierdo',
+      'Delantero Centro': 'Delantero Centro',
+      'DC': 'Delantero Centro'
+    };
+
+    setEditingPlayer(null);
+    setFullName(scoutingPlayer.player_name);
+    setNickname('');
+    setPhotoUrl(scoutingPlayer.photo_url || '');
+    setDorsal('');
+    setPosition(positionMap[scoutingPlayer.position] || 'Defensa Central');
+    setDominantFoot('Derecho');
+    setHeight('');
+    setWeight('');
+    setBirthDate('');
+    setPhone(scoutingPlayer.phone || '');
+    setEmail('');
+    setPlayerPhysicalStatus('Disponible');
+    setMatchesPlayed('0');
+    setMinutesPlayed('0');
+    setGoals('0');
+    setAssists('0');
+    setYellowCards('0');
+    setRedCards('0');
+    setIsPlayerModalOpen(true);
+    setIsImportModalOpen(false);
+    showToast('success', 'Importado de Scouting', `${scoutingPlayer.player_name} cargado en el formulario.`);
   };
 
   const handleOpenEditModal = (p: Player) => {
@@ -220,6 +277,7 @@ export const Players: React.FC = () => {
     setBirthDate(p.birth_date || '');
     setPhone(p.phone || '');
     setEmail(p.email || '');
+    setPlayerPhysicalStatus(p.physical_status as any || 'Disponible');
     setMatchesPlayed(p.matches_played.toString());
     setMinutesPlayed(p.minutes_played.toString());
     setGoals(p.goals.toString());
@@ -259,7 +317,7 @@ export const Players: React.FC = () => {
       assists: parseInt(assists) || 0,
       yellow_cards: parseInt(yellowCards) || 0,
       red_cards: parseInt(redCards) || 0,
-      physical_status: editingPlayer?.physical_status || 'Disponible'
+      physical_status: playerPhysicalStatus
     };
 
     if (editingPlayer) {
@@ -505,17 +563,7 @@ export const Players: React.FC = () => {
 
   const handleExportPDF = async () => {
     if (filteredPlayers.length === 0) return;
-    const headers = ['Nombre', 'Dorsal', 'Posición', 'PJ', 'Goles', 'Asistencias', 'Estado'];
-    const rows = filteredPlayers.map(p => [
-      p.full_name,
-      p.dorsal || '-',
-      p.position || '-',
-      p.matches_played,
-      p.goals,
-      p.assists,
-      p.physical_status || 'Disponible'
-    ]);
-    await exportToPDF('Plantilla UD Atzeneta', `jugadores_ud_atzeneta`, headers, rows);
+    await exportSquadToPDF(filteredPlayers);
   };
 
   // Render SVG para la gráfica evolutiva de peso
@@ -630,6 +678,22 @@ export const Players: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center bg-brand-black border border-brand-black-border rounded-lg p-0.5 mr-2">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
+              title="Vista de Fichas"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
+              title="Vista de Listado"
+            >
+              <ListIcon className="w-4 h-4" />
+            </button>
+          </div>
           {canExport && (
             <>
               <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs" title="Exportar CSV">
@@ -641,9 +705,14 @@ export const Players: React.FC = () => {
             </>
           )}
           {canCreate && (
-            <button onClick={handleOpenCreateModal} className="btn-primary py-2 text-xs font-semibold">
-              <Plus className="w-3.5 h-3.5" /> Nueva Ficha
-            </button>
+            <>
+              <button onClick={() => setIsImportModalOpen(true)} className="btn-secondary py-2 text-xs font-semibold">
+                <Download className="w-3.5 h-3.5" /> Importar de Scouting
+              </button>
+              <button onClick={handleOpenCreateModal} className="btn-primary py-2 text-xs font-semibold">
+                <Plus className="w-3.5 h-3.5" /> Nueva Ficha
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -708,7 +777,7 @@ export const Players: React.FC = () => {
             <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center">
               <p className="text-sm text-brand-gray-muted">No se encontraron fichas de jugadores.</p>
             </div>
-          ) : (
+          ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-4">
               {filteredPlayers.map((player) => {
                 const isSelected = selectedPlayer?.id === player.id;
@@ -767,9 +836,142 @@ export const Players: React.FC = () => {
                         <span className="font-bold text-brand-gray-light">{player.goals}</span> G / <span className="font-bold text-brand-gray-light">{player.assists}</span> A
                       </span>
                     </div>
+
+                    {/* Botones de Acción Rápida */}
+                    {(canEdit || canDelete) && (
+                      <div className="flex gap-1.5 mt-3 border-t border-brand-black-border/40 pt-3">
+                        {canEdit && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditModal(player);
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1.5 p-1.5 text-xs text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-card border border-brand-black-border rounded transition-all"
+                            title="Editar"
+                          >
+                            <Edit2 className="w-3 h-3" /> Editar
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePlayer(player.id, player.full_name);
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1.5 p-1.5 text-xs text-brand-gray-muted hover:text-brand-red-600 hover:bg-brand-red-600/5 border border-brand-black-border hover:border-brand-red-600/30 rounded transition-all"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-3 h-3" /> Eliminar
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
+            </div>
+          ) : (
+            <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-x-auto">
+              <table className="w-full text-left text-sm text-brand-gray-light min-w-[800px]">
+                <thead className="bg-brand-black-bg border-b border-brand-black-border text-xs uppercase text-brand-gray-muted">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Jugador</th>
+                    <th className="px-4 py-3 font-semibold">Posición</th>
+                    <th className="px-4 py-3 font-semibold text-center">Goles / Asist.</th>
+                    <th className="px-4 py-3 font-semibold text-center">Estado</th>
+                    {(canEdit || canDelete) && <th className="px-4 py-3 font-semibold text-right">Acciones</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPlayers.map((player) => {
+                    const isSelected = selectedPlayer?.id === player.id;
+                    const statusColor = 
+                      player.physical_status === 'Disponible' ? 'bg-emerald-950/20 text-emerald-400 border border-emerald-900/30' :
+                      player.physical_status === 'En duda' ? 'bg-amber-950/20 text-amber-500 border border-amber-900/30' :
+                      'bg-red-950/20 text-red-400 border border-red-900/30';
+
+                    return (
+                      <tr 
+                        key={player.id}
+                        onClick={() => navigate(`/players/${player.id}`)}
+                        className="border-b border-brand-black-border/50 hover:bg-brand-black-hover transition-colors cursor-pointer group"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                              {player.photo_url ? (
+                                <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Users className="w-4 h-4 text-brand-gray-dark" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                {player.dorsal && (
+                                  <span className="text-[10px] font-black text-brand-red-600 bg-brand-red-600/10 px-1 py-0.5 rounded leading-none">
+                                    {player.dorsal}
+                                  </span>
+                                )}
+                                <span className="font-bold text-sm text-brand-gray-light group-hover:text-white transition-colors">
+                                  {player.nickname || player.full_name}
+                                </span>
+                              </div>
+                              {player.nickname && (
+                                <span className="text-[10px] text-brand-gray-muted block mt-0.5">
+                                  {player.full_name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className="text-brand-gray-muted uppercase font-semibold text-[10px]">
+                            {player.position || 'Sin Demarcación'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-center">
+                          <span className="font-bold text-brand-gray-light">{player.goals}</span> <span className="text-brand-gray-muted">G</span> / <span className="font-bold text-brand-gray-light">{player.assists}</span> <span className="text-brand-gray-muted">A</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
+                            {player.physical_status || 'Disponible'}
+                          </span>
+                        </td>
+                        {(canEdit || canDelete) && (
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {canEdit && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditModal(player);
+                                  }}
+                                  className="p-1.5 text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-card border border-brand-black-border rounded transition-all"
+                                  title="Editar"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePlayer(player.id, player.full_name);
+                                  }}
+                                  className="p-1.5 text-brand-gray-muted hover:text-brand-red-600 hover:bg-brand-red-600/5 border border-brand-black-border hover:border-brand-red-600/30 rounded transition-all"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -1129,8 +1331,21 @@ export const Players: React.FC = () => {
             </div>
           </div>
 
-          {/* Pie Dominante, Estatura, Peso */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Pie Dominante, Estatura, Peso, Estado Físico */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="form-label">Estado Físico</label>
+              <select
+                className="form-input bg-brand-black"
+                value={playerPhysicalStatus}
+                onChange={(e) => setPlayerPhysicalStatus(e.target.value as any)}
+              >
+                <option value="Disponible">Disponible</option>
+                <option value="En duda">En duda</option>
+                <option value="Lesionado">Lesionado</option>
+                <option value="Baja">Baja</option>
+              </select>
+            </div>
             <div>
               <label className="form-label">Pie Dominante</label>
               <select
@@ -1278,6 +1493,67 @@ export const Players: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL IMPORTAR DE SCOUTING
+          ===================================================================== */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        title="Importar Jugador desde Scouting"
+      >
+        <div className="space-y-4 text-left">
+          <div className="relative">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-brand-gray-dark" />
+            <input
+              type="text"
+              className="form-input pl-10 w-full"
+              placeholder="Buscar jugador de scouting..."
+              value={searchScoutingTerm}
+              onChange={(e) => setSearchScoutingTerm(e.target.value)}
+            />
+          </div>
+
+          <div className="max-h-96 overflow-y-auto space-y-2 border border-brand-black-border rounded-lg p-3 bg-brand-black/30">
+            {scoutingPlayers
+              .filter(p =>
+                p.player_name.toLowerCase().includes(searchScoutingTerm.toLowerCase()) ||
+                p.team.toLowerCase().includes(searchScoutingTerm.toLowerCase()) ||
+                p.position.toLowerCase().includes(searchScoutingTerm.toLowerCase())
+              )
+              .map((player) => (
+                <button
+                  key={player.id}
+                  type="button"
+                  onClick={() => handleImportFromScouting(player)}
+                  className="w-full text-left p-3 bg-brand-black border border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-red-600/5 rounded transition-all flex items-center justify-between group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-brand-gray-light group-hover:text-white truncate">
+                      {player.player_name}
+                    </div>
+                    <div className="text-xs text-brand-gray-muted">
+                      {player.position} • {player.team}
+                      {player.age && ` • ${player.age} años`}
+                    </div>
+                  </div>
+                  <Plus className="w-4 h-4 text-brand-gray-dark group-hover:text-brand-red-600 ml-2 shrink-0" />
+                </button>
+              ))}
+            {scoutingPlayers.length === 0 && (
+              <p className="text-xs text-brand-gray-muted text-center py-6">
+                No hay jugadores de scouting disponibles.
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-2 justify-end pt-4 border-t border-brand-black-border">
+            <button type="button" onClick={() => setIsImportModalOpen(false)} className="btn-secondary py-2 text-xs">
+              Cerrar
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* =====================================================================

@@ -162,6 +162,43 @@ export interface ScoutingPlayer {
   notes: string;
   created_by?: string;
   created_at?: string;
+
+  // FFCV data fields
+  season?: string;
+  competition?: string;
+  dorsal?: number;
+  convocados?: number;
+  jugados?: number;
+  titular?: number;
+  suplente?: number;
+  goles?: number;
+  media_goles?: number;
+  amarillas?: number;
+  doble_amarilla?: number;
+  rojas?: number;
+  tarjeta_verde?: number;
+  participacion?: string;
+  titularidad?: string;
+  disciplina?: string;
+  goles_partido?: number;
+  photo_url?: string;
+  in_wallet?: boolean;
+  x?: number | null;
+  y?: number | null;
+  alternative_positions?: string;
+  comment?: string;
+  phone?: string;
+  scouting_player_history?: ScoutingPlayerHistory[];
+}
+
+export interface ScoutingPlayerHistory {
+  id: string;
+  scouting_id: string;
+  temporada: string;
+  equipo: string;
+  shield_url?: string;
+  categoria?: string;
+  created_at?: string;
 }
 
 export interface OpponentAnalysis {
@@ -220,6 +257,8 @@ export interface TacticalPlayer {
   x: number; // percentage coordinate on the field (0 to 100)
   y: number; // percentage coordinate on the field (0 to 100)
   comment?: string;
+  rating?: number;
+  alternative_positions?: string;
 }
 
 export interface TacticalBoard {

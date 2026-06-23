@@ -240,6 +240,23 @@ export const Matches: React.FC = () => {
     });
   };
 
+  const deleteSquadMutation = useMutation({
+    mutationFn: (matchId: string) => dataService.deleteMatchCallups(matchId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      showToast('success', 'Convocatoria Borrada', 'Se ha eliminado la convocatoria del partido.');
+      setIsSquadModalOpen(false);
+    },
+    onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo borrar la convocatoria.')
+  });
+
+  const handleDeleteSquad = () => {
+    if (!selectedMatchForActions) return;
+    if (window.confirm('¿Estás seguro de que deseas borrar la convocatoria de este partido? Esta acción no se puede deshacer.')) {
+      deleteSquadMutation.mutate(selectedMatchForActions.id);
+    }
+  };
+
   const handleExportCallupPDF = async () => {
     if (!selectedMatchForActions) return;
     const calledUpPlayers = dbPlayers.filter(p => selectedSquadPlayerIds.includes(p.id));
@@ -781,18 +798,32 @@ export const Matches: React.FC = () => {
                             </div>
                             <span>{match.rival}</span>
                           </div>
-                           {(match.callup_time || match.callup_location) && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openSquadModal(match);
-                              }}
-                              className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
-                            >
-                              <Users className="w-3 h-3" /> Convocatoria
-                            </button>
-                          )}
+                           <div className="flex items-center gap-2 mt-1">
+                             {(match.callup_time || match.callup_location) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openSquadModal(match);
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
+                              >
+                                <Users className="w-3 h-3" /> Convocatoria
+                              </button>
+                            )}
+                            {match.tactical_system && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/matches/${match.id}/report`);
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
+                              >
+                                <CheckCircle className="w-3 h-3" /> Datos subidos
+                              </button>
+                            )}
+                           </div>
                         </div>
                       </td>
                       <td className="table-td text-center">
@@ -883,18 +914,32 @@ export const Matches: React.FC = () => {
                       <div>
                         <h4 className="text-sm font-semibold text-brand-gray-light flex flex-col gap-1">
                           {match.rival}
-                          {(match.callup_time || match.callup_location) && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openSquadModal(match);
-                              }}
-                              className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
-                            >
-                              <Users className="w-3 h-3" /> Convocatoria
-                            </button>
-                          )}
+                          <div className="flex flex-wrap items-center gap-2 mt-1 font-normal">
+                            {(match.callup_time || match.callup_location) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openSquadModal(match);
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
+                              >
+                                <Users className="w-3 h-3" /> Convocatoria
+                              </button>
+                            )}
+                            {match.tactical_system && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/matches/${match.id}/report`);
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
+                              >
+                                <CheckCircle className="w-3 h-3" /> Datos subidos
+                              </button>
+                            )}
+                          </div>
                         </h4>
                         <span className="text-[11px] text-brand-gray-muted flex flex-wrap items-center gap-1 mt-1">
                           <Calendar className="w-3.5 h-3.5" /> {match.date} {match.time && `| ${match.time} hs`}
@@ -1295,219 +1340,230 @@ export const Matches: React.FC = () => {
             </span>
           </div>
 
-          {/* Detalles de Convocatoria y Ropa de Juego (Maniquí Interactivo) */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 border-b border-brand-black-border pb-4 mb-4 bg-brand-black-card/40 p-3.5 rounded-xl border border-brand-black-border/60">
-            {/* Columna Maniquí */}
-            <div className="md:col-span-5 flex flex-col items-center justify-center bg-brand-black/30 rounded-lg p-2.5 border border-brand-black-border/40">
-              <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider mb-2">Equipación Oficial</span>
-              <svg width="110" height="185" viewBox="0 0 160 240" className="mx-auto drop-shadow-md">
-                {/* Cabeza del Maniquí */}
-                <circle cx="80" cy="25" r="12" fill="#4B5563" opacity="0.35" />
-                <rect x="76" y="37" width="8" height="14" fill="#4B5563" opacity="0.35" />
+          {/* Diseño a dos columnas: Izquierda (Detalles y Ropa) / Derecha (Jugadores) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-2">
+            
+            {/* --- COLUMNA IZQUIERDA: EQUIPACIÓN Y DETALLES (5 columnas) --- */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-brand-black-card/40 p-4 rounded-xl border border-brand-black-border/60">
+                {/* Configuración */}
+                <div className="flex flex-col gap-3 mb-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Convocatoria (Hora)</label>
+                    <input
+                      type="time"
+                      className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                      value={callupTime}
+                      onChange={(e) => setCallupTime(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Reunión (Lugar / Google Maps)</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                      placeholder="Ej. Campo de fútbol o enlace de Google Maps"
+                      value={callupLocation}
+                      onChange={(e) => setCallupLocation(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-                {/* Brazos del Maniquí */}
-                <path d="M 35 75 L 20 120 L 28 123 L 42 80 Z" fill="#4B5563" opacity="0.35" />
-                <path d="M 125 75 L 140 120 L 132 123 L 118 80 Z" fill="#4B5563" opacity="0.35" />
+                <div className="space-y-3 pt-3 border-t border-brand-black-border/40">
+                  <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block">Equipación Oficial</span>
+                  
+                  {/* Maniquí */}
+                  <div className="flex flex-col items-center justify-center bg-brand-black/30 rounded-lg p-2.5 border border-brand-black-border/40 mb-3">
+                    <svg width="110" height="185" viewBox="0 0 160 240" className="mx-auto drop-shadow-md">
+                      {/* Cabeza del Maniquí */}
+                      <circle cx="80" cy="25" r="12" fill="#4B5563" opacity="0.35" />
+                      <rect x="76" y="37" width="8" height="14" fill="#4B5563" opacity="0.35" />
 
-                {/* Piernas del Maniquí (Piel expuesta) */}
-                <rect x="55" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
-                <rect x="95" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
+                      {/* Brazos del Maniquí */}
+                      <path d="M 35 75 L 20 120 L 28 123 L 42 80 Z" fill="#4B5563" opacity="0.35" />
+                      <path d="M 125 75 L 140 120 L 132 123 L 118 80 Z" fill="#4B5563" opacity="0.35" />
 
-                {/* Camiseta (Mangas) */}
-                <path d="M 50 50 L 30 75 L 42 82 L 55 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
-                <path d="M 110 50 L 130 75 L 118 82 L 105 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* Piernas del Maniquí (Piel expuesta) */}
+                      <rect x="55" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
+                      <rect x="95" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
 
-                {/* Camiseta (Cuerpo) */}
-                <path d="M 50 50 L 110 50 L 110 125 L 50 125 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* Camiseta (Mangas) */}
+                      <path d="M 50 50 L 30 75 L 42 82 L 55 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+                      <path d="M 110 50 L 130 75 L 118 82 L 105 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
 
-                {/* Cuello de la Camiseta */}
-                <path d="M 70 50 Q 80 62 90 50 Z" fill="#1F2937" stroke="#1F2937" strokeWidth="1" />
+                      {/* Camiseta (Cuerpo) */}
+                      <path d="M 50 50 L 110 50 L 110 125 L 50 125 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
 
-                {/* Escudo del Club en el pecho */}
-                <image
-                  href="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png"
-                  x="82"
-                  y="65"
-                  width="16"
-                  height="16"
-                />
+                      {/* Cuello de la Camiseta */}
+                      <path d="M 70 50 Q 80 62 90 50 Z" fill="#1F2937" stroke="#1F2937" strokeWidth="1" />
 
-                {/* Pantalón Corto */}
-                <path d="M 50 125 L 110 125 L 112 160 L 83 160 L 80 145 L 77 160 L 48 160 Z" fill={kitShortsColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* Escudo del Club en el pecho */}
+                      <image
+                        href="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png"
+                        x="82"
+                        y="65"
+                        width="16"
+                        height="16"
+                      />
 
-                {/* Medias/Calzas */}
-                <path d="M 54 175 L 66 175 L 66 225 L 54 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
-                <path d="M 94 175 L 106 175 L 106 225 L 94 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* Pantalón Corto */}
+                      <path d="M 50 125 L 110 125 L 112 160 L 83 160 L 80 145 L 77 160 L 48 160 Z" fill={kitShortsColor} stroke="#1F2937" strokeWidth="1" />
 
-                {/* Botas */}
-                <path d="M 54 225 L 46 228 L 54 234 L 68 234 L 66 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
-                <path d="M 94 225 L 92 234 L 106 234 L 114 228 L 106 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
-              </svg>
+                      {/* Medias/Calzas */}
+                      <path d="M 54 175 L 66 175 L 66 225 L 54 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
+                      <path d="M 94 175 L 106 175 L 106 225 L 94 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
+
+                      {/* Botas */}
+                      <path d="M 54 225 L 46 228 L 54 234 L 68 234 L 66 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
+                      <path d="M 94 225 L 92 234 L 106 234 L 114 228 L 106 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
+                    </svg>
+                  </div>
+
+                  {/* Camiseta */}
+                  <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
+                    <span className="text-xs text-brand-gray-light font-medium">Camiseta</span>
+                    <div className="flex items-center gap-1.5">
+                      {['#C1121F', '#000000', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => setKitShirtColor(col)}
+                          className={`w-4 h-4 rounded-full border transition-all ${
+                            kitShirtColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
+                          }`}
+                          style={{ backgroundColor: col }}
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
+                        value={kitShirtColor}
+                        onChange={(e) => setKitShirtColor(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Pantalón */}
+                  <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
+                    <span className="text-xs text-brand-gray-light font-medium">Pantalón Corto</span>
+                    <div className="flex items-center gap-1.5">
+                      {['#000000', '#C1121F', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => setKitShortsColor(col)}
+                          className={`w-4 h-4 rounded-full border transition-all ${
+                            kitShortsColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
+                          }`}
+                          style={{ backgroundColor: col }}
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
+                        value={kitShortsColor}
+                        onChange={(e) => setKitShortsColor(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Medias */}
+                  <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
+                    <span className="text-xs text-brand-gray-light font-medium">Medias / Calzas</span>
+                    <div className="flex items-center gap-1.5">
+                      {['#000000', '#C1121F', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
+                        <button
+                          key={col}
+                          type="button"
+                          onClick={() => setKitSocksColor(col)}
+                          className={`w-4 h-4 rounded-full border transition-all ${
+                            kitSocksColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
+                          }`}
+                          style={{ backgroundColor: col }}
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
+                        value={kitSocksColor}
+                        onChange={(e) => setKitSocksColor(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Configuración */}
-            <div className="md:col-span-7 space-y-3 text-left">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Convocatoria (Hora)</label>
-                  <input
-                    type="time"
-                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
-                    value={callupTime}
-                    onChange={(e) => setCallupTime(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Reunión (Lugar)</label>
-                  <input
-                    type="text"
-                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
-                    placeholder="Ej. Campo de fútbol"
-                    value={callupLocation}
-                    onChange={(e) => setCallupLocation(e.target.value)}
-                  />
-                </div>
+            {/* --- COLUMNA DERECHA: SELECCIÓN DE JUGADORES (7 columnas) --- */}
+            <div className="lg:col-span-7 flex flex-col h-full max-h-[500px]">
+              <div className="text-xs text-brand-gray-muted flex justify-between items-center mb-0 text-left bg-brand-black-card/40 p-2.5 rounded-t-xl border border-brand-black-border/60 border-b-0">
+                <span className="font-bold uppercase tracking-wider">Selección de Jugadores Convocados:</span>
+                <span className="font-bold text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded">
+                  {selectedSquadPlayerIds.length} convocados
+                </span>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-brand-black-border/40">
-                <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block">Ropa de Juego</span>
-                
-                {/* Camiseta */}
-                <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
-                  <span className="text-xs text-brand-gray-light font-medium">Camiseta</span>
-                  <div className="flex items-center gap-1.5">
-                    {['#C1121F', '#000000', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => setKitShirtColor(col)}
-                        className={`w-4 h-4 rounded-full border transition-all ${
-                          kitShirtColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
-                        }`}
-                        style={{ backgroundColor: col }}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
-                      value={kitShirtColor}
-                      onChange={(e) => setKitShirtColor(e.target.value)}
-                    />
-                  </div>
-                </div>
+              <div className="flex-1 overflow-y-auto pr-1 no-scrollbar border border-brand-black-border/60 p-2.5 rounded-b-xl bg-brand-black-card/40">
+                <div className="space-y-2">
+                  {dbPlayers.filter(p => p.physical_status !== 'Baja').length === 0 ? (
+                    <div className="text-center py-8 text-brand-gray-muted text-xs italic">
+                      No hay jugadores disponibles en la plantilla (o todos están de baja).
+                    </div>
+                  ) : (
+                    dbPlayers
+                      .filter(player => player.physical_status !== 'Baja')
+                      .map((player) => {
+                      const isSelected = selectedSquadPlayerIds.includes(player.id);
+                      return (
+                        <div
+                          key={player.id}
+                          onClick={() => togglePlayerInSquad(player.id)}
+                          className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-brand-red-600/10 border-brand-red-600/50'
+                              : 'bg-brand-black/40 border-brand-black-border hover:border-brand-black-border/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {/* Avatar */}
+                            <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                              {player.photo_url ? (
+                                <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Users className="w-4 h-4 text-brand-gray-dark" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                {player.dorsal && (
+                                  <span className="text-[10px] font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none">
+                                    {player.dorsal}
+                                  </span>
+                                )}
+                                <span className="text-xs font-semibold text-brand-gray-light leading-none">
+                                  {player.nickname || player.full_name}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
 
-                {/* Pantalón */}
-                <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
-                  <span className="text-xs text-brand-gray-light font-medium">Pantalón Corto</span>
-                  <div className="flex items-center gap-1.5">
-                    {['#000000', '#C1121F', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => setKitShortsColor(col)}
-                        className={`w-4 h-4 rounded-full border transition-all ${
-                          kitShortsColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
-                        }`}
-                        style={{ backgroundColor: col }}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
-                      value={kitShortsColor}
-                      onChange={(e) => setKitShortsColor(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* Medias */}
-                <div className="flex items-center justify-between bg-brand-black/25 p-1.5 rounded border border-brand-black-border/30">
-                  <span className="text-xs text-brand-gray-light font-medium">Medias / Calzas</span>
-                  <div className="flex items-center gap-1.5">
-                    {['#000000', '#C1121F', '#FFFFFF', '#1D4ED8', '#F59E0B'].map((col) => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => setKitSocksColor(col)}
-                        className={`w-4 h-4 rounded-full border transition-all ${
-                          kitSocksColor === col ? 'ring-2 ring-brand-red-600 scale-110 border-white' : 'border-brand-black-border'
-                        }`}
-                        style={{ backgroundColor: col }}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      className="w-5 h-5 rounded cursor-pointer border border-brand-black-border bg-transparent p-0"
-                      value={kitSocksColor}
-                      onChange={(e) => setKitSocksColor(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-xs text-brand-gray-muted flex justify-between items-center mb-1 text-left">
-            <span>Selección de Jugadores Convocados:</span>
-            <span className="font-bold text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded">
-              {selectedSquadPlayerIds.length} convocados
-            </span>
-          </div>
-
-          <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 no-scrollbar border border-brand-black-border p-2 rounded-lg bg-brand-black/20">
-            {dbPlayers.length === 0 ? (
-              <div className="text-center py-8 text-brand-gray-muted text-xs italic">
-                No hay jugadores registrados en la plantilla.
-              </div>
-            ) : (
-              dbPlayers.map((player) => {
-                const isSelected = selectedSquadPlayerIds.includes(player.id);
-                return (
-                  <div
-                    key={player.id}
-                    onClick={() => togglePlayerInSquad(player.id)}
-                    className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-brand-red-600/10 border-brand-red-600/50'
-                        : 'bg-brand-black/40 border-brand-black-border hover:border-brand-black-border/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* Avatar */}
-                      <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                        {player.photo_url ? (
-                          <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <Users className="w-4 h-4 text-brand-gray-dark" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          {player.dorsal && (
-                            <span className="text-[10px] font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none">
-                              {player.dorsal}
-                            </span>
-                          )}
-                          <span className="text-xs font-semibold text-brand-gray-light leading-none">
-                            {player.nickname || player.full_name}
-                          </span>
+                          <div className="flex items-center">
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
+                              isSelected
+                                ? 'bg-brand-red-600 border-brand-red-600 text-white'
+                                : 'border-brand-gray-dark bg-transparent'
+                            }`}>
+                              {isSelected && <Check className="w-3.5 h-3.5" />}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
 
-                    <div className="flex items-center">
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
-                        isSelected
-                          ? 'bg-brand-red-600 border-brand-red-600 text-white'
-                          : 'border-brand-gray-dark bg-transparent'
-                      }`}>
-                        {isSelected && <Check className="w-3.5 h-3.5" />}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
           </div>
 
           <div className="flex gap-2 pt-2 justify-end">
@@ -1524,6 +1580,14 @@ export const Matches: React.FC = () => {
               className="btn-secondary py-2 text-xs"
             >
               Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteSquad}
+              disabled={deleteSquadMutation.isPending}
+              className="btn-secondary py-2 text-xs text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10"
+            >
+              {deleteSquadMutation.isPending ? 'Borrando...' : 'Borrar Convocatoria'}
             </button>
             <button
               type="submit"

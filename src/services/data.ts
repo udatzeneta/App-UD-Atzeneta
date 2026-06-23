@@ -143,6 +143,27 @@ export const dataService = {
     }
   },
 
+  async getAllPlayerMatchStatsByPlayer(playerId: string): Promise<PlayerMatchStats[]> {
+    if (isMockMode) {
+      await delay(200);
+      try {
+        const data = localStorage.getItem('ud_atzeneta_player_match_stats');
+        const list = data ? JSON.parse(data) : [];
+        return list.filter((x: any) => x.player_id === playerId) as PlayerMatchStats[];
+      } catch (e) {
+        console.error("Error parseando player_match_stats:", e);
+        return [];
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('player_match_stats')
+        .select('*')
+        .eq('player_id', playerId);
+      if (error) throw error;
+      return data as PlayerMatchStats[];
+    }
+  },
+
   async savePlayerMatchStats(matchId: string, items: Omit<PlayerMatchStats, 'id' | 'created_at' | 'updated_at'>[]): Promise<PlayerMatchStats[]> {
     if (isMockMode) {
       await delay(300);
@@ -230,6 +251,95 @@ export const dataService = {
         .single();
       if (error) throw error;
       return data as Match;
+    }
+  },
+
+  async deleteMatchCallups(matchId: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      let list = MockDatabase.getMatches();
+      const idx = list.findIndex(x => x.id === matchId);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], callup_time: undefined, callup_location: undefined, kit_shirt_color: undefined, kit_shorts_color: undefined, kit_socks_color: undefined };
+        MockDatabase.setMatches(list);
+      }
+      let stats = MockDatabase.getPlayerMatchStats();
+      stats = stats.filter(s => s.match_id !== matchId);
+      MockDatabase.setPlayerMatchStats(stats);
+    } else {
+      await supabase.from('matches').update({
+        callup_time: null,
+        callup_location: null,
+        kit_shirt_color: null,
+        kit_shorts_color: null,
+        kit_socks_color: null
+      }).eq('id', matchId);
+      
+      const { error } = await supabase.from('player_match_stats').delete().eq('match_id', matchId);
+      if (error) throw error;
+    }
+  },
+
+  async deleteMatchReport(matchId: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      let list = MockDatabase.getMatches();
+      const idx = list.findIndex(x => x.id === matchId);
+      if (idx !== -1) {
+        list[idx] = { 
+          ...list[idx], 
+          score_us: undefined, 
+          score_them: undefined, 
+          status: 'Programado',
+          tactical_system: undefined,
+          team_positive_aspects: undefined,
+          team_improve_aspects: undefined
+        };
+        MockDatabase.setMatches(list);
+      }
+      const stats = MockDatabase.getPlayerMatchStats();
+      stats.forEach(s => {
+        if (s.match_id === matchId) {
+          s.is_starter = false;
+          s.position = undefined;
+          s.minutes_played = 0;
+          s.goals = 0;
+          s.conceded_goals = 0;
+          s.own_goals = 0;
+          s.assists = 0;
+          s.yellow_cards = 0;
+          s.red_card = false;
+          s.positive_aspects = undefined;
+          s.improve_aspects = undefined;
+          s.event_minutes = {};
+        }
+      });
+      MockDatabase.setPlayerMatchStats(stats);
+    } else {
+      await supabase.from('matches').update({
+        score_us: null,
+        score_them: null,
+        status: 'Programado',
+        tactical_system: null,
+        team_positive_aspects: null,
+        team_improve_aspects: null
+      }).eq('id', matchId);
+
+      const { error } = await supabase.from('player_match_stats').update({
+        is_starter: false,
+        position: null,
+        minutes_played: 0,
+        goals: 0,
+        conceded_goals: 0,
+        own_goals: 0,
+        assists: 0,
+        yellow_cards: 0,
+        red_card: false,
+        positive_aspects: null,
+        improve_aspects: null,
+        event_minutes: {}
+      }).eq('match_id', matchId);
+      if (error) throw error;
     }
   },
 
@@ -455,12 +565,66 @@ export const dataService = {
       await delay(300);
       return MockDatabase.getScouting();
     } else {
-      const { data, error } = await supabase
-        .from('scouting')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as ScoutingPlayer[];
+      const allData: ScoutingPlayer[] = [];
+      const pageSize = 1000;
+      let page = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const start = page * pageSize;
+        const end = start + pageSize - 1;
+        const { data, error } = await supabase
+          .from('scouting')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(start, end);
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          allData.push(...data as ScoutingPlayer[]);
+          if (data.length < pageSize) {
+            hasMore = false;
+          }
+        }
+        page++;
+      }
+      return allData;
+    }
+  },
+
+  async getScoutingWithHistory(): Promise<ScoutingPlayer[]> {
+    if (isMockMode) {
+      await delay(300);
+      return MockDatabase.getScouting();
+    } else {
+      const allData: ScoutingPlayer[] = [];
+      const pageSize = 500;
+      let page = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const start = page * pageSize;
+        const end = start + pageSize - 1;
+        const { data, error } = await supabase
+          .from('scouting')
+          .select('*, scouting_player_history(*)')
+          .order('created_at', { ascending: false })
+          .range(start, end);
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          allData.push(...data as ScoutingPlayer[]);
+          if (data.length < pageSize) {
+            hasMore = false;
+          }
+        }
+        page++;
+      }
+      return allData;
     }
   },
 
@@ -473,9 +637,11 @@ export const dataService = {
       MockDatabase.setScouting(list);
       return newItem;
     } else {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id;
       const { data, error } = await supabase
         .from('scouting')
-        .insert(item)
+        .insert({ ...item, created_by: userId })
         .select()
         .single();
       if (error) throw error;
@@ -1023,6 +1189,21 @@ export const dataService = {
       const newItem: PlayerInjury = { ...item, id: `inj-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setPlayerInjuries(list);
+      
+      // Update player's physical status in mock mode
+      const players = MockDatabase.getPlayers();
+      const pIdx = players.findIndex(p => p.id === item.player_id);
+      if (pIdx !== -1) {
+        let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
+        if (item.status === 'Baja') newStatus = 'Baja';
+        else if (item.status === 'Activa') newStatus = 'Lesionado';
+        else if (item.status === 'En tratamiento') newStatus = 'En duda';
+        else if (item.status === 'Recuperado') newStatus = 'Disponible';
+        
+        players[pIdx].physical_status = newStatus;
+        MockDatabase.setPlayers(players);
+      }
+      
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1031,6 +1212,19 @@ export const dataService = {
         .select()
         .single();
       if (error) throw error;
+      
+      // Update player's physical status in real mode
+      let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
+      if (item.status === 'Baja') newStatus = 'Baja';
+      else if (item.status === 'Activa') newStatus = 'Lesionado';
+      else if (item.status === 'En tratamiento') newStatus = 'En duda';
+      else if (item.status === 'Recuperado') newStatus = 'Disponible';
+      
+      await supabase
+        .from('players')
+        .update({ physical_status: newStatus })
+        .eq('id', item.player_id);
+        
       return data as PlayerInjury;
     }
   },
@@ -1043,6 +1237,22 @@ export const dataService = {
       if (idx === -1) throw new Error('Lesión no encontrada');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setPlayerInjuries(list);
+      
+      // Update player's physical status in mock mode
+      const playerId = list[idx].player_id;
+      const players = MockDatabase.getPlayers();
+      const pIdx = players.findIndex(p => p.id === playerId);
+      if (pIdx !== -1 && item.status) {
+        let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
+        if (item.status === 'Baja') newStatus = 'Baja';
+        else if (item.status === 'Activa') newStatus = 'Lesionado';
+        else if (item.status === 'En tratamiento') newStatus = 'En duda';
+        else if (item.status === 'Recuperado') newStatus = 'Disponible';
+        
+        players[pIdx].physical_status = newStatus;
+        MockDatabase.setPlayers(players);
+      }
+      
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -1052,6 +1262,21 @@ export const dataService = {
         .select()
         .single();
       if (error) throw error;
+      
+      // Update player's physical status in real mode
+      if (item.status && data) {
+        let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
+        if (item.status === 'Baja') newStatus = 'Baja';
+        else if (item.status === 'Activa') newStatus = 'Lesionado';
+        else if (item.status === 'En tratamiento') newStatus = 'En duda';
+        else if (item.status === 'Recuperado') newStatus = 'Disponible';
+        
+        await supabase
+          .from('players')
+          .update({ physical_status: newStatus })
+          .eq('id', data.player_id);
+      }
+      
       return data as PlayerInjury;
     }
   },

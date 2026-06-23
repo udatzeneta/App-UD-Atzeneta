@@ -12,7 +12,7 @@ import {
   TrendingUp, Ruler, UserCheck, Phone, Mail, Trophy, AlertTriangle,
   FileText, ChevronRight, ShieldCheck, ShieldAlert, Plus, X, Check
 } from 'lucide-react';
-import { Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, TrainingAttendance } from '../types';
+import { Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, TrainingAttendance, Match, Training } from '../types';
 import { exportToCSV, exportToPDF } from '../utils/export';
 
 type DetailTab = 'ficha' | 'stats' | 'lesiones' | 'peso' | 'fisio';
@@ -27,6 +27,7 @@ export const PlayerDetail: React.FC = () => {
   const canEdit = hasPermission('players', 'editar');
 
   const [detailTab, setDetailTab] = useState<DetailTab>('ficha');
+  const [statsMonthFilter, setStatsMonthFilter] = useState<string>('General');
 
   // ---- Modales ----
   const [isInjuryModalOpen, setIsInjuryModalOpen] = useState(false);
@@ -85,14 +86,70 @@ export const PlayerDetail: React.FC = () => {
       const allAtt = await dataService.getTrainingAttendance();
       return allAtt.filter((a: TrainingAttendance) => a.user_id === player.profile_id);
     },
-    enabled: !!player?.profile_id
+    enabled: !!player?.profile_id && detailTab === 'stats'
   });
+
+  const { data: trainings = [] } = useQuery({
+    queryKey: ['trainings'],
+    queryFn: () => dataService.getTrainings(),
+    enabled: detailTab === 'stats'
+  });
+
+  const { data: matches = [] } = useQuery({
+    queryKey: ['matches'],
+    queryFn: () => dataService.getMatches(),
+    enabled: detailTab === 'stats'
+  });
+
+  const { data: matchStats = [], isLoading: isLoadingStats } = useQuery({
+    queryKey: ['playerMatchStatsAll', playerId],
+    queryFn: () => playerId ? dataService.getAllPlayerMatchStatsByPlayer(playerId) : Promise.resolve([]),
+    enabled: !!playerId && detailTab === 'stats'
+  });
+
+  // ---- Dynamic Stats Computation based on Filter ----
+  const availableMonths = React.useMemo(() => {
+    const months = new Set<string>();
+    matchStats.forEach(s => {
+      const match = matches.find((m: Match) => m.id === s.match_id);
+      if (match?.date) months.add(match.date.substring(0, 7)); // YYYY-MM
+    });
+    attendanceRecords.forEach(a => {
+      const t = trainings.find((tr: Training) => tr.id === a.training_id);
+      if (t?.date) months.add(t.date.substring(0, 7));
+    });
+    return Array.from(months).sort().reverse();
+  }, [matchStats, matches, attendanceRecords, trainings]);
+
+  const filteredMatchStats = React.useMemo(() => {
+    if (statsMonthFilter === 'General') return matchStats;
+    return matchStats.filter(s => {
+      const match = matches.find((m: Match) => m.id === s.match_id);
+      return match?.date?.startsWith(statsMonthFilter);
+    });
+  }, [matchStats, matches, statsMonthFilter]);
+
+  const filteredAttendance = React.useMemo(() => {
+    if (statsMonthFilter === 'General') return attendanceRecords;
+    return attendanceRecords.filter(a => {
+      const t = trainings.find((tr: Training) => tr.id === a.training_id);
+      return t?.date?.startsWith(statsMonthFilter);
+    });
+  }, [attendanceRecords, trainings, statsMonthFilter]);
+
+  const dynMatchesPlayed = filteredMatchStats.filter(s => s.minutes_played > 0).length;
+  const dynMinutesPlayed = filteredMatchStats.reduce((acc, s) => acc + (s.minutes_played || 0), 0);
+  const dynGoals = filteredMatchStats.reduce((acc, s) => acc + (s.goals || 0), 0);
+  const dynAssists = filteredMatchStats.reduce((acc, s) => acc + (s.assists || 0), 0);
+  const dynYellows = filteredMatchStats.reduce((acc, s) => acc + (s.yellow_cards || 0), 0);
+  const dynReds = filteredMatchStats.filter(s => s.red_card).length;
 
   // ---- Mutations ----
   const createInjuryMutation = useMutation({
     mutationFn: (item: Omit<PlayerInjury, 'id'>) => dataService.createPlayerInjury(item),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['playerInjuries', playerId] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
       showToast('success', 'Lesión Registrada', 'La lesión se ha añadido correctamente al historial.');
       handleCloseInjuryModal();
     },
@@ -103,6 +160,7 @@ export const PlayerDetail: React.FC = () => {
     mutationFn: ({ id, data }: { id: string; data: Partial<PlayerInjury> }) => dataService.updatePlayerInjury(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['playerInjuries', playerId] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
       showToast('success', 'Lesión Actualizada', 'Los datos de la lesión se han actualizado.');
       handleCloseInjuryModal();
     },
@@ -113,6 +171,7 @@ export const PlayerDetail: React.FC = () => {
     mutationFn: (id: string) => dataService.deletePlayerInjury(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['playerInjuries', playerId] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
       showToast('success', 'Lesión Eliminada', 'El registro se ha eliminado.');
     },
     onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo eliminar la lesión.')
@@ -327,6 +386,65 @@ export const PlayerDetail: React.FC = () => {
       console.error(err);
       showToast('error', 'Error al exportar', 'No se pudo generar el informe en PDF.');
     }
+  };
+
+  // ---- Chart & Stats Helpers ----
+  const renderMatchStatsChart = () => {
+    if (isLoadingStats) return <div className="text-center py-8 text-brand-gray-muted text-xs">Cargando progreso...</div>;
+    const sortedStats = [...filteredMatchStats].map(s => {
+      const match = matches.find((m: Match) => m.id === s.match_id);
+      return {
+        ...s,
+        date: match?.date || '?',
+        matchday: match?.matchday || '?',
+        rival: match?.rival || '?'
+      };
+    }).sort((a, b) => {
+      if (a.date === '?' || b.date === '?') return 0;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
+
+    if (sortedStats.length === 0) {
+      return <div className="text-center py-8 text-brand-gray-muted italic text-xs">No hay registros de partidos.</div>;
+    }
+    
+    const svgW = 600; const svgH = 200; const padX = 40; const padY = 30;
+    const chartW = svgW - 2 * padX; const chartH = svgH - 2 * padY;
+    const maxMins = 90;
+    
+    const points = sortedStats.map((s, idx) => {
+      const x = padX + (idx / (Math.max(sortedStats.length - 1, 1))) * chartW;
+      const y = padY + chartH - ((s.minutes_played || 0) / maxMins) * chartH;
+      return { x, y, minutes: s.minutes_played || 0, label: `J.${s.matchday}`, rival: s.rival };
+    });
+    const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+    return (
+      <div className="bg-brand-black/30 border border-brand-black-border p-4 rounded-xl overflow-x-auto space-y-2">
+        <span className="text-[10px] text-brand-gray-muted uppercase font-bold block">Evolución: Minutos Jugados</span>
+        <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="min-w-[500px] overflow-visible">
+          {[0, 0.5, 1].map((ratio, i) => {
+            const y = padY + chartH * ratio;
+            const mVal = (maxMins - ratio * maxMins).toFixed(0);
+            return (
+              <g key={i} className="opacity-20">
+                <line x1={padX} y1={y} x2={padX + chartW} y2={y} stroke="#4b5563" strokeDasharray="3,3" />
+                <text x={padX - 8} y={y + 3} fill="#9ca3af" fontSize="10" textAnchor="end">{mVal}'</text>
+              </g>
+            );
+          })}
+          {points.length > 1 && <path d={pathData} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+          {points.map((p, idx) => (
+            <g key={idx}>
+              <circle cx={p.x} cy={p.y} r="4" fill="#1f2937" stroke="#3b82f6" strokeWidth="2" />
+              <text x={p.x} y={p.y - 10} fill="#60a5fa" fontSize="10" textAnchor="middle" fontWeight="bold">{p.minutes}'</text>
+              <text x={p.x} y={padY + chartH + 15} fill="#9ca3af" fontSize="9" textAnchor="middle">{p.label}</text>
+              <text x={p.x} y={padY + chartH + 26} fill="#6b7280" fontSize="8" textAnchor="middle">{p.rival.substring(0, 10)}</text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    );
   };
 
   // ---- Weight Chart ----
@@ -554,20 +672,153 @@ export const PlayerDetail: React.FC = () => {
 
         {/* ===== ESTADÍSTICAS ===== */}
         {detailTab === 'stats' && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
-            {[
-              { label: 'Partidos Jugados', value: player.matches_played, color: 'text-brand-gray-light' },
-              { label: 'Minutos Jugados', value: `${player.minutes_played}'`, color: 'text-brand-gray-light' },
-              { label: 'Goles Anotados', value: `+${player.goals}`, color: 'text-emerald-500' },
-              { label: 'Asistencias Clave', value: `+${player.assists}`, color: 'text-indigo-400' },
-              { label: 'Tarjetas Amarillas', value: player.yellow_cards, color: 'text-yellow-500' },
-              { label: 'Tarjetas Rojas', value: player.red_cards, color: 'text-brand-red-600' },
-            ].map((item, i) => (
-              <div key={i} className="bg-brand-black/30 border border-brand-black-border p-4 rounded-lg text-center">
-                <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">{item.label}</span>
-                <span className={`text-2xl font-extrabold ${item.color} mt-1 block`}>{item.value}</span>
+          <div className="space-y-6" id="stats-export-container">
+            {/* Header del Filtro */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-brand-black/30 border border-brand-black-border p-4 rounded-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-brand-red-600 bg-brand-black shrink-0 flex items-center justify-center">
+                  {player.photo_url ? (
+                    <img src={player.photo_url} alt={player.nickname || player.full_name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                  ) : (
+                    <span className="text-xl font-bold text-brand-gray-dark">{(player.nickname || player.full_name).charAt(0)}</span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-brand-gray-light uppercase tracking-wider flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-brand-red-600" /> Rendimiento Deportivo
+                  </h3>
+                  <p className="text-[10px] text-brand-gray-light font-bold">
+                    {player.full_name} {player.dorsal ? `(#${player.dorsal})` : ''}
+                  </p>
+                  <p className="text-[10px] text-brand-gray-muted mt-0.5">
+                    Estadísticas dinámicas según el periodo seleccionado.
+                  </p>
+                </div>
               </div>
-            ))}
+              <div className="flex items-center gap-3">
+                <select
+                  className="form-input py-1.5 text-xs w-auto bg-brand-black font-semibold text-brand-gray-light"
+                  value={statsMonthFilter}
+                  onChange={(e) => setStatsMonthFilter(e.target.value)}
+                >
+                  <option value="General">Temporada Completa (General)</option>
+                  {availableMonths.map(month => {
+                    const [yyyy, mm] = month.split('-');
+                    const date = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
+                    const label = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                    return <option key={month} value={month}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
+                  })}
+                </select>
+                <button
+                  onClick={async () => {
+                    if (!player) return;
+                    showToast('info', 'Generando Reporte', 'Preparando el informe PDF de estadísticas...');
+                    try {
+                      const { jsPDF } = await import('jspdf');
+                      const html2canvas = (await import('html2canvas')).default;
+                      const element = document.getElementById('stats-export-container');
+                      if (!element) throw new Error("Contenedor no encontrado");
+                      
+                      const canvas = await html2canvas(element, { useCORS: true, scale: 2, backgroundColor: '#0f172a' });
+                      const imgData = canvas.toDataURL('image/png');
+                      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                      
+                      const pdfW = pdf.internal.pageSize.getWidth();
+                      const margin = 10;
+                      const imgW = pdfW - 2 * margin;
+                      const imgH = (canvas.height * imgW) / canvas.width;
+                      
+                      pdf.text(`Rendimiento Deportivo: ${player.full_name} - ${statsMonthFilter === 'General' ? 'Temporada Completa' : statsMonthFilter}`, margin, margin + 5);
+                      pdf.addImage(imgData, 'PNG', margin, margin + 10, imgW, imgH);
+                      pdf.save(`estadisticas_${player.nickname || player.full_name.replace(/\s+/g, '_')}_${statsMonthFilter}.pdf`);
+                      showToast('success', 'PDF Generado', 'El informe se ha descargado.');
+                    } catch (err: any) {
+                      console.error(err);
+                      showToast('error', 'Error', 'No se pudo generar el informe en PDF.');
+                    }
+                  }}
+                  className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Imprimir Informe
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
+              {[
+                { label: 'Partidos Jugados', value: dynMatchesPlayed, color: 'text-brand-gray-light' },
+                { label: 'Minutos Jugados', value: `${dynMinutesPlayed}'`, color: 'text-brand-gray-light' },
+                { label: 'Goles Anotados', value: `+${dynGoals}`, color: 'text-emerald-500' },
+                { label: 'Asistencias Clave', value: `+${dynAssists}`, color: 'text-indigo-400' },
+                { label: 'Tarjetas Amarillas', value: dynYellows, color: 'text-yellow-500' },
+                { label: 'Tarjetas Rojas', value: dynReds, color: 'text-brand-red-600' },
+              ].map((item, i) => (
+                <div key={i} className="bg-brand-black/30 border border-brand-black-border p-4 rounded-lg text-center">
+                  <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">{item.label}</span>
+                  <span className={`text-2xl font-extrabold ${item.color} mt-1 block`}>{item.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Gráfica de Minutos */}
+            {renderMatchStatsChart()}
+
+            {/* Bloque Entrenamientos */}
+            <div className="bg-brand-black/30 border border-brand-black-border p-4 rounded-xl text-left space-y-4">
+              <h3 className="text-xs font-bold text-brand-gray-light uppercase tracking-wider flex items-center gap-1.5 border-b border-brand-black-border pb-2">
+                <Users className="w-4 h-4 text-emerald-500" /> Asistencia a Entrenamientos
+              </h3>
+              
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-brand-black/40 p-3 rounded-lg text-center border border-brand-black-border">
+                  <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Sesiones</span>
+                  <span className="text-xl font-extrabold text-brand-gray-light">{filteredAttendance.length}</span>
+                </div>
+                <div className="bg-emerald-950/20 p-3 rounded-lg text-center border border-emerald-900/30">
+                  <span className="text-[9px] text-emerald-600/80 uppercase font-bold block">Asiste</span>
+                  <span className="text-xl font-extrabold text-emerald-500">
+                    {filteredAttendance.filter(a => a.status === 'Entrena').length}
+                  </span>
+                </div>
+                <div className="bg-brand-red-600/10 p-3 rounded-lg text-center border border-brand-red-600/20">
+                  <span className="text-[9px] text-brand-red-600/80 uppercase font-bold block">Falta</span>
+                  <span className="text-xl font-extrabold text-brand-red-600">
+                    {filteredAttendance.filter(a => a.status !== 'Entrena').length}
+                  </span>
+                </div>
+              </div>
+
+              {filteredAttendance.filter(a => a.status !== 'Entrena').length > 0 && (
+                <div className="mt-4">
+                  <span className="text-[10px] text-brand-gray-muted uppercase font-bold block mb-2">Desglose de Ausencias</span>
+                  <div className="max-h-[250px] overflow-y-auto space-y-2 pr-1 no-scrollbar">
+                    {filteredAttendance.filter(a => a.status !== 'Entrena')
+                      .sort((a, b) => {
+                        const tA = trainings.find((tr: Training) => tr.id === a.training_id)?.date || '';
+                        const tB = trainings.find((tr: Training) => tr.id === b.training_id)?.date || '';
+                        return new Date(tB).getTime() - new Date(tA).getTime();
+                      })
+                      .map((att) => {
+                        const t = trainings.find((tr: Training) => tr.id === att.training_id);
+                        const isLesionado = att.status === 'L' || att.status === 'ED';
+                        return (
+                          <div key={att.id} className="bg-brand-black/40 border border-brand-black-border p-3 rounded-lg flex items-center justify-between">
+                            <div>
+                              <span className="text-[10px] text-brand-gray-muted flex items-center gap-1 mb-0.5">
+                                <Calendar className="w-3 h-3" /> {t?.date || 'Fecha desconocida'}
+                              </span>
+                              <p className="text-xs text-brand-gray-light leading-normal mt-1">{att.observations || 'Sin observaciones'}</p>
+                            </div>
+                            <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full border ${isLesionado ? 'bg-amber-950/30 text-amber-500 border-amber-900/40' : 'bg-red-950/30 text-red-400 border-red-900/40'}`}>
+                              {att.status}
+                            </span>
+                          </div>
+                        );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

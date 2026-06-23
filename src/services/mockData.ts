@@ -344,7 +344,14 @@ const DEFAULT_SCOUTING: ScoutingPlayer[] = [
     age: 21,
     position: 'Delantero Centro',
     rating: 4,
-    notes: 'Gran desmarque al espacio, definición de zurda. Necesita mejorar juego de espaldas.'
+    notes: 'Gran desmarque al espacio, definición de zurda. Necesita mejorar juego de espaldas.',
+    in_wallet: true,
+    season: '2025-2026',
+    competition: 'Lliga Comunitat',
+    scouting_player_history: [
+      { id: 'sph-1', scouting_id: 's-1', temporada: '2024/2025', equipo: 'Hércules CF B' },
+      { id: 'sph-2', scouting_id: 's-1', temporada: '2023/2024', equipo: 'Alicante CF Promesas' }
+    ]
   },
   {
     id: 's-2',
@@ -353,7 +360,14 @@ const DEFAULT_SCOUTING: ScoutingPlayer[] = [
     age: 23,
     position: 'Pivote Defensivo',
     rating: 5,
-    notes: 'Dominio físico en duelos. Excelente visión en salida de balón y cambios de orientación.'
+    notes: 'Dominio físico en duelos. Excelente visión en salida de balón y cambios de orientación.',
+    in_wallet: true,
+    season: '2025-2026',
+    competition: 'Lliga Comunitat',
+    scouting_player_history: [
+      { id: 'sph-3', scouting_id: 's-2', temporada: '2024/2025', equipo: 'Torrent CF' },
+      { id: 'sph-4', scouting_id: 's-2', temporada: '2023/2024', equipo: 'CD Castellón B' }
+    ]
   }
 ];
 

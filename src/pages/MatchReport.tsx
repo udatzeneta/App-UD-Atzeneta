@@ -12,74 +12,10 @@ import {
   FileText, Save, Users, Zap
 } from 'lucide-react';
 
+import { FORMATIONS_SLOTS } from '../utils/formations';
+
 // Formaciones tácticas y coordenadas en porcentaje (x: 0-100, y: 0-100) para campo vertical
-const FORMATIONS_SLOTS: Record<string, { role: string; x: number; y: number }[]> = {
-  '4-4-2': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'LI', x: 18, y: 68 },
-    { role: 'DFC', x: 38, y: 71 },
-    { role: 'DFC', x: 62, y: 71 },
-    { role: 'LD', x: 82, y: 68 },
-    { role: 'MI', x: 18, y: 44 },
-    { role: 'MC', x: 38, y: 46 },
-    { role: 'MC', x: 62, y: 46 },
-    { role: 'MD', x: 82, y: 44 },
-    { role: 'DC', x: 35, y: 20 },
-    { role: 'DC', x: 65, y: 20 },
-  ],
-  '4-3-3': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'LI', x: 18, y: 68 },
-    { role: 'DFC', x: 38, y: 71 },
-    { role: 'DFC', x: 62, y: 71 },
-    { role: 'LD', x: 82, y: 68 },
-    { role: 'MC', x: 28, y: 46 },
-    { role: 'MCD', x: 50, y: 54 },
-    { role: 'MC', x: 72, y: 46 },
-    { role: 'EI', x: 22, y: 22 },
-    { role: 'DC', x: 50, y: 16 },
-    { role: 'ED', x: 78, y: 22 },
-  ],
-  '3-5-2': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'DFC', x: 28, y: 71 },
-    { role: 'DFC', x: 50, y: 73 },
-    { role: 'DFC', x: 72, y: 71 },
-    { role: 'MI', x: 15, y: 46 },
-    { role: 'MC', x: 35, y: 49 },
-    { role: 'MCD', x: 50, y: 57 },
-    { role: 'MC', x: 65, y: 49 },
-    { role: 'MD', x: 85, y: 46 },
-    { role: 'DC', x: 35, y: 20 },
-    { role: 'DC', x: 65, y: 20 },
-  ],
-  '4-2-3-1': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'LI', x: 18, y: 68 },
-    { role: 'DFC', x: 38, y: 71 },
-    { role: 'DFC', x: 62, y: 71 },
-    { role: 'LD', x: 82, y: 68 },
-    { role: 'MCD', x: 35, y: 54 },
-    { role: 'MCD', x: 65, y: 54 },
-    { role: 'MI', x: 20, y: 34 },
-    { role: 'MCO', x: 50, y: 32 },
-    { role: 'MD', x: 80, y: 34 },
-    { role: 'DC', x: 50, y: 15 },
-  ],
-  '3-4-3': [
-    { role: 'GK', x: 50, y: 88 },
-    { role: 'DFC', x: 28, y: 71 },
-    { role: 'DFC', x: 50, y: 73 },
-    { role: 'DFC', x: 72, y: 71 },
-    { role: 'MI', x: 15, y: 48 },
-    { role: 'MC', x: 38, y: 52 },
-    { role: 'MC', x: 62, y: 52 },
-    { role: 'MD', x: 85, y: 48 },
-    { role: 'EI', x: 20, y: 20 },
-    { role: 'DC', x: 50, y: 15 },
-    { role: 'ED', x: 80, y: 20 },
-  ]
-};
+
 
 interface LocalPlayerStats {
   player_id: string;
@@ -644,7 +580,6 @@ export const MatchReport: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['playerMatchStats', matchId] });
       showToast('success', 'Acta Guardada', 'Las estadísticas y la táctica se guardaron correctamente.');
-      navigate('/matches');
     },
     onError: (err: any) => {
       showToast('error', 'Error al Guardar', err.message || 'No se pudieron registrar los datos.');
@@ -654,6 +589,28 @@ export const MatchReport: React.FC = () => {
   const handleSaveAll = (e: React.FormEvent) => {
     e.preventDefault();
     saveMutation.mutate();
+  };
+
+  const deleteReportMutation = useMutation({
+    mutationFn: async () => {
+      if (!matchId) return;
+      await dataService.deleteMatchReport(matchId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['playerMatchStats', matchId] });
+      showToast('success', 'Acta Borrada', 'Se han restablecido los datos del acta del partido.');
+      navigate('/matches');
+    },
+    onError: (err: any) => {
+      showToast('error', 'Error al Borrar', err.message || 'No se pudo borrar el acta.');
+    }
+  });
+
+  const handleDeleteReport = () => {
+    if (window.confirm('¿Estás seguro de que deseas borrar todos los datos del acta (resultado, alineación, estadísticas)? Esta acción no se puede deshacer.')) {
+      deleteReportMutation.mutate();
+    }
   };
 
   // Exportar el acta completa a PDF
@@ -766,6 +723,15 @@ export const MatchReport: React.FC = () => {
             className="btn-secondary py-2.5 text-xs text-brand-gray-light font-bold"
           >
             <FileText className="w-4 h-4" /> Descargar Acta PDF
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDeleteReport}
+            disabled={deleteReportMutation.isPending}
+            className="btn-secondary py-2.5 text-xs text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 font-bold"
+          >
+            {deleteReportMutation.isPending ? 'Borrando...' : 'Borrar Acta'}
           </button>
 
           <button
@@ -958,7 +924,12 @@ export const MatchReport: React.FC = () => {
 
                     {/* Popover desplegable para asignar jugador en el slot activo */}
                     {activeSlotForSelection === idx && (
-                      <div className="absolute top-11 bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium max-h-[170px] overflow-y-auto z-30 w-44 no-scrollbar">
+                      <div 
+                        className={`absolute bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium max-h-[170px] overflow-y-auto z-30 w-44 no-scrollbar
+                          ${slot.y > 60 ? 'bottom-11' : 'top-11'} 
+                          ${slot.x < 30 ? 'left-0' : slot.x > 70 ? 'right-0' : 'left-1/2 -translate-x-1/2'}
+                        `}
+                      >
                         <div className="text-[9px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-1.5 mb-1.5 text-center">
                           Demarcación: {slot.role}
                         </div>

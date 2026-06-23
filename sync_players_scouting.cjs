@@ -6,6 +6,7 @@
 
 const { chromium } = require('playwright');
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 const fs = require('fs');
 const path = require('path');
 
@@ -107,16 +108,17 @@ async function scrapeRosterFromTeamPage(page) {
   try {
     await plantillaTab.waitFor({ state: 'visible', timeout: 8000 });
     await plantillaTab.click();
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3500);
   } catch (e) {
     console.log(`    ⚠️  Sin pestaña Plantilla`);
     return [];
   }
 
   try {
-    await page.waitForSelector('.roster-card', { timeout: 10000 });
+    await page.waitForSelector('.roster-card', { timeout: 15000 });
   } catch (e) {
-    console.log(`    ℹ️  Plantilla vacía o sin datos`);
+    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 200)).catch(() => '');
+    console.log(`    ℹ️  Plantilla vacía o sin datos. Página: ${bodyText.substring(0, 100)}`);
     return [];
   }
 
@@ -145,10 +147,38 @@ async function scrapePlayerData(page, playerUrl, teamUrl) {
     if (page.url().includes('/wp')) {
       await page.evaluate(url => { window.location.href = url; }, teamUrl);
       await page.waitForTimeout(2000);
-      return { stats: {}, history: [] };
+      return { stats: {}, playerDetails: {}, history: [] };
     }
     await page.waitForTimeout(3000);
   }
+
+  // Extraer datos personales del jugador (foto, dorsal, edad, posición)
+  const playerDetails = await page.evaluate(() => {
+    const details = {};
+
+    // Foto del jugador
+    const photoImg = document.querySelector('img.player-photo');
+    details.photo_url = photoImg?.src || null;
+
+    // Dorsal (desde la página del jugador)
+    const dorsalSpan = document.querySelector('.dorsal .shirt-num');
+    details.dorsal = dorsalSpan?.textContent?.trim() || null;
+
+    // Edad y posición están en .info-stack dentro de .info-item
+    const infoItems = document.querySelectorAll('.info-stack .info-item .label');
+    if (infoItems.length >= 1) {
+      // Primer info-item es la edad
+      const ageText = infoItems[0]?.textContent?.trim() || '';
+      const ageMatch = ageText.match(/(\d+)\s*años?/);
+      details.age = ageMatch ? parseInt(ageMatch[1], 10) : null;
+    }
+    if (infoItems.length >= 2) {
+      // Segundo info-item es la posición
+      details.position = infoItems[1]?.textContent?.trim() || null;
+    }
+
+    return details;
+  });
 
   const stats = await page.evaluate(() => {
     const s = {};
@@ -165,29 +195,39 @@ async function scrapePlayerData(page, playerUrl, teamUrl) {
     return s;
   });
 
-  // Historial: la sección existe pero está oculta; intentar mostrarla y leer datos
+  // Historial: buscar el tab de historial y hacer clic para cargar la tabla
   let history = [];
   try {
-    await page.evaluate(() => {
-      const sec = document.getElementById('history');
-      if (sec) sec.style.removeProperty('display');
-      const ui = document.getElementById('history-ui');
-      if (ui) ui.style.removeProperty('display');
-    });
-    await page.waitForSelector('#history-ui table, #history-content table', { timeout: 5000 });
+    // Buscar y hacer clic en el tab de Historial
+    const historyTab = page.locator('a[href="#history"], .match-tab[href*="history"]').first();
+    const historyTabExists = await historyTab.isVisible({ timeout: 3000 }).catch(() => false);
 
-    history = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('#history-ui tbody tr, #history-content tbody tr')).map(row => {
+    if (historyTabExists) {
+      await historyTab.click();
+      await page.waitForTimeout(2000);
+    }
+
+    // Esperar a que se cargue la tabla
+    await page.waitForSelector('table tbody tr, #history-ui table tbody tr, #history-content table tbody tr', { timeout: 8000 });
+
+    history = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('table tbody tr'));
+      return rows.map(row => {
         const cells = row.querySelectorAll('td');
+        if (cells.length < 4) return null;
         const imgSrc = cells[1]?.querySelector('img')?.src || null;
+        const temporada = cells[0]?.textContent?.trim() || null;
+        const equipo = cells[2]?.textContent?.trim() || null;
+        const categoria = cells[3]?.textContent?.trim() || null;
+
         return {
-          temporada: cells[0]?.textContent?.trim() || null,
+          temporada,
           shield_url: imgSrc && !imgSrc.includes('escudo_generico') ? imgSrc : null,
-          equipo: cells[2]?.textContent?.trim() || null,
-          categoria: cells[3]?.textContent?.trim() || null,
+          equipo,
+          categoria,
         };
-      }).filter(r => r.temporada && r.equipo)
-    );
+      }).filter(r => r && r.temporada && r.equipo);
+    });
   } catch (e) {
     // Sin historial disponible — normal si no hay tabla cargada
   }
@@ -196,7 +236,7 @@ async function scrapePlayerData(page, playerUrl, teamUrl) {
   await page.evaluate(url => { window.location.href = url; }, teamUrl);
   await page.waitForTimeout(2000);
 
-  return { stats, history };
+  return { stats, playerDetails, history };
 }
 
 function toInt(val) {
@@ -209,15 +249,17 @@ function toFloat(val) {
   return isNaN(n) ? null : n;
 }
 
-function buildRecord(player, team, stats) {
+function buildRecord(player, team, stats, playerDetails = {}) {
   return {
     player_name: player.name,
     team: team.name,
     season: SEASON,
     competition: team.competition,
-    position: player.position || 'Desconocida',
+    position: playerDetails.position || player.position || 'Desconocida',
     rating: 3,
-    dorsal: toInt(player.dorsal),
+    dorsal: toInt(playerDetails.dorsal || player.dorsal),
+    age: playerDetails.age || null,
+    photo_url: playerDetails.photo_url || null,
     convocados: toInt(stats['Convocados']),
     jugados: toInt(stats['Jugados']),
     titular: toInt(stats['Titular']),
@@ -247,7 +289,10 @@ function buildRecord(player, team, stats) {
     console.error('❌ SUPABASE_SERVICE_ROLE_KEY no configurada en .env'); process.exit(1);
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false },
+    realtime: { transport: ws }
+  });
 
   const { data: teams, error: teamsError } = await supabase
     .from('teams')
@@ -339,42 +384,83 @@ function buildRecord(player, team, stats) {
               .eq('season', SEASON)
               .maybeSingle();
 
+            let scoutingId = existing?.id;
+            let isNewPlayer = false;
+
             if (existing) {
               console.log(`    ⏭️  ${player.name} — ya existe`);
               totalSkipped++;
-              continue;
-            }
-
-            let stats = {}, history = [];
-            try {
-              ({ stats, history } = await scrapePlayerData(page, player.playerUrl, teamPageUrl));
-            } catch (e) {
-              console.error(`    ⚠️  Error datos ${player.name}: ${e.message.split('\n')[0]}`);
-            }
-
-            const record = buildRecord(player, team, stats);
-
-            const { data: inserted, error: insertError } = await supabase
-              .from('scouting')
-              .insert(record)
-              .select('id')
-              .single();
-
-            if (insertError) {
-              console.error(`    ❌ Insert ${player.name}: ${insertError.message}`);
-              totalErrors++;
+              // Continuar a scraping de historial aunque exista
             } else {
+              // Nuevo jugador — scrape stats completos
+              let stats = {}, playerDetails = {}, history = [];
+              try {
+                ({ stats, playerDetails, history } = await scrapePlayerData(page, player.playerUrl, teamPageUrl));
+              } catch (e) {
+                console.error(`    ⚠️  Error datos ${player.name}: ${e.message.split('\n')[0]}`);
+              }
+
+              const record = buildRecord(player, team, stats, playerDetails);
+
+              const { data: inserted, error: insertError } = await supabase
+                .from('scouting')
+                .insert(record)
+                .select('id')
+                .single();
+
+              if (insertError) {
+                console.error(`    ❌ Insert ${player.name}: ${insertError.message}`);
+                totalErrors++;
+                await page.waitForTimeout(400);
+                continue;
+              }
+
+              scoutingId = inserted?.id;
+              isNewPlayer = true;
+
               console.log(`    ➕ ${player.name} | ${player.position} | Jugados: ${record.jugados ?? '—'} | Goles: ${record.goles ?? '—'} | Amarillas: ${record.amarillas ?? '—'}`);
               totalInserted++;
 
-              if (history.length > 0 && inserted?.id) {
-                const historyRows = history.map(h => ({ scouting_id: inserted.id, ...h }));
+              // Insertar historial del jugador nuevo
+              if (history.length > 0 && scoutingId) {
+                const historyRows = history.map(h => ({ scouting_id: scoutingId, ...h }));
                 const { error: histErr } = await supabase.from('scouting_player_history').insert(historyRows);
                 if (histErr) {
                   console.error(`      ⚠️  Error historial: ${histErr.message}`);
                 } else {
                   console.log(`      📋 Historial: ${history.length} temporadas`);
                 }
+              }
+            }
+
+            // Si el jugador existe, intentar completar historial
+            if (existing && scoutingId) {
+              try {
+                const { stats: _, playerDetails: __, history } = await scrapePlayerData(page, player.playerUrl, teamPageUrl);
+
+                if (history.length > 0) {
+                  const { data: existingHistory } = await supabase
+                    .from('scouting_player_history')
+                    .select('temporada, equipo')
+                    .eq('scouting_id', scoutingId);
+
+                  const existingSet = new Set((existingHistory || []).map(h => `${h.temporada}|${h.equipo}`));
+                  const newHistory = history.filter(h => !existingSet.has(`${h.temporada}|${h.equipo}`));
+
+                  if (newHistory.length > 0) {
+                    const historyRows = newHistory.map(h => ({ scouting_id: scoutingId, ...h }));
+                    const { error: histErr } = await supabase.from('scouting_player_history').insert(historyRows);
+                    if (histErr) {
+                      console.error(`      ⚠️  Error historial: ${histErr.message}`);
+                    } else {
+                      console.log(`      📋 Historial: ${newHistory.length} temporadas nuevas (${existingHistory?.length ?? 0} existentes)`);
+                    }
+                  } else if (existingHistory && existingHistory.length > 0) {
+                    console.log(`      📋 Historial: ya completo (${existingHistory.length} temporadas)`);
+                  }
+                }
+              } catch (e) {
+                // Error al obtener historial de jugador existente
               }
             }
 
