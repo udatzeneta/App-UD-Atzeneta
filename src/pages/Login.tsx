@@ -61,9 +61,9 @@ export const Login: React.FC = () => {
         {/* Cabecera Logo */}
         <div className="text-center mb-8">
           <img 
-            src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS2NVtAOUKrtEAB5gtZDuu-p1cv0D0YcJofLqMfvnPeeA&s=10" 
+            src="/club-logo.png" 
             alt="Escudo UD Atzeneta" 
-            className="w-14 h-14 mx-auto object-contain rounded-2xl mb-4 shadow-glow-red"
+            className="w-16 h-16 mx-auto object-contain mb-4 filter drop-shadow-[0_0_8px_rgba(193,18,31,0.4)]"
           />
           <h2 className="text-xl font-bold tracking-tight text-brand-gray-light">UD ATZENETA</h2>
           <p className="text-xs text-brand-gray-muted mt-1.5">Portal de Gestión Interna y ERP Deportivo</p>

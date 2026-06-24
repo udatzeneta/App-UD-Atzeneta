@@ -61,9 +61,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         {/* Identidad del club */}
         <div className="h-16 px-6 border-b border-brand-black-border flex items-center gap-3">
           <img 
-            src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS2NVtAOUKrtEAB5gtZDuu-p1cv0D0YcJofLqMfvnPeeA&s=10" 
+            src="/club-logo.png" 
             alt="Escudo UD Atzeneta" 
-            className="w-8 h-8 object-contain rounded-lg"
+            className="w-9 h-9 object-contain"
           />
           <div>
             <h1 className="text-sm font-bold tracking-wider text-brand-gray-light leading-none">UD ATZENETA</h1>
@@ -211,9 +211,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             </button>
             <div className="lg:hidden flex items-center gap-2">
               <img 
-                src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS2NVtAOUKrtEAB5gtZDuu-p1cv0D0YcJofLqMfvnPeeA&s=10" 
+                src="/club-logo.png" 
                 alt="Escudo UD Atzeneta" 
-                className="w-7 h-7 object-contain rounded-md"
+                className="w-8 h-8 object-contain"
               />
               <span className="text-xs font-bold tracking-wider text-brand-gray-light">UD ATZENETA</span>
             </div>
