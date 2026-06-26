@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
 import { authService } from '../services/auth';
+import { supabase, isMockMode } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
-import { Fine } from '../types';
+import { Fine, Profile } from '../types';
 import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 import {
   ShieldAlert, Search, Download, FileText, Plus, Edit2, Trash2,
-  User, CreditCard, Calendar, Check, AlertTriangle
+  User, CreditCard, Calendar, Check, AlertTriangle, X
 } from 'lucide-react';
 
 // Tipos de multa predefinidos
@@ -28,6 +29,7 @@ const FINE_TYPES = [
   { label: 'No Visualizar Partido', amount: 1 },
   { label: 'Apuesta CT', amount: 10 },
   { label: 'Apuesta con CT perdida', amount: 10 },
+  { label: 'Otros', amount: 0 },
 ];
 
 // Importes de pago rápido
@@ -52,6 +54,8 @@ export const Fines: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFine, setEditingFine] = useState<Fine | null>(null);
+  const [selectedPlayerDetail, setSelectedPlayerDetail] = useState<Profile | null>(null);
+  const [isPaymentMode, setIsPaymentMode] = useState(false);
 
   // Campos formulario
   const [targetUserId, setTargetUserId] = useState('');
@@ -68,8 +72,24 @@ export const Fines: React.FC = () => {
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
-    queryFn: () => authService.getProfiles(),
-    enabled: canCreate || canEdit // Solo cargar perfiles si puede escribir o editar
+    queryFn: async () => {
+      const allProfiles = await authService.getProfiles();
+      if (isMockMode) {
+        return allProfiles;
+      }
+      // Obtener nickname y dorsal de la tabla players
+      const { data: players } = await supabase.from('players').select('profile_id, nickname, dorsal');
+      const playersMap = new Map(players?.map(p => [p.profile_id, p]) || []);
+      return allProfiles.map(p => {
+        const player = playersMap.get(p.id);
+        return {
+          ...p,
+          nickname: player?.nickname || p.full_name,
+          dorsal: player?.dorsal
+        };
+      });
+    },
+    enabled: canCreate || canEdit
   });
 
   // Mutaciones
@@ -109,6 +129,7 @@ export const Fines: React.FC = () => {
     setReason('');
     setAmount('10.00');
     setStatus('Pendiente');
+    setIsPaymentMode(false);
     setIsModalOpen(true);
   };
 
@@ -125,6 +146,7 @@ export const Fines: React.FC = () => {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingFine(null);
+    setIsPaymentMode(false);
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -133,12 +155,59 @@ export const Fines: React.FC = () => {
       showToast('error', 'Validación', 'Debes seleccionar un jugador.');
       return;
     }
-    if (!reason.trim()) {
-      showToast('error', 'Validación', 'El motivo de la multa es obligatorio.');
-      return;
-    }
     if (Number(amount) <= 0) {
       showToast('error', 'Validación', 'El importe debe ser mayor que cero.');
+      return;
+    }
+
+    // Modo PAGO: Marcar multas pendientes como pagadas
+    if (isPaymentMode) {
+      const playerPendingFines = fines
+        .filter(f => f.user_id === targetUserId && f.status === 'Pendiente')
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      if (playerPendingFines.length === 0) {
+        showToast('error', 'Validación', 'Este jugador no tiene multas pendientes.');
+        return;
+      }
+
+      let remainingAmount = Number(amount);
+      const updates: Array<{ id: string; item: Partial<Fine> }> = [];
+
+      // Procesar multas ordenadas por fecha (más antiguas primero)
+      for (const fine of playerPendingFines) {
+        if (remainingAmount <= 0) break;
+
+        const fineAmount = Number(fine.amount);
+
+        if (remainingAmount >= fineAmount) {
+          // Multa completamente cubierta por el pago
+          updates.push({ id: fine.id, item: { status: 'Pagado' } });
+          remainingAmount -= fineAmount;
+        } else {
+          // Pago parcial: reducir el monto de la multa
+          const newAmount = fineAmount - remainingAmount;
+          updates.push({ id: fine.id, item: { amount: newAmount } });
+          remainingAmount = 0;
+        }
+      }
+
+      if (updates.length === 0) {
+        showToast('error', 'Validación', 'No se pueden procesar el pago.');
+        return;
+      }
+
+      // Aplicar todas las actualizaciones
+      updates.forEach(({ id, item }) => {
+        updateMutation.mutate({ id, item });
+      });
+
+      return;
+    }
+
+    // Modo MULTA: Crear nueva multa
+    if (!reason.trim() && reason !== 'Otros') {
+      showToast('error', 'Validación', 'El motivo de la multa es obligatorio.');
       return;
     }
 
@@ -186,9 +255,7 @@ export const Fines: React.FC = () => {
     return d.getMonth() + 1 === selectedMonth && d.getFullYear() === selectedYear;
   };
 
-  const totalFinesCount = userFines.length;
-  const totalFinesAmount = userFines.reduce((acc, f) => acc + Number(f.amount), 0);
-  const monthlyFinesAmount = userFines.filter(f => filterByDate(f.date)).reduce((acc, f) => acc + Number(f.amount), 0);
+  const isAbono = (f: Fine) => f.reason.toLowerCase().startsWith('abono');
 
   // Filtrado de la lista en pantalla (Búsqueda + Estado)
   const filteredFines = userFines.filter(f => {
@@ -204,7 +271,7 @@ export const Fines: React.FC = () => {
   const buildExportRows = (): ExportCell[][] =>
     filteredFines.map(f => [
       f.date,
-      f.profiles?.full_name || 'Desconocido',
+      f.profiles?.nickname || f.profiles?.full_name || 'Desconocido',
       f.reason,
       f.amount,
       f.status,
@@ -236,6 +303,57 @@ export const Fines: React.FC = () => {
   ];
 
   const isLoading = loadingFines || (loadingProfiles && (canCreate || canEdit));
+
+  // Estadísticas por jugador
+  const playerStats = profiles.map(profile => {
+    const playerFines = userFines.filter(f => f.user_id === profile.id);
+    
+    const playerRealFines = playerFines.filter(f => !isAbono(f));
+    const playerAbonos = playerFines.filter(isAbono);
+
+    const playerMonthlyRealFines = playerRealFines.filter(f => filterByDate(f.date));
+    const playerMonthlyAbonos = playerAbonos.filter(f => filterByDate(f.date));
+
+    // Totales
+    const totalAmount = playerRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
+    const paidAmount = playerRealFines.filter(f => f.status === 'Pagado').reduce((acc, f) => acc + Number(f.amount), 0) + playerAbonos.reduce((acc, f) => acc + Number(f.amount), 0);
+    const pendingAmount = totalAmount - paidAmount;
+
+    // Mensuales
+    const monthlyTotalAmount = playerMonthlyRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
+    const monthlyPaidAmount = playerMonthlyRealFines.filter(f => f.status === 'Pagado').reduce((acc, f) => acc + Number(f.amount), 0) + playerMonthlyAbonos.reduce((acc, f) => acc + Number(f.amount), 0);
+    const monthlyPendingAmount = monthlyTotalAmount - monthlyPaidAmount;
+
+    return {
+      profile,
+      totalFines: playerRealFines.length,
+      totalAmount,
+      paidAmount,
+      pendingAmount,
+      monthlyFines: playerMonthlyRealFines.length,
+      monthlyTotalAmount,
+      monthlyPaidAmount,
+      monthlyPendingAmount,
+    };
+  }).filter(ps => ps.totalFines > 0 || ps.paidAmount > 0 || ps.monthlyFines > 0).sort((a, b) => b.pendingAmount - a.pendingAmount);
+
+  const realFines = userFines.filter(f => !isAbono(f));
+  const abonos = userFines.filter(isAbono);
+  
+  const totalFinesValue = realFines.reduce((acc, f) => acc + Number(f.amount), 0);
+  const totalDebt = playerStats.reduce((acc, stat) => acc + stat.pendingAmount, 0);
+  const monthlyFinesAmount = realFines.filter(f => filterByDate(f.date)).reduce((acc, f) => acc + Number(f.amount), 0);
+
+  const finesByMonthData = months.map(m => {
+    const mRealFines = realFines.filter(f => new Date(f.date).getMonth() + 1 === m.value && new Date(f.date).getFullYear() === selectedYear);
+    const mTotal = mRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
+    return {
+      name: m.label.substring(0, 3),
+      total: mTotal
+    };
+  });
+  
+  const maxChartValue = Math.max(...finesByMonthData.map(d => d.total), 10);
 
   return (
     <div className="space-y-6">
@@ -274,35 +392,23 @@ export const Fines: React.FC = () => {
           ===================================================================== */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Multas Totales */}
+        {/* Multas Totales (€) */}
         <div className="dashboard-card p-5 flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-gray-muted block">Sanciones</span>
-            <h3 className="text-2xl font-bold text-brand-gray-light mt-2">{totalFinesCount}</h3>
-            <span className="text-[10px] text-brand-gray-muted mt-1 block">Multas acumuladas en total</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-gray-muted block">Multas (€) total</span>
+            <h3 className="text-2xl font-bold text-brand-gray-light mt-2">{totalFinesValue.toFixed(2)} €</h3>
+            <span className="text-[10px] text-brand-gray-muted mt-1 block">Histórico de sanciones</span>
           </div>
-          <div className="p-3 bg-brand-red-600/10 text-brand-red-600 rounded-xl">
+          <div className="p-3 bg-brand-black-border text-brand-gray-light rounded-xl">
             <ShieldAlert className="w-6 h-6" />
           </div>
         </div>
 
-        {/* Importe Total Acumulado */}
+        {/* Multas Mes (€) */}
         <div className="dashboard-card p-5 flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-gray-muted block">Deuda / Total</span>
-            <h3 className="text-2xl font-bold text-brand-red-600 mt-2">{totalFinesAmount.toFixed(2)} €</h3>
-            <span className="text-[10px] text-brand-gray-muted mt-1 block">Balance histórico de sanciones</span>
-          </div>
-          <div className="p-3 bg-brand-red-600/10 text-brand-red-600 rounded-xl">
-            <CreditCard className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Acumulado Mensual */}
-        <div className="dashboard-card p-5 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-gray-muted block">Total Mensual</span>
-            <h3 className="text-2xl font-bold text-brand-red-600 mt-2">{monthlyFinesAmount.toFixed(2)} €</h3>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-gray-muted block">Multas (€) Mes</span>
+            <h3 className="text-2xl font-bold text-brand-gray-light mt-2">{monthlyFinesAmount.toFixed(2)} €</h3>
             <span className="text-[10px] text-brand-gray-muted mt-1 block">Sanciones aplicadas en este mes</span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -325,7 +431,126 @@ export const Fines: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Deudas */}
+        <div className="dashboard-card p-5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-gray-muted block">Deudas</span>
+            <h3 className="text-2xl font-bold text-brand-red-600 mt-2">{totalDebt.toFixed(2)} €</h3>
+            <span className="text-[10px] text-brand-gray-muted mt-1 block">Balance histórico pendiente</span>
+          </div>
+          <div className="p-3 bg-brand-red-600/10 text-brand-red-600 rounded-xl">
+            <CreditCard className="w-6 h-6" />
+          </div>
+        </div>
       </div>
+
+      {/* =====================================================================
+          GRÁFICA DE MULTAS POR MES
+          ===================================================================== */}
+      <div className="dashboard-card p-5">
+        <h3 className="text-sm font-bold text-brand-gray-light mb-6">Multas por Mes ({selectedYear})</h3>
+        <div className="flex items-end justify-between gap-1 sm:gap-2 h-48 w-full pt-6">
+          {finesByMonthData.map((d, i) => (
+            <div key={i} className="flex flex-col items-center flex-1 group">
+              <div className="w-full relative flex justify-center items-end h-full bg-brand-black-bg/50 rounded-t-sm">
+                <div 
+                  className="w-full bg-brand-red-600/80 hover:bg-brand-red-500 rounded-t-sm transition-all relative"
+                  style={{ height: `${(d.total / maxChartValue) * 100}%`, minHeight: d.total > 0 ? '4px' : '0' }}
+                >
+                  <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-brand-black border border-brand-black-border text-xs text-white px-2 py-1 rounded shadow-premium pointer-events-none whitespace-nowrap transition-opacity z-10">
+                    {d.total.toFixed(2)} €
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] text-brand-gray-muted mt-2">{d.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* =====================================================================
+          LISTADO DE JUGADORES Y SUS ESTADÍSTICAS DE MULTAS
+          ===================================================================== */}
+      {!isPlayer && playerStats.length > 0 && (
+        <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
+          <div className="p-4 border-b border-brand-black-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 className="text-lg font-bold text-brand-gray-light">Deuda de Multas por Jugador</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-brand-gray-muted uppercase tracking-wider">Mes:</span>
+              <div className="flex gap-1">
+                <select 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="bg-brand-black-bg border border-brand-black-border rounded px-2 py-1 text-xs text-brand-gray-light focus:ring-1 focus:ring-brand-red-600 focus:border-brand-red-600 transition-all"
+                >
+                  {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                <select 
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="bg-brand-black-bg border border-brand-black-border rounded px-2 py-1 text-xs text-brand-gray-light focus:ring-1 focus:ring-brand-red-600 focus:border-brand-red-600 transition-all"
+                >
+                  <option value={2026}>2026</option>
+                  <option value={2025}>2025</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="table-th">Jugador</th>
+                  <th className="table-th text-center">Multas</th>
+                  <th className="table-th text-center">Multas (€)</th>
+                  <th className="table-th text-center">Paga</th>
+                  <th className="table-th text-center">Deuda Total</th>
+                  <th className="table-th text-center">Multas (Mes)</th>
+                  <th className="table-th text-center">Multas Mes (€)</th>
+                  <th className="table-th text-center">Paga Mes</th>
+                  <th className="table-th text-center">Deuda Mes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
+                {playerStats.map((stat) => (
+                  <tr
+                    key={stat.profile.id}
+                    className={`transition-colors cursor-pointer ${stat.pendingAmount > 0 ? 'animate-blink-bg hover:bg-brand-red-900/30' : 'hover:bg-brand-black-hover/20'}`}
+                    onClick={() => setSelectedPlayerDetail(stat.profile)}
+                  >
+                    <td className="table-td font-semibold text-brand-gray-light">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={stat.profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
+                          alt="avatar"
+                          className="w-6 h-6 rounded-full border border-brand-black-border object-cover"
+                        />
+                        <div className="flex items-center gap-2">
+                          {stat.profile.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{stat.profile.dorsal}</span>}
+                          <span>{stat.profile.nickname || stat.profile.full_name}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="table-td text-center text-brand-gray-light">{stat.totalFines}</td>
+                    <td className="table-td text-center text-brand-gray-light">{stat.totalAmount.toFixed(2)} €</td>
+                    <td className="table-td text-center text-emerald-400 font-bold">{stat.paidAmount.toFixed(2)} €</td>
+                    <td className={`table-td text-center font-bold ${stat.pendingAmount > 0 ? 'text-red-500' : 'text-emerald-400'}`}>
+                      {stat.pendingAmount.toFixed(2)} €
+                    </td>
+                    <td className="table-td text-center text-brand-gray-light">{stat.monthlyFines}</td>
+                    <td className="table-td text-center text-brand-gray-light">{stat.monthlyTotalAmount.toFixed(2)} €</td>
+                    <td className="table-td text-center text-emerald-400 font-bold">{stat.monthlyPaidAmount.toFixed(2)} €</td>
+                    <td className={`table-td text-center font-bold ${stat.monthlyPendingAmount > 0 ? 'text-red-500' : 'text-emerald-400'}`}>
+                      {stat.monthlyPendingAmount.toFixed(2)} €
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* =====================================================================
           FILTROS Y BÚSQUEDA
@@ -384,12 +609,15 @@ export const Fines: React.FC = () => {
                     <td className="table-td font-semibold text-brand-gray-light">{fine.date}</td>
                     <td className="table-td font-semibold text-brand-gray-light">
                       <div className="flex items-center gap-2">
-                        <img 
-                          src={fine.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} 
-                          alt="avatar" 
+                        <img
+                          src={fine.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
+                          alt="avatar"
                           className="w-6 h-6 rounded-full border border-brand-black-border object-cover"
                         />
-                        <span>{fine.profiles?.full_name || 'Desconocido'}</span>
+                        <div className="flex items-center gap-2">
+                          {fine.profiles?.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{fine.profiles.dorsal}</span>}
+                          <span>{fine.profiles?.nickname || fine.profiles?.full_name || 'Desconocido'}</span>
+                        </div>
                       </div>
                     </td>
                     <td className="table-td text-brand-gray-light">{fine.reason}</td>
@@ -453,7 +681,7 @@ export const Fines: React.FC = () => {
                   <div>
                     <h4 className="text-sm font-semibold text-brand-gray-light">{fine.reason}</h4>
                     <span className="text-[11px] text-brand-gray-muted flex items-center gap-1 mt-1">
-                      <Calendar className="w-3.5 h-3.5" /> {fine.date} | <User className="w-3.5 h-3.5" /> {fine.profiles?.full_name || 'Desconocido'}
+                      <Calendar className="w-3.5 h-3.5" /> {fine.date} | <User className="w-3.5 h-3.5" /> {fine.profiles?.dorsal && `#${fine.profiles.dorsal} `}{fine.profiles?.nickname || fine.profiles?.full_name || 'Desconocido'}
                     </span>
                   </div>
                   <span className="text-sm font-bold text-brand-red-600 bg-brand-red-600/5 px-2 py-0.5 rounded border border-brand-red-600/10">
@@ -518,7 +746,7 @@ export const Fines: React.FC = () => {
               <option value="">-- Seleccionar Jugador --</option>
               {profiles.map(p => (
                 <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
-                  {p.full_name} ({p.email})
+                  {p.dorsal ? `#${p.dorsal} ` : ''}{p.nickname || p.full_name} ({p.email})
                 </option>
               ))}
             </select>
@@ -532,14 +760,22 @@ export const Fines: React.FC = () => {
                 <button
                   key={ft.label}
                   type="button"
-                  onClick={() => { setReason(ft.label); setAmount(String(ft.amount)); }}
+                  onClick={() => {
+                    if (ft.label === 'Otros') {
+                      setReason('');
+                      setAmount('10.00');
+                    } else {
+                      setReason(ft.label);
+                      setAmount(String(ft.amount));
+                    }
+                  }}
                   className={`text-[10px] font-medium px-2.5 py-1 rounded-full border transition-all ${
-                    reason === ft.label
+                    (ft.label === 'Otros' ? reason === '' : reason === ft.label)
                       ? 'bg-brand-red-600/20 text-brand-red-600 border-brand-red-600/50'
                       : 'bg-brand-black-hover text-brand-gray-muted border-brand-black-border hover:text-brand-gray-light hover:border-brand-gray-dark'
                   }`}
                 >
-                  {ft.label} · {ft.amount}€
+                  {ft.label} {ft.amount > 0 ? `· ${ft.amount}€` : ''}
                 </button>
               ))}
             </div>
@@ -570,11 +806,14 @@ export const Fines: React.FC = () => {
           </div>
 
           <div>
-            <label className="form-label">Motivo o Descripción de la Falta</label>
+            <label className="form-label">
+              Motivo o Descripción de la Falta
+              {reason === '' && <span className="text-brand-gray-muted text-[10px] ml-1">(Personalizado)</span>}
+            </label>
             <input
               type="text"
               className="form-input"
-              placeholder="Retraso de 15 minutos en la convocatoria o usar móvil"
+              placeholder={reason === '' ? "Escribe el motivo personalizado..." : "Retraso de 15 minutos en la convocatoria o usar móvil"}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
@@ -588,14 +827,18 @@ export const Fines: React.FC = () => {
                 <button
                   key={pa}
                   type="button"
-                  onClick={() => { setAmount(String(pa)); setStatus('Pagado'); }}
+                  onClick={() => {
+                    setIsPaymentMode(true);
+                    setAmount(String(pa));
+                    setStatus('Pagado');
+                  }}
                   className={`text-[10px] font-semibold px-3 py-1 rounded-full border transition-all ${
-                    status === 'Pagado' && amount === String(pa)
+                    isPaymentMode && status === 'Pagado' && amount === String(pa)
                       ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                       : 'bg-brand-black-hover text-brand-gray-muted border-brand-black-border hover:text-emerald-400 hover:border-emerald-500/40'
                   }`}
                 >
-                  Pagado {pa}€
+                  Pago {pa}€
                 </button>
               ))}
             </div>
@@ -623,6 +866,135 @@ export const Fines: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* MODAL DETALLE DE JUGADOR */}
+      {selectedPlayerDetail && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-brand-black border border-brand-black-border rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-brand-black-card border-b border-brand-black-border p-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img
+                  src={selectedPlayerDetail.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
+                  alt="avatar"
+                  className="w-12 h-12 rounded-full border border-brand-black-border object-cover"
+                />
+                <div>
+                  <h2 className="text-xl font-bold text-brand-gray-light flex items-center gap-2">
+                    {selectedPlayerDetail.dorsal && <span className="text-sm font-bold text-brand-red-600 bg-brand-black border border-brand-black-border px-2 py-1 rounded">#{selectedPlayerDetail.dorsal}</span>}
+                    {selectedPlayerDetail.nickname || selectedPlayerDetail.full_name}
+                  </h2>
+                  <p className="text-xs text-brand-gray-muted">{selectedPlayerDetail.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPlayerDetail(null)}
+                className="text-brand-gray-muted hover:text-brand-gray-light p-2"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Estadísticas resumidas */}
+              {(() => {
+                const playerFines = userFines.filter(f => f.user_id === selectedPlayerDetail.id);
+                const playerRealFines = playerFines.filter(f => !isAbono(f));
+                const playerAbonos = playerFines.filter(isAbono);
+                
+                const totalAmount = playerRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
+                const paidAmount = playerRealFines.filter(f => f.status === 'Pagado').reduce((acc, f) => acc + Number(f.amount), 0) + playerAbonos.reduce((acc, f) => acc + Number(f.amount), 0);
+                const pendingAmount = totalAmount - paidAmount;
+
+                const playerFinesByMonthData = months.map(m => {
+                  const mRealFines = playerRealFines.filter(f => new Date(f.date).getMonth() + 1 === m.value && new Date(f.date).getFullYear() === selectedYear);
+                  const mTotal = mRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
+                  return {
+                    name: m.label.substring(0, 3),
+                    total: mTotal
+                  };
+                });
+                const maxPlayerChartValue = Math.max(...playerFinesByMonthData.map(d => d.total), 10);
+
+                return (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-brand-black-card border border-brand-black-border p-3 rounded-lg text-center">
+                        <span className="text-xs text-brand-gray-muted block">Total Multas</span>
+                        <h3 className="text-2xl font-bold text-brand-gray-light mt-1">{playerRealFines.length}</h3>
+                      </div>
+                      <div className="bg-brand-black-card border border-brand-black-border p-3 rounded-lg text-center">
+                        <span className="text-xs text-brand-gray-muted block">Multas (€)</span>
+                        <h3 className="text-2xl font-bold text-brand-gray-light mt-1">{totalAmount.toFixed(2)} €</h3>
+                      </div>
+                      <div className="bg-brand-black-card border border-brand-black-border p-3 rounded-lg text-center">
+                        <span className="text-xs text-brand-gray-muted block">Pagado</span>
+                        <h3 className="text-2xl font-bold text-emerald-400 mt-1">{paidAmount.toFixed(2)} €</h3>
+                      </div>
+                      <div className={`bg-brand-black-card border border-brand-black-border p-3 rounded-lg text-center ${pendingAmount > 0 ? 'border-red-600/30 animate-blink-bg' : ''}`}>
+                        <span className="text-xs text-brand-gray-muted block">Pendiente</span>
+                        <h3 className={`text-2xl font-bold mt-1 ${pendingAmount > 0 ? 'text-red-500' : 'text-emerald-400'}`}>{pendingAmount.toFixed(2)} €</h3>
+                      </div>
+                    </div>
+
+                    {/* Gráfica de Multas por Mes del Jugador */}
+                    <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                      <h4 className="text-xs font-bold text-brand-gray-light mb-4">Evolución de Multas ({selectedYear})</h4>
+                      <div className="flex items-end justify-between gap-1 h-32 w-full pt-4">
+                        {playerFinesByMonthData.map((d, i) => (
+                          <div key={i} className="flex flex-col items-center flex-1 group">
+                            <div className="w-full relative flex justify-center items-end h-full bg-brand-black-bg/50 rounded-t-sm">
+                              <div 
+                                className="w-full bg-brand-red-600/80 hover:bg-brand-red-500 rounded-t-sm transition-all relative"
+                                style={{ height: `${(d.total / maxPlayerChartValue) * 100}%`, minHeight: d.total > 0 ? '4px' : '0' }}
+                              >
+                                <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-brand-black border border-brand-black-border text-[10px] text-white px-2 py-1 rounded shadow-premium pointer-events-none whitespace-nowrap transition-opacity z-10">
+                                  {d.total.toFixed(2)} €
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-[9px] text-brand-gray-muted mt-2">{d.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Listado de multas */}
+              <div>
+                <h3 className="text-lg font-bold text-brand-gray-light mb-3">Historial de Sanciones</h3>
+                <div className="space-y-2">
+                  {userFines.filter(f => f.user_id === selectedPlayerDetail.id).length === 0 ? (
+                    <p className="text-sm text-brand-gray-muted text-center py-6">Sin multas registradas</p>
+                  ) : (
+                    userFines.filter(f => f.user_id === selectedPlayerDetail.id).map((fine) => (
+                      <div key={fine.id} className="bg-brand-black-card border border-brand-black-border p-3 rounded-lg flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-semibold text-brand-gray-light">{fine.reason}</span>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                              fine.status === 'Pagado'
+                                ? 'bg-emerald-950/20 text-emerald-400'
+                                : 'bg-red-950/20 text-red-500'
+                            }`}>
+                              {fine.status}
+                            </span>
+                          </div>
+                          <span className="text-xs text-brand-gray-muted">{fine.date}</span>
+                        </div>
+                        <span className="text-sm font-bold text-brand-red-600">{Number(fine.amount).toFixed(2)} €</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

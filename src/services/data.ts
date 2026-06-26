@@ -402,17 +402,60 @@ export const dataService = {
       await delay(300);
       const fines = MockDatabase.getFines();
       const profiles = MockDatabase.getProfiles();
-      return fines.map(f => ({
-        ...f,
-        profiles: profiles.find(p => p.id === f.user_id)
-      })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const players = MockDatabase.getPlayers();
+      return fines.map(f => {
+        const profile = profiles.find(p => p.id === f.user_id);
+        const player = players.find(p => p.profile_id === f.user_id);
+        return {
+          ...f,
+          profiles: profile ? {
+            ...profile,
+            nickname: player?.nickname || profile.full_name,
+            dorsal: player?.dorsal
+          } : undefined
+        };
+      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
-      const { data, error } = await supabase
+      // Query 1: Obtener multas
+      const { data: finesData, error: finesError } = await supabase
         .from('fines')
-        .select('*, profiles(*)')
-        .order('date', { ascending: false });
-      if (error) throw error;
-      return data as Fine[];
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (finesError) throw finesError;
+
+      // Query 2: Obtener perfiles
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*');
+
+      if (profilesError) throw profilesError;
+
+      // Query 3: Obtener jugadores (para obtener nickname y dorsal)
+      const { data: playersData, error: playersError } = await supabase
+        .from('players')
+        .select('profile_id, nickname, dorsal');
+
+      if (playersError) throw playersError;
+
+      // Combinar datos manualmente
+      const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+      const playersMap = new Map(playersData?.map(p => [p.profile_id, p]) || []);
+
+      const result = finesData?.map(f => {
+        const profile = profilesMap.get(f.user_id);
+        const player = playersMap.get(f.user_id);
+        return {
+          ...f,
+          profiles: profile ? {
+            ...profile,
+            nickname: player?.nickname || profile.full_name,
+            dorsal: player?.dorsal
+          } : undefined
+        };
+      }) || [];
+
+      return result as Fine[];
     }
   },
 

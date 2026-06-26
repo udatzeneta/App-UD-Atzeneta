@@ -333,7 +333,7 @@ CREATE POLICY "Eliminar partidos" ON public.matches
 -- Los jugadores solo pueden ver sus propias multas, los demás roles ven todas según permiso
 CREATE POLICY "Ver multas" ON public.fines
     FOR SELECT USING (
-        public.has_user_permission(auth.uid(), 'fines', 'ver') AND 
+        public.has_user_permission(auth.uid(), 'fines', 'ver') AND
         (
             -- Si es jugador, solo ve las suyas
             (SELECT slug FROM public.roles WHERE id = (SELECT role_id FROM public.profiles WHERE id = auth.uid())) != 'player'
@@ -342,13 +342,22 @@ CREATE POLICY "Ver multas" ON public.fines
     );
 
 CREATE POLICY "Crear multas" ON public.fines
-    FOR INSERT WITH CHECK (public.has_user_permission(auth.uid(), 'fines', 'crear'));
+    FOR INSERT WITH CHECK (
+        auth.uid() IS NOT NULL AND
+        (SELECT slug FROM public.roles WHERE id = (SELECT role_id FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'trainer')
+    );
 
 CREATE POLICY "Editar multas" ON public.fines
-    FOR UPDATE USING (public.has_user_permission(auth.uid(), 'fines', 'editar'));
+    FOR UPDATE USING (
+        auth.uid() IS NOT NULL AND
+        (SELECT slug FROM public.roles WHERE id = (SELECT role_id FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'trainer')
+    );
 
 CREATE POLICY "Eliminar multas" ON public.fines
-    FOR DELETE USING (public.has_user_permission(auth.uid(), 'fines', 'eliminar'));
+    FOR DELETE USING (
+        auth.uid() IS NOT NULL AND
+        (SELECT slug FROM public.roles WHERE id = (SELECT role_id FROM public.profiles WHERE id = auth.uid())) IN ('admin', 'trainer')
+    );
 
 -- E) POLÍTICAS PARA POINTS (PUNTOS)
 -- Similar a multas

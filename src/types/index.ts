@@ -12,6 +12,7 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string;
+  nickname?: string;
   role_id: number;
   avatar_url?: string;
   phone?: string;
@@ -19,6 +20,7 @@ export interface Profile {
   dorsal?: number;
   birth_date?: string;
   created_at?: string;
+  // Estos campos se populan desde la tabla players si existe
 }
 
 export interface Permission {

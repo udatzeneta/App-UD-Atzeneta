@@ -109,10 +109,10 @@ export const Dashboard: React.FC = () => {
     let finalReason = '';
     let finalAmount = 0;
     if (fIsCustom) {
-      finalReason = fCustomReason.trim();
+      finalReason = fActiveTab === 'pago' ? 'Abono' : fCustomReason.trim();
       finalAmount = Number(fCustomAmount) || 0;
       if (!finalReason || finalAmount <= 0) {
-        showToast('error', 'Validación', 'Motivo e importe mayores a 0 obligatorios.');
+        showToast('error', 'Validación', fActiveTab === 'pago' ? 'Importe mayor a 0 obligatorio.' : 'Motivo e importe mayores a 0 obligatorios.');
         return;
       }
     } else {
@@ -215,7 +215,7 @@ export const Dashboard: React.FC = () => {
     { label: 'Apuesta CT', amount: 10 },
     { label: 'Apuesta con CT perdida', amount: 10 },
   ];
-  const quickPaymentAmounts = [5, 10, 15, 20, 30, 50];
+  const quickPaymentAmounts = [1, 2, 5, 10, 15, 20, 30, 50];
   const attendanceMotives = [
     { value: 'ENT', label: 'Presente' },
     { value: 'A', label: 'Ausente' },
@@ -455,11 +455,13 @@ export const Dashboard: React.FC = () => {
               )}
 
               {fIsCustom && (
-                <div className="grid grid-cols-3 gap-3 mb-6 p-4 bg-brand-black/30 border border-brand-black-border rounded-xl">
-                  <div className="col-span-2">
-                    <label className="text-xs font-semibold text-brand-gray-muted mb-1 block">Motivo</label>
-                    <input type="text" className="w-full bg-brand-black border border-brand-black-border rounded-lg px-3 py-2 text-sm text-brand-gray-light" value={fCustomReason} onChange={e => setFCustomReason(e.target.value)} />
-                  </div>
+                <div className={`grid ${fActiveTab === 'pago' ? 'grid-cols-1' : 'grid-cols-3'} gap-3 mb-6 p-4 bg-brand-black/30 border border-brand-black-border rounded-xl`}>
+                  {fActiveTab === 'multa' && (
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold text-brand-gray-muted mb-1 block">Motivo</label>
+                      <input type="text" className="w-full bg-brand-black border border-brand-black-border rounded-lg px-3 py-2 text-sm text-brand-gray-light" value={fCustomReason} onChange={e => setFCustomReason(e.target.value)} />
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs font-semibold text-brand-gray-muted mb-1 block">Importe (€)</label>
                     <input type="number" className="w-full bg-brand-black border border-brand-black-border rounded-lg px-3 py-2 text-sm text-brand-gray-light text-center" value={fCustomAmount} onChange={e => setFCustomAmount(e.target.value)} />
