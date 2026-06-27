@@ -23,7 +23,6 @@ export const Trainings: React.FC = () => {
   const canExport = hasPermission('trainings', 'exportar');
 
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('Todos');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
@@ -37,7 +36,6 @@ export const Trainings: React.FC = () => {
   const [duration, setDuration] = useState('90');
   const [objective, setObjective] = useState('');
   const [observations, setObservations] = useState('');
-  const [status, setStatus] = useState<'Programado' | 'Realizado' | 'Cancelado'>('Programado');
 
   // Query
   const { data: trainings = [], isLoading } = useQuery({
@@ -83,7 +81,6 @@ export const Trainings: React.FC = () => {
     setDuration('90');
     setObjective('');
     setObservations('');
-    setStatus('Programado');
     setIsModalOpen(true);
   };
 
@@ -95,7 +92,6 @@ export const Trainings: React.FC = () => {
     setDuration(String(t.duration));
     setObjective(t.objective);
     setObservations(t.observations);
-    setStatus(t.status);
     setIsModalOpen(true);
   };
 
@@ -121,8 +117,7 @@ export const Trainings: React.FC = () => {
       location: location.trim(),
       duration: Number(duration),
       objective: objective.trim(),
-      observations: observations.trim(),
-      status
+      observations: observations.trim()
     };
 
     if (editingTraining) {
@@ -149,12 +144,11 @@ export const Trainings: React.FC = () => {
 
   const filteredTrainings = trainings.filter(t => {
     const matchSearch = t.objective.toLowerCase().includes(search.toLowerCase()) || t.location.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === 'Todos' || t.status === filterStatus;
-    return matchSearch && matchStatus;
+    return matchSearch;
   });
 
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
-  const exportHeaders = ['Fecha', 'Hora', 'Lugar', 'Duración (Mins)', 'Objetivo', 'Observaciones', 'Estado'];
+  const exportHeaders = ['Fecha', 'Hora', 'Lugar', 'Duración (Mins)', 'Objetivo', 'Observaciones'];
   const buildExportRows = (): ExportCell[][] =>
     filteredTrainings.map(t => [
       t.date,
@@ -163,7 +157,6 @@ export const Trainings: React.FC = () => {
       t.duration,
       t.objective,
       t.observations,
-      t.status,
     ]);
 
   const handleExportCSV = () => {
@@ -280,18 +273,6 @@ export const Trainings: React.FC = () => {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="w-full sm:w-48 shrink-0">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="form-input bg-brand-black-bg"
-          >
-            <option value="Todos">Todos los Estados</option>
-            <option value="Programado">Programados</option>
-            <option value="Realizado">Realizados</option>
-            <option value="Cancelado">Cancelados</option>
-          </select>
-        </div>
       </div>
 
       {/* =====================================================================
@@ -314,7 +295,6 @@ export const Trainings: React.FC = () => {
                   <th className="table-th">Objetivo</th>
                   <th className="table-th">Lugar</th>
                   <th className="table-th">Duración</th>
-                  <th className="table-th">Estado</th>
                   {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
                 </tr>
               </thead>
@@ -352,17 +332,6 @@ export const Trainings: React.FC = () => {
                       </a>
                     </td>
                     <td className="table-td text-brand-gray-muted font-medium">{t.duration} minutos</td>
-                    <td className="table-td">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                        t.status === 'Realizado' 
-                          ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30' 
-                          : t.status === 'Cancelado'
-                          ? 'bg-red-950/20 text-red-400 border-red-900/30'
-                          : 'bg-brand-black-border text-brand-gray-muted border-brand-black-border'
-                      }`}>
-                        {t.status}
-                      </span>
-                    </td>
                     {(canEdit || canDelete) && (
                       <td className="table-td text-right">
                         <div className="flex gap-2 justify-end">
@@ -402,15 +371,6 @@ export const Trainings: React.FC = () => {
                       <Calendar className="w-3.5 h-3.5" /> {t.date} | <Clock className="w-3.5 h-3.5" /> {t.time} hs
                     </span>
                   </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    t.status === 'Realizado' 
-                      ? 'bg-emerald-950/20 text-emerald-400' 
-                      : t.status === 'Cancelado'
-                      ? 'bg-red-950/20 text-red-400'
-                      : 'bg-brand-black-border text-brand-gray-muted'
-                  }`}>
-                    {t.status}
-                  </span>
                 </div>
 
                 <div className="flex flex-col gap-1.5 text-xs text-brand-gray-muted bg-brand-black/40 p-2.5 rounded-lg border border-brand-black-border/50">
@@ -534,19 +494,6 @@ export const Trainings: React.FC = () => {
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
             />
-          </div>
-
-          <div>
-            <label className="form-label">Estado de la Sesión</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
-              className="form-input bg-brand-black-bg"
-            >
-              <option value="Programado">Programado</option>
-              <option value="Realizado">Realizado</option>
-              <option value="Cancelado">Cancelado</option>
-            </select>
           </div>
 
           <div className="flex gap-2 pt-4 justify-end">

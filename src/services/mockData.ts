@@ -166,8 +166,7 @@ const DEFAULT_TRAININGS: Training[] = [
     location: 'El Porrejat (6R7J+Q2 Adzaneta)',
     duration: 90,
     objective: 'Fase ofensiva y transiciones rápidas',
-    observations: 'Traer tacos de césped artificial y espinilleras.',
-    status: 'Programado'
+    observations: 'Traer tacos de césped artificial y espinilleras.'
   },
   {
     id: 't-2',
@@ -176,8 +175,7 @@ const DEFAULT_TRAININGS: Training[] = [
     location: 'Gimnasio Municipal Atzeneta',
     duration: 60,
     objective: 'Trabajo de fuerza explosiva e hipertrofia',
-    observations: 'Dividido en grupos A (10:00) y B (11:00).',
-    status: 'Programado'
+    observations: 'Dividido en grupos A (10:00) y B (11:00).'
   },
   {
     id: 't-3',
@@ -186,8 +184,7 @@ const DEFAULT_TRAININGS: Training[] = [
     location: 'El Porrejat (6R7J+Q2 Adzaneta)',
     duration: 90,
     objective: 'Basculación táctica y salida de balón presionado',
-    observations: 'Asistencia 100% obligatoria, análisis en vídeo posterior.',
-    status: 'Realizado'
+    observations: 'Asistencia 100% obligatoria, análisis en vídeo posterior.'
   },
   {
     id: 't-4',
@@ -196,8 +193,7 @@ const DEFAULT_TRAININGS: Training[] = [
     location: 'El Porrejat (6R7J+Q2 Adzaneta)',
     duration: 90,
     objective: 'Trabajo físico aeróbico y rondos de presión',
-    observations: 'Terminar con partido en dimensiones reducidas.',
-    status: 'Realizado'
+    observations: 'Terminar con partido en dimensiones reducidas.'
   }
 ];
 

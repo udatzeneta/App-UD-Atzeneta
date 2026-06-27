@@ -1258,13 +1258,11 @@ export const dataService = {
       const players = MockDatabase.getPlayers();
       const pIdx = players.findIndex(p => p.id === item.player_id);
       if (pIdx !== -1) {
-        let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
-        if (item.status === 'Baja') newStatus = 'Baja';
-        else if (item.status === 'Activa') newStatus = 'Lesionado';
-        else if (item.status === 'En tratamiento') newStatus = 'En duda';
-        else if (item.status === 'Recuperado') newStatus = 'Disponible';
-        
-        players[pIdx].physical_status = newStatus;
+        const remaining = list.filter(x => x.player_id === item.player_id);
+        const hasBaja = remaining.some(x => x.status === 'Baja');
+        const hasLesionado = remaining.some(x => x.status === 'Activa');
+        const hasDuda = remaining.some(x => x.status === 'En tratamiento');
+        players[pIdx].physical_status = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
         MockDatabase.setPlayers(players);
       }
       
@@ -1277,12 +1275,11 @@ export const dataService = {
         .single();
       if (error) throw error;
       
-      // Update player's physical status in real mode
-      let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
-      if (item.status === 'Baja') newStatus = 'Baja';
-      else if (item.status === 'Activa') newStatus = 'Lesionado';
-      else if (item.status === 'En tratamiento') newStatus = 'En duda';
-      else if (item.status === 'Recuperado') newStatus = 'Disponible';
+      const { data: remaining } = await supabase.from('player_injuries').select('status').eq('player_id', item.player_id);
+      const hasBaja = remaining?.some(x => x.status === 'Baja');
+      const hasLesionado = remaining?.some(x => x.status === 'Activa');
+      const hasDuda = remaining?.some(x => x.status === 'En tratamiento');
+      const newStatus = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
       
       await supabase
         .from('players')
@@ -1306,14 +1303,12 @@ export const dataService = {
       const playerId = list[idx].player_id;
       const players = MockDatabase.getPlayers();
       const pIdx = players.findIndex(p => p.id === playerId);
-      if (pIdx !== -1 && item.status) {
-        let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
-        if (item.status === 'Baja') newStatus = 'Baja';
-        else if (item.status === 'Activa') newStatus = 'Lesionado';
-        else if (item.status === 'En tratamiento') newStatus = 'En duda';
-        else if (item.status === 'Recuperado') newStatus = 'Disponible';
-        
-        players[pIdx].physical_status = newStatus;
+      if (pIdx !== -1) {
+        const remaining = list.filter(x => x.player_id === playerId);
+        const hasBaja = remaining.some(x => x.status === 'Baja');
+        const hasLesionado = remaining.some(x => x.status === 'Activa');
+        const hasDuda = remaining.some(x => x.status === 'En tratamiento');
+        players[pIdx].physical_status = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
         MockDatabase.setPlayers(players);
       }
       
@@ -1329,11 +1324,11 @@ export const dataService = {
       
       // Update player's physical status in real mode
       if (item.status && data) {
-        let newStatus: 'Disponible' | 'Lesionado' | 'En duda' | 'Baja' = 'Disponible';
-        if (item.status === 'Baja') newStatus = 'Baja';
-        else if (item.status === 'Activa') newStatus = 'Lesionado';
-        else if (item.status === 'En tratamiento') newStatus = 'En duda';
-        else if (item.status === 'Recuperado') newStatus = 'Disponible';
+        const { data: remaining } = await supabase.from('player_injuries').select('status').eq('player_id', data.player_id);
+        const hasBaja = remaining?.some(x => x.status === 'Baja');
+        const hasLesionado = remaining?.some(x => x.status === 'Activa');
+        const hasDuda = remaining?.some(x => x.status === 'En tratamiento');
+        const newStatus = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
         
         await supabase
           .from('players')
@@ -1349,14 +1344,39 @@ export const dataService = {
     if (isMockMode) {
       await delay(200);
       let list = MockDatabase.getPlayerInjuries();
+      const injury = list.find(x => x.id === id);
       list = list.filter(x => x.id !== id);
       MockDatabase.setPlayerInjuries(list);
+
+      if (injury) {
+        const players = MockDatabase.getPlayers();
+        const pIdx = players.findIndex(p => p.id === injury.player_id);
+        if (pIdx !== -1) {
+          const remaining = list.filter(x => x.player_id === injury.player_id);
+          const hasBaja = remaining.some(x => x.status === 'Baja');
+          const hasLesionado = remaining.some(x => x.status === 'Activa');
+          const hasDuda = remaining.some(x => x.status === 'En tratamiento');
+          players[pIdx].physical_status = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
+          MockDatabase.setPlayers(players);
+        }
+      }
     } else {
+      const { data: injury } = await supabase.from('player_injuries').select('player_id').eq('id', id).single();
       const { error } = await supabase
         .from('player_injuries')
         .delete()
         .eq('id', id);
       if (error) throw error;
+
+      if (injury) {
+        const { data: remaining } = await supabase.from('player_injuries').select('status').eq('player_id', injury.player_id);
+        const hasBaja = remaining?.some(x => x.status === 'Baja');
+        const hasLesionado = remaining?.some(x => x.status === 'Activa');
+        const hasDuda = remaining?.some(x => x.status === 'En tratamiento');
+        const newStatus = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
+        
+        await supabase.from('players').update({ physical_status: newStatus }).eq('id', injury.player_id);
+      }
     }
   },
 

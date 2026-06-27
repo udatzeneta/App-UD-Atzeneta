@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
 import { TrainingAttendance, Player } from '../types';
-import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
+import { exportToCSV, exportToPDF, exportAttendanceToPDF, ExportCell } from '../utils/export';
 import {
   ClipboardCheck, Download, FileText, Calendar,
   TrendingUp, Info, Award, UserCheck, MessageSquare,
@@ -77,6 +77,10 @@ export const Attendance: React.FC = () => {
   } | null>(null);
   const [rollCallList, setRollCallList] = useState<Record<string, { status: string; observations: string }>>({});
   const [rollCallOpen, setRollCallOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat]       = useState<'csv' | 'pdf'>('pdf');
+  const [exportRange, setExportRange]         = useState<'current' | 'all' | 'custom'>('current');
+  const [customMonths, setCustomMonths]       = useState<number[]>([new Date().getMonth() + 1]);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: players = [],        isLoading: lPlayers   } = useQuery({ queryKey: ['players'],   queryFn: () => dataService.getPlayers() });
@@ -105,8 +109,8 @@ export const Attendance: React.FC = () => {
     })
     .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  const completedTrainings    = monthlyTrainings.filter((t: any) => t.status === 'Realizado');
-  const allCompletedTrainings = trainings.filter((t: any) => t.status === 'Realizado');
+  const completedTrainings    = monthlyTrainings.filter((t: any) => attendanceData.some((a: any) => a.training_id === t.id));
+  const allCompletedTrainings = trainings.filter((t: any) => allAttendanceData.some((a: any) => a.training_id === t.id));
   const allTrainingsSorted    = [...trainings].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // ── Effects ────────────────────────────────────────────────────────────────
@@ -124,7 +128,8 @@ export const Attendance: React.FC = () => {
     const init: Record<string, { status: string; observations: string }> = {};
     visiblePlayers.forEach(p => {
       const log = attendanceData.find((a: any) => a.training_id === selectedTrainingId && a.player_id === p.id);
-      init[p.id] = { status: log?.status || 'ENT', observations: log?.observations || '' };
+      const isBaja = p.physical_status === 'Baja';
+      init[p.id] = { status: log?.status || (isBaja ? 'L' : 'ENT'), observations: log?.observations || (isBaja ? 'Baja médica' : '') };
     });
     setRollCallList(init);
   }, [selectedTrainingId, attendanceData]);
@@ -152,6 +157,16 @@ export const Attendance: React.FC = () => {
       setRollCallOpen(false);
     },
     onError: (err: any) => showToast('error', 'Error', err.message),
+  });
+
+  const deleteAttendanceMut = useMutation({
+    mutationFn: (trainingId: string) => dataService.deleteAllAttendanceForTraining(trainingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      queryClient.invalidateQueries({ queryKey: ['attendance_all'] });
+      showToast('success', 'Asistencia borrada', '');
+    },
+    onError: (err: any) => showToast('error', 'Error al borrar', err.message),
   });
 
   // ── Helpers de estilo ──────────────────────────────────────────────────────
@@ -249,43 +264,60 @@ export const Attendance: React.FC = () => {
     rollCallMut.mutate({ trainingId: selectedTrainingId, list });
   };
 
-  // ── Exportación ────────────────────────────────────────────────────────────
-  const handleExportCSV = () => {
+  const handleConfirmExport = async () => {
     if (!players.length) return;
-    const headers = ['Jugador', ...monthlyTrainings.map((t: any) => t.date), '% Asist', 'ENT', 'AUS', 'ED', 'L', 'E'];
-    const rows: ExportCell[][] = visiblePlayers.map(p => {
-      const st = calcPlayerStats(p.id);
-      const row: ExportCell[] = [p.nickname || p.full_name];
-      monthlyTrainings.forEach((t: any) => {
-        const log = attendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
-        row.push(log?.status ? getShort(log.status) : '-');
-      });
-      row.push(`${st.pctEnt}%`, st.ent, st.aus, st.ed, st.les, st.enf);
-      return row;
-    });
-    exportToCSV(`asistencias_${selectedYear}_${selectedMonth}_${Date.now()}`, headers, rows);
-    showToast('success', 'CSV descargado', '');
-  };
+    const monthsToExport = exportRange === 'current' ? [selectedMonth] 
+                         : exportRange === 'all' ? months.map(m => m.value) 
+                         : customMonths;
 
-  const handleExportPDF = async () => {
-    if (!players.length) return;
-    const headers = ['Jugador', ...monthlyTrainings.map((t: any) => t.date), '% Asist', 'ENT', 'AUS', 'ED', 'L', 'E'];
-    const rows: ExportCell[][] = visiblePlayers.map(p => {
-      const st = calcPlayerStats(p.id);
-      const row: ExportCell[] = [p.nickname || p.full_name];
-      monthlyTrainings.forEach((t: any) => {
-        const log = attendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
-        row.push(log?.status ? getShort(log.status) : '-');
+    if (monthsToExport.length === 0) {
+      showToast('error', 'Selecciona al menos un mes', '');
+      return;
+    }
+
+    const targetTrainings = allCompletedTrainings
+      .filter((t: any) => {
+        const d = new Date(t.date);
+        return monthsToExport.includes(d.getMonth() + 1);
+      })
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (exportFormat === 'csv') {
+      const headers = ['Jugador', ...targetTrainings.map((t: any) => t.date), '% Asist', 'ENT', 'AUS', 'ED', 'L', 'E'];
+      const rows: ExportCell[][] = visiblePlayers.map(p => {
+        const st = exportRange === 'current' ? calcPlayerStats(p.id) : calcPlayerStatsCumul(p.id);
+        const row: ExportCell[] = [p.nickname || p.full_name];
+        targetTrainings.forEach((t: any) => {
+          const log = allAttendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
+          row.push(log?.status ? getShort(log.status) : '-');
+        });
+        row.push(`${st.pctEnt}%`, st.ent, st.aus, st.ed, st.les, st.enf);
+        return row;
       });
-      row.push(`${st.pctEnt}%`, st.ent, st.aus, st.ed, st.les, st.enf);
-      return row;
-    });
-    await exportToPDF(
-      `Control Asistencia - UD Atzeneta - ${selectedMonth}/${selectedYear}`,
-      `asistencias_${selectedYear}_${selectedMonth}_${Date.now()}`,
-      headers, rows
-    );
-    showToast('success', 'PDF descargado', '');
+      exportToCSV(`asistencias_multimes_${Date.now()}`, headers, rows);
+      showToast('success', 'CSV descargado', '');
+      setExportModalOpen(false);
+    } else {
+      try {
+        const playersWithStats = visiblePlayers.map(p => ({
+          ...p,
+          cumulStats: calcPlayerStatsCumul(p.id)
+        }));
+        await exportAttendanceToPDF(
+          `Control Asistencia - UD Atzeneta`,
+          `asistencias_${Date.now()}`,
+          monthsToExport,
+          months,
+          playersWithStats,
+          targetTrainings,
+          allAttendanceData
+        );
+        showToast('success', 'PDF descargado', '');
+        setExportModalOpen(false);
+      } catch (err: any) {
+        showToast('error', 'Error al exportar PDF', err.message);
+      }
+    }
   };
 
   // ── Datos calculados ───────────────────────────────────────────────────────
@@ -327,10 +359,10 @@ export const Attendance: React.FC = () => {
           </div>
           {canExport && (
             <>
-              <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs flex items-center gap-1.5">
+              <button onClick={() => { setExportFormat('csv'); setExportModalOpen(true); }} className="btn-secondary py-2 text-xs flex items-center gap-1.5">
                 <Download className="w-3.5 h-3.5" /> CSV
               </button>
-              <button onClick={handleExportPDF} className="btn-secondary py-2 text-xs flex items-center gap-1.5">
+              <button onClick={() => { setExportFormat('pdf'); setExportModalOpen(true); }} className="btn-secondary py-2 text-xs flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5" /> PDF
               </button>
             </>
@@ -349,7 +381,7 @@ export const Attendance: React.FC = () => {
           { id: 'matrix',   icon: ClipboardCheck, label: 'Matriz'       },
           { id: 'cumul',    icon: BarChart2,      label: 'Acumulativos' },
           { id: 'indiv',    icon: User,           label: 'Individual'   },
-          { id: 'sessions', icon: Calendar,       label: 'Asistencias'  },
+          { id: 'sessions', icon: Calendar,       label: 'Editor'  },
         ] as { id: ActiveTab; icon: any; label: string }[]).map(({ id, icon: Icon, label }) => (
           <button
             key={id}
@@ -391,21 +423,9 @@ export const Attendance: React.FC = () => {
                               <span className="text-[10px] text-brand-gray-muted font-medium">
                                 {t.date.split('-').slice(1).reverse().join('/')}
                               </span>
-                              <span className={`text-[8px] px-1 py-0.5 rounded font-bold border ${
-                                t.status === 'Realizado'  ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30' :
-                                t.status === 'Cancelado' ? 'bg-red-950/20 text-red-400 border-red-900/30' :
-                                'bg-brand-black-border text-brand-gray-muted border-brand-black-border'
-                              }`}>
-                                {t.status === 'Realizado' ? 'REAL' : t.status === 'Cancelado' ? 'CANC' : 'PROG'}
-                              </span>
                             </div>
                           </th>
                         ))}
-                        <th className="py-2 px-2 text-center text-[10px] font-semibold text-brand-gray-muted uppercase tracking-wider border-l border-brand-black-border bg-brand-black/40 min-w-[52px]">% ENT</th>
-                        <th className="py-2 px-2 text-center text-[10px] font-semibold text-emerald-400 uppercase tracking-wider min-w-[36px]">ENT</th>
-                        <th className="py-2 px-2 text-center text-[10px] font-semibold text-rose-400 uppercase tracking-wider min-w-[36px]">AUS</th>
-                        <th className="py-2 px-2 text-center text-[10px] font-semibold text-amber-400 uppercase tracking-wider min-w-[36px]">ED</th>
-                        <th className="py-2 px-2 text-center text-[10px] font-semibold text-orange-400 uppercase tracking-wider min-w-[36px]">MED</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-brand-black-border">
@@ -445,15 +465,6 @@ export const Attendance: React.FC = () => {
                                 </td>
                               );
                             })}
-                            <td className="py-1 px-2 text-center text-xs font-bold border-l border-brand-black-border bg-brand-black/30">
-                              <span className={st.pctEnt >= 85 ? 'text-emerald-400' : st.pctEnt >= 70 ? 'text-amber-400' : 'text-rose-400'}>
-                                {st.total > 0 ? `${st.pctEnt}%` : '—'}
-                              </span>
-                            </td>
-                            <td className="py-1 px-2 text-center text-xs font-semibold text-emerald-400">{st.ent}</td>
-                            <td className="py-1 px-2 text-center text-xs font-semibold text-rose-400">{st.aus}</td>
-                            <td className="py-1 px-2 text-center text-xs font-semibold text-amber-400">{st.ed}</td>
-                            <td className="py-1 px-2 text-center text-xs font-semibold text-orange-400">{st.les + st.enf}</td>
                           </tr>
                         );
                       })}
@@ -488,7 +499,7 @@ export const Attendance: React.FC = () => {
           ) : visiblePlayers.length === 0 ? (
             <EmptyState text="No hay jugadores en la plantilla." />
           ) : allCompletedTrainings.length === 0 ? (
-            <EmptyState text="No hay sesiones completadas registradas." />
+            <EmptyState text="Aún no se ha registrado la asistencia de ningún entrenamiento." />
           ) : (
             <>
               {/* KPIs globales */}
@@ -539,185 +550,90 @@ export const Attendance: React.FC = () => {
                 <div className="overflow-x-auto no-scrollbar">
                   <table className="w-full border-collapse text-xs">
                     <thead>
-                      <tr className="border-b-2 border-brand-black-border bg-brand-black/70">
-                        {/* Jugador */}
-                        <th className="py-3 px-3 text-left text-[10px] font-semibold text-brand-gray-muted uppercase tracking-wider sticky left-0 z-10 bg-brand-black/80 border-r border-brand-black-border" style={{ minWidth: 210 }}>
-                          Jugador
-                        </th>
-                        {/* Asiste */}
-                        <th className="py-3 px-3 text-center border-r border-emerald-800/30 bg-emerald-950/15" style={{ minWidth: 84 }}>
-                          <span className="text-[11px] font-extrabold text-emerald-400 uppercase tracking-widest block">Asiste</span>
-                          <span className="text-[8px] text-emerald-400/50">ENT + ED</span>
-                        </th>
-                        {/* No asiste */}
-                        <th className="py-3 px-3 text-center border-r border-rose-800/30 bg-rose-950/15" style={{ minWidth: 84 }}>
-                          <span className="text-[11px] font-extrabold text-rose-400 uppercase tracking-widest block">No asiste</span>
-                          <span className="text-[8px] text-rose-400/50">Total faltas</span>
-                        </th>
-                        {/* Divisor */}
-                        <th className="w-px bg-brand-black-border/80 border-r border-brand-black-border p-0" />
-                        {/* Causas */}
-                        {CAUSE_COLS.map(col => (
-                          <th key={col.key} className="py-3 px-2 text-center" style={{ minWidth: 68 }} title={col.full}>
-                            <span className={`text-[10px] font-bold uppercase tracking-wider block ${col.color}`}>{col.label}</span>
-                            <span className={`text-[7px] opacity-40 ${col.color}`}>{col.full.split('(')[1]?.replace(')', '') ?? ''}</span>
-                          </th>
-                        ))}
+                      <tr className="border-b-2 border-brand-black-border bg-brand-black-card">
+                        <th className="py-2 px-3 text-left text-[10px] font-bold text-white uppercase tracking-wider sticky left-0 z-10 bg-[#3e2723] border-r border-brand-black-border" style={{ minWidth: 160 }}>Jugador</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Ausente</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Ent.Dif</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Lesionado</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Enfermo</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Partidos</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Libre, jugó</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Viaje</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Ausente aviso</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Ausente, otros</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Descanso</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723] border-r border-brand-black-border">Entrena</th>
+                        <th className="py-2 px-1 text-center text-[9px] font-bold text-white uppercase tracking-wider bg-[#3e2723]"> % Entrena</th>
                       </tr>
                     </thead>
-
-                    <tbody className="divide-y divide-brand-black-border/60">
+                    <tbody className="divide-y divide-brand-black-border/40 bg-brand-black-bg">
                       {rankedPlayers.map(({ p, st }, idx) => {
-                        const asisteN   = st.ent + st.ed;
-                        const asistePct = st.total > 0 ? Math.round((asisteN   / st.total) * 100) : 0;
-                        const noN       = st.aus + st.aa + st.ao + st.les + st.enf + st.part + st.viaje + st.lj + st.desc;
-                        const noPct     = st.total > 0 ? Math.round((noN / st.total) * 100) : 0;
+                        const causeVals = [
+                          { key: 'aus', val: st.aus },
+                          { key: 'ed', val: st.ed },
+                          { key: 'les', val: st.les },
+                          { key: 'enf', val: st.enf },
+                          { key: 'part', val: st.part },
+                          { key: 'lj', val: st.lj },
+                          { key: 'viaje', val: st.viaje },
+                          { key: 'aa', val: st.aa },
+                          { key: 'ao', val: st.ao },
+                          { key: 'desc', val: st.desc },
+                          { key: 'ent', val: st.ent },
+                          { key: 'pctEnt', val: st.pctEnt }
+                        ];
 
-                        // Color fondo "Asiste" por intensidad
-                        const asisteBg =
-                          asistePct >= 90 ? 'bg-emerald-500/30' :
-                          asistePct >= 75 ? 'bg-emerald-500/20' :
-                          asistePct >= 60 ? 'bg-emerald-500/10' :
-                          asistePct >= 40 ? 'bg-yellow-500/10'  : 'bg-rose-500/10';
-                        const asisteTxt =
-                          asistePct >= 90 ? 'text-emerald-300' :
-                          asistePct >= 75 ? 'text-emerald-400' :
-                          asistePct >= 60 ? 'text-emerald-500' :
-                          asistePct >= 40 ? 'text-yellow-400'  : 'text-rose-400';
-
-                        // Color fondo "No asiste" por intensidad
-                        const noBg =
-                          noPct >= 40 ? 'bg-rose-500/30' :
-                          noPct >= 25 ? 'bg-rose-500/20' :
-                          noPct >= 15 ? 'bg-rose-500/10' :
-                          noPct >= 5  ? 'bg-orange-500/10' : '';
-                        const noTxt =
-                          noPct >= 40 ? 'text-rose-300' :
-                          noPct >= 25 ? 'text-rose-400' :
-                          noPct >= 15 ? 'text-rose-500' :
-                          noPct >= 5  ? 'text-orange-400' : 'text-brand-gray-muted';
-
-                        const causeVals: Record<string, number> = {
-                          ed: st.pctEd, les: st.pctLes, enf: st.pctEnf, aus: st.pctAus,
-                          aa: st.pctAa, ao: st.pctAo, part: st.pctPart, viaje: st.pctViaje,
-                          lj: st.pctLj, desc: st.pctDesc,
+                        const getCellStyles = (key: string, val: number, pctVal: number) => {
+                          if (key === 'aus' || key === 'les' || key === 'viaje') {
+                            if (val === 0) return 'bg-[#2e7d32] text-white';
+                            if (val === 1) return 'bg-[#827717] text-white';
+                            if (val === 2) return 'bg-[#afb42b] text-white';
+                            if (val === 3) return 'bg-[#fbc02d] text-black';
+                            if (val <= 5) return 'bg-[#f57c00] text-white';
+                            return 'bg-[#d32f2f] text-white';
+                          }
+                          if (key === 'ed' || key === 'enf' || key === 'ao') {
+                            if (val === 0) return 'bg-[#f39c12] text-black';
+                            return 'bg-[#e67e22] text-black';
+                          }
+                          if (key === 'part') {
+                            if (val >= 20) return 'bg-[#2e7d32] text-white';
+                            if (val >= 15) return 'bg-[#e67e22] text-white';
+                            return 'bg-[#c0392b] text-white';
+                          }
+                          if (key === 'lj' || key === 'desc') {
+                            return 'bg-[#5d4037] text-white';
+                          }
+                          if (key === 'aa') {
+                            return 'bg-[#f2f3f4] text-black';
+                          }
+                          if (key === 'ent' || key === 'pctEnt') {
+                            if (pctVal >= 85) return 'bg-[#27ae60] text-white';
+                            if (pctVal >= 75) return 'bg-[#f1c40f] text-black';
+                            if (pctVal >= 60) return 'bg-[#e67e22] text-white';
+                            return 'bg-[#c0392b] text-white';
+                          }
+                          return 'bg-brand-black-card text-brand-gray-light';
                         };
 
                         return (
-                          <tr key={p.id} className="hover:bg-brand-black-hover/5 transition-colors group">
-                            {/* Columna jugador */}
-                            <td className="py-2 px-3 sticky left-0 z-10 bg-brand-black-card border-r border-brand-black-border group-hover:bg-brand-black-card" style={{ minWidth: 210 }}>
+                          <tr key={p.id} className="hover:opacity-90 transition-opacity">
+                            <td className="py-1.5 px-3 sticky left-0 z-10 bg-[#1e293b] border-r border-brand-black-border" style={{ minWidth: 160 }}>
                               <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-black w-4 text-center shrink-0 ${
-                                  idx === 0 ? 'text-amber-400' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-600' : 'text-brand-gray-dark'
-                                }`}>{idx + 1}</span>
-                                <img
-                                  src={p.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
-                                  alt={p.full_name}
-                                  className="w-8 h-8 rounded-full border-2 border-brand-black-border object-cover shrink-0"
-                                />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1">
-                                    {p.dorsal != null && <span className="text-[9px] font-black text-amber-400 shrink-0">#{p.dorsal}</span>}
-                                    <span className="text-[12px] font-semibold text-brand-gray-light truncate">{p.nickname || p.full_name}</span>
-                                  </div>
-                                  <span className="text-[8px] text-brand-gray-dark">{st.total} sesiones</span>
-                                </div>
+                                <span className="text-[11px] font-semibold text-white truncate">
+                                  {p.dorsal ? `${p.dorsal}. ` : ''}{p.nickname || p.full_name}
+                                </span>
                               </div>
                             </td>
-
-                            {/* ASISTE */}
-                            <td className={`border-r border-emerald-800/20 ${asisteBg}`}>
-                              {st.total > 0 ? (
-                                <div className="flex flex-col items-center justify-center gap-0.5 py-2 px-1">
-                                  <span className={`text-base font-extrabold ${asisteTxt}`}>{asistePct}%</span>
-                                  <span className="text-[8px] text-brand-gray-dark">{asisteN}/{st.total}</span>
-                                  <div className="w-10 h-1.5 bg-black/20 rounded-full overflow-hidden mt-0.5">
-                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${asistePct}%` }} />
-                                  </div>
-                                </div>
-                              ) : <span className="block text-center text-brand-gray-dark py-3">—</span>}
-                            </td>
-
-                            {/* NO ASISTE */}
-                            <td className={`border-r border-rose-800/20 ${noBg}`}>
-                              {st.total > 0 ? (
-                                <div className="flex flex-col items-center justify-center gap-0.5 py-2 px-1">
-                                  <span className={`text-base font-extrabold ${noTxt}`}>{noPct}%</span>
-                                  <span className="text-[8px] text-brand-gray-dark">{noN}/{st.total}</span>
-                                  <div className="w-10 h-1.5 bg-black/20 rounded-full overflow-hidden mt-0.5">
-                                    <div className="h-full bg-rose-500 rounded-full" style={{ width: `${noPct}%` }} />
-                                  </div>
-                                </div>
-                              ) : <span className="block text-center text-brand-gray-dark py-3">—</span>}
-                            </td>
-
-                            {/* Divisor */}
-                            <td className="w-px bg-brand-black-border/80 border-r border-brand-black-border p-0" />
-
-                            {/* Causas */}
-                            {CAUSE_COLS.map(col => {
-                              const v = causeVals[col.key] ?? 0;
-                              return (
-                                <td key={col.key} className={`text-center py-2 px-1 ${v > 0 ? col.cellBg(v) : ''}`}>
-                                  {v > 0 ? (
-                                    <div className="flex flex-col items-center gap-0.5">
-                                      <span className={`text-[11px] font-bold ${col.color}`}>{v}%</span>
-                                      <div className="w-8 h-1 bg-black/20 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full ${col.barCl}`} style={{ width: `${Math.min(v * 2.5, 100)}%` }} />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-brand-gray-dark/30">—</span>
-                                  )}
-                                </td>
-                              );
-                            })}
+                            {causeVals.map(col => (
+                              <td key={col.key} className={`py-1.5 px-1 text-center border-r border-brand-black-border/20 text-[11px] font-bold ${getCellStyles(col.key, col.val, st.pctEnt)}`}>
+                                {col.key === 'pctEnt' ? `${col.val} %` : col.val}
+                              </td>
+                            ))}
                           </tr>
                         );
                       })}
                     </tbody>
-
-                    {/* Media equipo */}
-                    <tfoot className="border-t-2 border-brand-black-border bg-brand-black/60">
-                      <tr>
-                        <td className="py-2 px-3 sticky left-0 z-10 bg-brand-black/80 border-r border-brand-black-border">
-                          <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider">Media equipo</span>
-                        </td>
-                        {/* Asiste media */}
-                        {(() => {
-                          const avg = rankedPlayers.length > 0
-                            ? Math.round(rankedPlayers.reduce((a, { st }) => a + st.pctEnt + st.pctEd, 0) / rankedPlayers.length)
-                            : 0;
-                          return <td className="py-2 text-center border-r border-emerald-800/20 bg-emerald-950/5"><span className="text-xs font-bold text-emerald-400">{avg}%</span></td>;
-                        })()}
-                        {/* No asiste media */}
-                        {(() => {
-                          const avg = rankedPlayers.length > 0
-                            ? Math.round(rankedPlayers.reduce((a, { st }) => a + st.pctAus + st.pctAa + st.pctAo + st.pctLes + st.pctEnf + st.pctPart + st.pctViaje + st.pctLj + st.pctDesc, 0) / rankedPlayers.length)
-                            : 0;
-                          return <td className="py-2 text-center border-r border-rose-800/20 bg-rose-950/5"><span className="text-xs font-bold text-rose-400">{avg}%</span></td>;
-                        })()}
-                        <td className="w-px bg-brand-black-border/80 border-r border-brand-black-border p-0" />
-                        {CAUSE_COLS.map(col => {
-                          const keyMap: Record<string, string> = {
-                            ed: 'pctEd', les: 'pctLes', enf: 'pctEnf', aus: 'pctAus', aa: 'pctAa',
-                            ao: 'pctAo', part: 'pctPart', viaje: 'pctViaje', lj: 'pctLj', desc: 'pctDesc',
-                          };
-                          const k = keyMap[col.key];
-                          const avg = rankedPlayers.length > 0
-                            ? Math.round(rankedPlayers.reduce((a, { st }) => a + (st as any)[k], 0) / rankedPlayers.length)
-                            : 0;
-                          return (
-                            <td key={col.key} className="py-2 px-2 text-center">
-                              {avg > 0
-                                ? <span className={`text-[11px] font-bold ${col.color}`}>{avg}%</span>
-                                : <span className="text-[10px] text-brand-gray-dark/30">—</span>}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
 
@@ -884,119 +800,84 @@ export const Attendance: React.FC = () => {
         </div>
       )}
 
-      {/* ══════ TAB 4 — ASISTENCIAS (listado completo) ══════════════════════ */}
+      {/* ══════ TAB 4 — EDITOR ═════════════════════════════════════════════ */}
       {activeTab === 'sessions' && (
-        <div className="space-y-3">
-          {isLoading ? (
+        <div className="space-y-4">
+          {isCumulLoading ? (
             <TableSkeleton />
           ) : allTrainingsSorted.length === 0 ? (
             <EmptyState text="No hay entrenamientos registrados." />
           ) : (
-            allTrainingsSorted.map((t: any) => {
-              const sessionLogs  = allAttendanceData.filter((a: any) => a.training_id === t.id);
-              const presentCount = sessionLogs.filter((a: any) => isPresent(a.status)).length;
-              const totalLogs    = sessionLogs.length;
-              return (
-                <div key={t.id} className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-brand-black-card/30 border-b border-brand-black-border">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${t.status === 'Realizado' ? 'bg-emerald-500' : t.status === 'Cancelado' ? 'bg-red-500' : 'bg-brand-gray-dark'}`} />
+            <div className="space-y-2">
+              {allTrainingsSorted.map((t: any) => {
+                const sessionLogs  = allAttendanceData.filter((a: any) => a.training_id === t.id);
+                const presentCount = sessionLogs.filter((a: any) => isPresent(a.status)).length;
+                const totalLogs    = sessionLogs.length;
+                return (
+                  <div
+                    key={t.id}
+                    className="group w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-brand-black border border-brand-black-border rounded-xl text-left transition-all hover:bg-brand-black-hover hover:border-brand-gray-dark"
+                  >
+                    <div 
+                      className={`flex items-center gap-3 flex-1 ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}
+                      onClick={() => {
+                        if (canEdit) {
+                          setSelectedTrainingId(t.id);
+                          setRollCallOpen(true);
+                        }
+                      }}
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-brand-gray-dark" />
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-bold text-brand-gray-light">{t.date}</span>
                           <span className="text-[10px] text-brand-gray-muted">{t.time} hs · {t.location}</span>
-                          <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold border ${
-                            t.status === 'Realizado' ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30' :
-                            t.status === 'Cancelado' ? 'bg-red-950/20 text-red-400 border-red-900/30' :
-                            'bg-brand-black-border text-brand-gray-muted border-brand-black-border'
-                          }`}>{t.status}</span>
                         </div>
                         <p className="text-[11px] text-brand-gray-muted mt-0.5">{t.objective}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="text-emerald-400 font-bold">{presentCount}</span>
-                        <span className="text-brand-gray-dark">/</span>
-                        <span className="text-brand-gray-muted">{totalLogs} registros</span>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] text-brand-gray-muted uppercase font-semibold">Asistencia</span>
+                        <div className="flex items-center gap-1.5 text-xs mt-0.5">
+                          <span className="text-emerald-400 font-bold">{presentCount}</span>
+                          <span className="text-brand-gray-dark">/</span>
+                          <span className="text-brand-gray-muted">{totalLogs} registrados</span>
+                        </div>
                       </div>
                       {canEdit && (
-                        <button onClick={() => { setSelectedTrainingId(t.id); setRollCallOpen(true); }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-semibold rounded-lg border border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light hover:border-brand-gray-dark transition-all">
-                          <UserCheck className="w-3 h-3" /> Pasar lista
-                        </button>
-                      )}
-                      {canEdit && totalLogs > 0 && (
-                        <button
-                          onClick={() => {
-                            if (confirm(`¿Eliminar todos los registros de asistencia del ${t.date}?`)) {
-                              dataService.deleteAllAttendanceForTraining(t.id)
-                                .then(() => { queryClient.invalidateQueries({ queryKey: ['attendance_all'] }); queryClient.invalidateQueries({ queryKey: ['attendance'] }); showToast('success', 'Registros eliminados', ''); })
-                                .catch((err: any) => showToast('error', 'Error', err.message));
-                            }
-                          }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-semibold rounded-lg border border-red-900/30 text-red-400 hover:bg-red-950/20 transition-all">
-                          <Trash2 className="w-3 h-3" /> Borrar todo
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {totalLogs > 0 && (
+                            <button
+                              onClick={() => {
+                                if (confirm('¿Estás seguro de que deseas borrar todos los registros de asistencia de este entrenamiento?')) {
+                                  deleteAttendanceMut.mutate(t.id);
+                                }
+                              }}
+                              className="p-2 bg-brand-black-card rounded-lg text-brand-gray-muted hover:text-brand-red-600 hover:bg-brand-black border border-brand-black-border transition-colors"
+                              title="Borrar asistencia de todos"
+                              disabled={deleteAttendanceMut.isPending}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setSelectedTrainingId(t.id);
+                              setRollCallOpen(true);
+                            }}
+                            className="p-2 bg-brand-black-card rounded-lg text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black border border-brand-black-border transition-colors"
+                            title="Editar asistencia"
+                          >
+                            <UserCheck className="w-4 h-4" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
-
-                  {sessionLogs.length === 0 ? (
-                    <p className="text-[11px] text-brand-gray-dark italic text-center py-3">Sin registros de asistencia.</p>
-                  ) : (
-                    <div className="divide-y divide-brand-black-border/50">
-                      {sessionLogs
-                        .map((log: any) => ({ log, player: visiblePlayers.find(p => p.id === log.player_id) }))
-                        .filter(({ player }) => player !== undefined)
-                        .sort((a, b) => (a.player?.dorsal ?? 999) - (b.player?.dorsal ?? 999))
-                        .map(({ log, player }) => {
-                          if (!player) return null;
-                          return (
-                            <div key={log.player_id} className="flex items-center justify-between gap-3 px-4 py-1.5 hover:bg-brand-black-hover/10 transition-colors">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <img src={player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
-                                  alt={player.full_name} className="w-6 h-6 rounded-full border border-brand-black-border object-cover shrink-0" />
-                                <div className="min-w-0 flex items-center gap-1">
-                                  {player.dorsal != null && <span className="text-[9px] font-black text-amber-400 shrink-0">#{player.dorsal}</span>}
-                                  <span className="text-[11px] font-semibold text-brand-gray-light truncate">{player.nickname || player.full_name}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                {log.observations && (
-                                  <span className="text-[9px] text-brand-gray-muted italic max-w-[120px] truncate hidden sm:block" title={log.observations}>{log.observations}</span>
-                                )}
-                                <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded border uppercase tracking-wider ${getStatusStyles(log.status)}`}>
-                                  {getShort(log.status)}
-                                </span>
-                                {canEdit && (
-                                  <button onClick={() => handleCellClick(t.id, player.id)}
-                                    className="p-1 rounded border border-brand-black-border text-brand-gray-dark hover:text-brand-gray-light hover:border-brand-gray-dark transition-all" title="Editar registro">
-                                    <Zap className="w-3 h-3" />
-                                  </button>
-                                )}
-                                {canEdit && (
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`¿Eliminar el registro de ${player.nickname || player.full_name} del ${t.date}?`)) {
-                                        dataService.deleteAttendanceRecord(t.id, player.id)
-                                          .then(() => { queryClient.invalidateQueries({ queryKey: ['attendance_all'] }); queryClient.invalidateQueries({ queryKey: ['attendance'] }); showToast('success', 'Registro eliminado', ''); })
-                                          .catch((err: any) => showToast('error', 'Error', err.message));
-                                      }
-                                    }}
-                                    className="p-1 rounded border border-red-900/30 text-red-400/60 hover:text-red-400 hover:bg-red-950/20 transition-all" title="Eliminar este registro">
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
       )}
@@ -1028,12 +909,16 @@ export const Attendance: React.FC = () => {
                         className="w-8 h-8 rounded-full border border-brand-black-border object-cover shrink-0" />
                       <div>
                         <span className="text-xs font-semibold text-brand-gray-light">{p.nickname || p.full_name}</span>
-                        {p.dorsal && <span className="text-[9px] text-amber-400 font-bold block">#{p.dorsal}</span>}
+                        {p.dorsal && <span className="text-[9px] text-amber-400 font-bold ml-1">#{p.dorsal}</span>}
+                        {p.physical_status === 'Baja' && (
+                          <span className="text-[9px] font-black bg-brand-red-600 text-white px-1.5 py-0.5 rounded uppercase ml-2">Baja</span>
+                        )}
                       </div>
                     </div>
                     <select value={cur}
+                      disabled={p.physical_status === 'Baja'}
                       onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], status: e.target.value } }))}
-                      className={`text-[11px] font-bold rounded-lg border px-2 py-1.5 focus:ring-0 focus:outline-none cursor-pointer ${getStatusStyles(cur)} bg-brand-black`}>
+                      className={`text-[11px] font-bold rounded-lg border px-2 py-1.5 focus:ring-0 focus:outline-none cursor-pointer ${getStatusStyles(cur)} ${p.physical_status === 'Baja' ? 'opacity-60 cursor-not-allowed' : 'bg-brand-black'}`}>
                       {STATUS_OPTIONS.map(o => (
                         <option key={o.value} value={o.value} className="bg-brand-black text-brand-gray-light">
                           {o.short} — {o.label}
@@ -1081,8 +966,9 @@ export const Attendance: React.FC = () => {
             <div>
               <label className="form-label">Estado de Asistencia</label>
               <select value={editingCell.status}
+                disabled={visiblePlayers.find(p => p.id === editingCell?.playerId)?.physical_status === 'Baja'}
                 onChange={e => setEditingCell(prev => prev ? { ...prev, status: e.target.value } : null)}
-                className="form-input bg-brand-black-bg mt-1">
+                className={`form-input mt-1 ${visiblePlayers.find(p => p.id === editingCell?.playerId)?.physical_status === 'Baja' ? 'bg-brand-black-border opacity-60 cursor-not-allowed' : 'bg-brand-black-bg'}`}>
                 {STATUS_OPTIONS.map(o => (
                   <option key={o.value} value={o.value} className="bg-brand-black-card">{o.label} ({o.short})</option>
                 ))}
@@ -1102,6 +988,58 @@ export const Attendance: React.FC = () => {
             </div>
           </form>
         )}
+      </Modal>
+      {/* ══════ MODAL — EXPORTACIÓN ════════════════════════════════════════════ */}
+      <Modal isOpen={exportModalOpen} onClose={() => setExportModalOpen(false)} title={`Exportar a ${exportFormat.toUpperCase()}`}>
+        <div className="space-y-5">
+          <div>
+            <label className="form-label mb-2">Rango de Exportación</label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-brand-gray-light">
+                <input type="radio" className="form-radio text-brand-red-600 focus:ring-brand-red-600 bg-brand-black-bg border-brand-black-border"
+                  checked={exportRange === 'current'} onChange={() => setExportRange('current')} />
+                Mes actual ({currentMonthName})
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-brand-gray-light">
+                <input type="radio" className="form-radio text-brand-red-600 focus:ring-brand-red-600 bg-brand-black-bg border-brand-black-border"
+                  checked={exportRange === 'all'} onChange={() => setExportRange('all')} />
+                Todos los meses (Temporada completa)
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-brand-gray-light">
+                <input type="radio" className="form-radio text-brand-red-600 focus:ring-brand-red-600 bg-brand-black-bg border-brand-black-border"
+                  checked={exportRange === 'custom'} onChange={() => setExportRange('custom')} />
+                Meses específicos...
+              </label>
+            </div>
+          </div>
+
+          {exportRange === 'custom' && (
+            <div className="bg-brand-black-card p-3 rounded-xl border border-brand-black-border">
+              <label className="form-label mb-2 block">Selecciona los meses</label>
+              <div className="grid grid-cols-3 gap-2">
+                {months.map(m => (
+                  <label key={m.value} className="flex items-center gap-1.5 cursor-pointer text-xs text-brand-gray-light">
+                    <input type="checkbox" className="form-checkbox rounded text-brand-red-600 focus:ring-brand-red-600 bg-brand-black-bg border-brand-black-border"
+                      checked={customMonths.includes(m.value)}
+                      onChange={(e) => {
+                        if (e.target.checked) setCustomMonths(prev => [...prev, m.value].sort((a,b) => a-b));
+                        else setCustomMonths(prev => prev.filter(v => v !== m.value));
+                      }} />
+                    {m.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 justify-end pt-2">
+            <button onClick={() => setExportModalOpen(false)} className="btn-secondary py-2 text-xs">Cancelar</button>
+            <button onClick={handleConfirmExport} className="btn-primary py-2 text-xs font-semibold flex items-center gap-1.5">
+              {exportFormat === 'csv' ? <FileText className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+              Descargar {exportFormat.toUpperCase()}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

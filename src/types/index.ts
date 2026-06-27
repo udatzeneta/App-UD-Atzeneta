@@ -49,7 +49,6 @@ export interface Training {
   duration: number; // en minutos
   objective: string;
   observations: string;
-  status: 'Programado' | 'Realizado' | 'Cancelado';
   created_at?: string;
 }
 
@@ -327,6 +326,7 @@ export interface PlayerInjury {
   diagnosis: string;
   treatment?: string;
   injury_date: string;
+  baja_date?: string;
   estimated_return?: string;
   actual_return?: string;
   follow_up_notes?: string;

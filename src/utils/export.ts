@@ -1078,3 +1078,197 @@ export const exportSquadToPDF = async (
   const filename = `Plantilla_UD_Atzeneta_${new Date().toISOString().split('T')[0]}`;
   doc.save(`${filename}.pdf`);
 };
+
+export const exportAttendanceToPDF = async (
+  title: string,
+  filename: string,
+  monthsToExport: number[],
+  allMonths: { value: number; label: string }[],
+  players: any[],
+  targetTrainings: any[],
+  allAttendanceData: any[]
+): Promise<void> => {
+  const { jsPDF } = await import('jspdf');
+  const autoTable = (await import('jspdf-autotable')).default;
+
+  // Horizontal format
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  // Load logo
+  let logoData: string | null = null;
+  try {
+    const res = await fetch(CLUB_LOGO_URL);
+    const blob = await res.blob();
+    const reader = new FileReader();
+    logoData = await new Promise((resolve) => {
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('No logo found');
+  }
+
+  // Load player photos
+  const playerPhotos = await Promise.all(
+    players.map(async (p) => {
+      if (!p.photo_url) return null;
+      try {
+        const res = await fetch(p.photo_url);
+        const blob = await res.blob();
+        return await new Promise<string | null>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) { return null; }
+    })
+  );
+
+  const drawHeader = (pageTitle: string) => {
+    doc.setFillColor(...BRAND_RED);
+    doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
+    if (logoData) {
+      doc.addImage(logoData, 'PNG', 14, 14, 16, 18, undefined, 'FAST');
+    }
+    doc.setFontSize(16);
+    doc.setTextColor(...BRAND_RED);
+    doc.text(title, 36, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(pageTitle, 36, 26);
+  };
+
+  const getShortStatus = (s: string) => {
+    const map: Record<string, string> = {
+      ENT: 'ENT', 'Entrena': 'ENT', ED: 'ED',
+      L: 'L', E: 'E',
+      A: 'A', AA: 'AA', AO: 'AO', V: 'V', P: 'P', LJ: 'LJ', D: 'D'
+    };
+    return map[s] || s.substring(0, 3).toUpperCase();
+  };
+
+  // ----- PAGE 1: ACCUMULATIVE -----
+  drawHeader(`Resumen Acumulativo - ${new Date().toLocaleDateString('es-ES')}`);
+
+  const cumulHeaders = ['Foto', 'Dorsal', 'Jugador', '% ENT', 'ENT', 'AUS', 'ED', 'L', 'E'];
+  const cumulRows = players.map(p => [
+    '',
+    p.dorsal?.toString() || '-',
+    p.nickname || p.full_name,
+    `${p.cumulStats.pctEnt}%`,
+    p.cumulStats.ent.toString(),
+    p.cumulStats.aus.toString(),
+    p.cumulStats.ed.toString(),
+    p.cumulStats.les.toString(),
+    p.cumulStats.enf.toString()
+  ]);
+
+  // Calculate dynamic cell height to fit all players in one page
+  const availableHeight = 165; // Landscape height (210) - top margin (38) - bottom margin (7)
+  const maxCellHeight = availableHeight / Math.max(1, players.length);
+  const cellHeight = Math.min(10, Math.floor(maxCellHeight * 10) / 10); // keep 1 decimal
+  const photoSize = Math.max(3, cellHeight - 1.5);
+  const paddingY = Math.max(0.2, (cellHeight - 5) / 2);
+  const fontSize = cellHeight < 5 ? 5 : 7;
+
+  autoTable(doc, {
+    head: [cumulHeaders],
+    body: cumulRows,
+    startY: 38,
+    margin: { top: 38, bottom: 7, left: 14, right: 14 },
+    styles: { fontSize: fontSize, cellPadding: { top: paddingY, bottom: paddingY, left: 1.5, right: 1.5 }, minCellHeight: cellHeight, valign: 'middle' },
+    columnStyles: {
+      0: { cellWidth: 16, halign: 'center' },
+      1: { cellWidth: 16, halign: 'center' },
+      2: { halign: 'left' },
+      3: { halign: 'center', fontStyle: 'bold' },
+      4: { halign: 'center', textColor: [52, 211, 153] }, // emerald
+      5: { halign: 'center', textColor: [251, 113, 133] }, // rose
+      6: { halign: 'center', textColor: [251, 191, 36] }, // amber
+      7: { halign: 'center', textColor: [248, 113, 113] }, // red
+      8: { halign: 'center', textColor: [250, 204, 21] } // yellow
+    },
+    headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    theme: 'grid',
+    tableLineColor: BRAND_BLACK,
+    tableLineWidth: 0.1,
+    didDrawCell: (data: any) => {
+      if (data.column.index === 0 && data.cell.section === 'body') {
+        const photoData = playerPhotos[data.row.index];
+        if (photoData) {
+          const match = photoData.match(/^data:image\/(png|jpeg|jpg);/);
+          const format = match ? match[1].toUpperCase() : 'PNG';
+          // Center photo vertically and horizontally
+          const imgX = data.cell.x + (data.cell.width - photoSize) / 2;
+          const imgY = data.cell.y + (data.cell.height - photoSize) / 2;
+          doc.addImage(photoData, format, imgX, imgY, photoSize, photoSize, undefined, 'FAST');
+        }
+      }
+    }
+  });
+
+  // ----- PAGES 2+: MATRIX PER MONTH -----
+  for (const month of monthsToExport) {
+    const monthTrainings = targetTrainings.filter((t: any) => new Date(t.date).getMonth() + 1 === month);
+    if (monthTrainings.length === 0) continue; // Skip months with no trainings
+
+    doc.addPage();
+    const monthLabel = allMonths.find(m => m.value === month)?.label || `Mes ${month}`;
+    drawHeader(`Matriz de Asistencia - ${monthLabel}`);
+
+    const matrixHeaders = ['Foto', 'Jugador', ...monthTrainings.map((t: any) => {
+      const parts = t.date.split('-');
+      return `${parts[2]}/${parts[1]}`;
+    })];
+
+    const matrixRows = players.map(p => {
+      const row = ['', p.nickname || p.full_name];
+      monthTrainings.forEach((t: any) => {
+        const log = allAttendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
+        row.push(log?.status ? getShortStatus(log.status) : '-');
+      });
+      return row;
+    });
+
+    autoTable(doc, {
+      head: [matrixHeaders],
+      body: matrixRows,
+      startY: 38,
+      margin: { top: 38, bottom: 7, left: 14, right: 14 },
+      styles: { fontSize: fontSize, cellPadding: { top: paddingY, bottom: paddingY, left: 1.5, right: 1.5 }, minCellHeight: cellHeight, valign: 'middle', halign: 'center' },
+      columnStyles: {
+        0: { cellWidth: 16, halign: 'center' },
+        1: { halign: 'left', cellWidth: 40 }
+      },
+      headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold', halign: 'center' },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      theme: 'grid',
+      tableLineColor: BRAND_BLACK,
+      tableLineWidth: 0.1,
+      didDrawCell: (data: any) => {
+        if (data.column.index === 0 && data.cell.section === 'body') {
+          const photoData = playerPhotos[data.row.index];
+          if (photoData) {
+            const match = photoData.match(/^data:image\/(png|jpeg|jpg);/);
+            const format = match ? match[1].toUpperCase() : 'PNG';
+            const imgX = data.cell.x + (data.cell.width - photoSize) / 2;
+            const imgY = data.cell.y + (data.cell.height - photoSize) / 2;
+            doc.addImage(photoData, format, imgX, imgY, photoSize, photoSize, undefined, 'FAST');
+          }
+        }
+        if (data.column.index > 1 && data.cell.section === 'body') {
+          doc.setFont('helvetica', 'bold');
+          if (['ENT', 'ED'].includes(String(data.cell.raw))) doc.setTextColor(52, 211, 153);
+          else if (['A', 'AA', 'AO', 'V', 'P', 'LJ'].includes(String(data.cell.raw))) doc.setTextColor(251, 113, 133);
+          else if (['L', 'E'].includes(String(data.cell.raw))) doc.setTextColor(250, 204, 21);
+          else doc.setTextColor(150, 150, 150);
+        }
+      }
+    });
+  }
+
+  doc.save(`${filename}.pdf`);
+};

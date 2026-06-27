@@ -54,7 +54,6 @@ export const Players: React.FC = () => {
   const [birthDate, setBirthDate] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [playerPhysicalStatus, setPlayerPhysicalStatus] = useState<'Disponible' | 'Lesionado' | 'En duda' | 'Baja'>('Disponible');
   
   // Campos de estadísticas
   const [matchesPlayed, setMatchesPlayed] = useState('0');
@@ -206,7 +205,6 @@ export const Players: React.FC = () => {
     setBirthDate('');
     setPhone('');
     setEmail('');
-    setPlayerPhysicalStatus('Disponible');
     setMatchesPlayed('0');
     setMinutesPlayed('0');
     setGoals('0');
@@ -274,7 +272,6 @@ export const Players: React.FC = () => {
     setBirthDate(p.birth_date || '');
     setPhone(p.phone || '');
     setEmail(p.email || '');
-    setPlayerPhysicalStatus(p.physical_status as any || 'Disponible');
     setMatchesPlayed(p.matches_played.toString());
     setMinutesPlayed(p.minutes_played.toString());
     setGoals(p.goals.toString());
@@ -314,7 +311,7 @@ export const Players: React.FC = () => {
       assists: parseInt(assists) || 0,
       yellow_cards: parseInt(yellowCards) || 0,
       red_cards: parseInt(redCards) || 0,
-      physical_status: playerPhysicalStatus
+      ...(editingPlayer ? {} : { physical_status: 'Disponible' as const })
     };
 
     if (editingPlayer) {
@@ -1328,21 +1325,8 @@ export const Players: React.FC = () => {
             </div>
           </div>
 
-          {/* Pie Dominante, Estatura, Peso, Estado Físico */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="form-label">Estado Físico</label>
-              <select
-                className="form-input bg-brand-black"
-                value={playerPhysicalStatus}
-                onChange={(e) => setPlayerPhysicalStatus(e.target.value as any)}
-              >
-                <option value="Disponible">Disponible</option>
-                <option value="En duda">En duda</option>
-                <option value="Lesionado">Lesionado</option>
-                <option value="Baja">Baja</option>
-              </select>
-            </div>
+          {/* Pie Dominante, Estatura, Peso */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="form-label">Pie Dominante</label>
               <select

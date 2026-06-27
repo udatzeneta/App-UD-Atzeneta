@@ -1505,23 +1505,26 @@ export const Matches: React.FC = () => {
 
               <div className="flex-1 overflow-y-auto pr-1 no-scrollbar border border-brand-black-border/60 p-2.5 rounded-b-xl bg-brand-black-card/40">
                 <div className="space-y-2">
-                  {dbPlayers.filter(p => p.physical_status !== 'Baja').length === 0 ? (
+                  {dbPlayers.length === 0 ? (
                     <div className="text-center py-8 text-brand-gray-muted text-xs italic">
-                      No hay jugadores disponibles en la plantilla (o todos están de baja).
+                      No hay jugadores en la plantilla.
                     </div>
                   ) : (
                     dbPlayers
-                      .filter(player => player.physical_status !== 'Baja')
                       .map((player) => {
-                      const isSelected = selectedSquadPlayerIds.includes(player.id);
+                      const isBaja = player.physical_status === 'Baja';
+                      const isSelected = selectedSquadPlayerIds.includes(player.id) && !isBaja;
                       return (
                         <div
                           key={player.id}
-                          onClick={() => togglePlayerInSquad(player.id)}
-                          className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
+                          onClick={() => {
+                            if (!isBaja) togglePlayerInSquad(player.id);
+                          }}
+                          className={`flex items-center justify-between p-2 rounded-lg border transition-all ${
+                            isBaja ? 'bg-brand-black/20 border-brand-red-900/30 opacity-60 cursor-not-allowed' :
                             isSelected
-                              ? 'bg-brand-red-600/10 border-brand-red-600/50'
-                              : 'bg-brand-black/40 border-brand-black-border hover:border-brand-black-border/80'
+                              ? 'bg-brand-red-600/10 border-brand-red-600/50 cursor-pointer'
+                              : 'bg-brand-black/40 border-brand-black-border hover:border-brand-black-border/80 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center gap-3">
@@ -1543,6 +1546,11 @@ export const Matches: React.FC = () => {
                                 <span className="text-xs font-semibold text-brand-gray-light leading-none">
                                   {player.nickname || player.full_name}
                                 </span>
+                                {isBaja && (
+                                  <span className="text-[9px] font-black bg-brand-red-600 text-white px-1.5 py-0.5 rounded uppercase ml-1">
+                                    Baja
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>

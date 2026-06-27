@@ -39,6 +39,7 @@ export const PlayerDetail: React.FC = () => {
   const [injuryDiagnosis, setInjuryDiagnosis] = useState('');
   const [injuryTreatment, setInjuryTreatment] = useState('');
   const [injuryDate, setInjuryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [injuryBajaDate, setInjuryBajaDate] = useState('');
   const [injuryEstReturn, setInjuryEstReturn] = useState('');
   const [injuryActReturn, setInjuryActReturn] = useState('');
   const [injuryFollowUp, setInjuryFollowUp] = useState('');
@@ -212,6 +213,7 @@ export const PlayerDetail: React.FC = () => {
     setInjuryDiagnosis('');
     setInjuryTreatment('');
     setInjuryDate(new Date().toISOString().split('T')[0]);
+    setInjuryBajaDate('');
     setInjuryEstReturn('');
     setInjuryActReturn('');
     setInjuryFollowUp('');
@@ -227,6 +229,7 @@ export const PlayerDetail: React.FC = () => {
     setInjuryDiagnosis(inj.diagnosis);
     setInjuryTreatment(inj.treatment || '');
     setInjuryDate(inj.injury_date);
+    setInjuryBajaDate(inj.baja_date || '');
     setInjuryEstReturn(inj.estimated_return || '');
     setInjuryActReturn(inj.actual_return || '');
     setInjuryFollowUp(inj.follow_up_notes || '');
@@ -251,6 +254,7 @@ export const PlayerDetail: React.FC = () => {
       diagnosis: injuryDiagnosis,
       treatment: injuryTreatment || undefined,
       injury_date: injuryDate,
+      baja_date: injuryStatus === 'Baja' ? (injuryBajaDate || injuryDate) : undefined,
       estimated_return: injuryEstReturn || undefined,
       actual_return: injuryActReturn || undefined,
       follow_up_notes: injuryFollowUp || undefined,
@@ -507,6 +511,9 @@ export const PlayerDetail: React.FC = () => {
   };
 
   // ---- Loading / Not found ----
+  // --- Compute if player is "BAJA" ---
+  const isPlayerBaja = player?.physical_status === 'Baja';
+
   if (isLoadingPlayers) {
     return (
       <div className="space-y-6">
@@ -581,9 +588,16 @@ export const PlayerDetail: React.FC = () => {
                   #{player.dorsal}
                 </span>
               )}
-              <h2 className="text-xl sm:text-2xl font-extrabold text-white leading-tight">
-                {player.nickname || player.full_name}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-extrabold text-white leading-tight">
+                  {player.nickname || player.full_name}
+                </h2>
+                {isPlayerBaja ? (
+                  <span className="px-2 py-0.5 bg-brand-red-600 text-white text-[10px] font-black uppercase rounded animate-pulse">Baja</span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-black uppercase rounded">Disponible</span>
+                )}
+              </div>
             </div>
             {player.nickname && (
               <p className="text-xs text-brand-gray-muted mb-1">
