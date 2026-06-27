@@ -247,7 +247,6 @@ export const Players: React.FC = () => {
     setBirthDate('');
     setPhone(scoutingPlayer.phone || '');
     setEmail('');
-    setPlayerPhysicalStatus('Disponible');
     setMatchesPlayed('0');
     setMinutesPlayed('0');
     setGoals('0');
