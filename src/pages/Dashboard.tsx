@@ -155,9 +155,7 @@ export const Dashboard: React.FC = () => {
 
   const saveAttendanceMutation = useMutation({
     mutationFn: async (payload: { training_id: string, attendance: any[] }) => {
-      // Usamos el endpoint existente en dataService si existe. Si no, lo simulamos para el plan
-      // Aquí asumimos que dataService.saveTrainingAttendance existe y toma (training_id, record[])
-      return (dataService as any).saveTrainingAttendance(payload.training_id, payload.attendance);
+      return dataService.saveAttendanceList(payload.training_id, payload.attendance);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trainings'] });
@@ -173,10 +171,10 @@ export const Dashboard: React.FC = () => {
   const handleSaveAttendance = () => {
     if (!aSelectedTrainingId) return;
     
-    const attendanceRecords = players.map(p => ({
+    const attendanceRecords = dbPlayers.map(p => ({
       training_id: aSelectedTrainingId,
-      user_id: p.uid,
-      status: aAttendanceMap[p.id] || 'ENT' // Default ENT
+      player_id: p.id,
+      status: aAttendanceMap[p.id] || 'ENT'
     }));
     saveAttendanceMutation.mutate({ training_id: aSelectedTrainingId, attendance: attendanceRecords });
   };

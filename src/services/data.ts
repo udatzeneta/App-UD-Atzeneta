@@ -847,7 +847,7 @@ export const dataService = {
     } else {
       const { data, error } = await supabase
         .from('training_attendance')
-        .select('*, profiles(*)');
+        .select('*');
       if (error) throw error;
       return data as TrainingAttendance[];
     }
@@ -857,18 +857,25 @@ export const dataService = {
     if (isMockMode) {
       await delay(300);
       const attendance = MockDatabase.getTrainingAttendance();
-      const profiles = MockDatabase.getProfiles();
-      return attendance
-        .filter(x => x.training_id === trainingId)
-        .map(a => ({
-          ...a,
-          profiles: profiles.find(p => p.id === a.user_id)
-        }));
+      return attendance.filter(x => x.training_id === trainingId);
     } else {
       const { data, error } = await supabase
         .from('training_attendance')
-        .select('*, profiles(*)')
+        .select('*, players(*)')
         .eq('training_id', trainingId);
+      if (error) throw error;
+      return data as TrainingAttendance[];
+    }
+  },
+
+  async getAllAttendance(): Promise<TrainingAttendance[]> {
+    if (isMockMode) {
+      await delay(300);
+      return MockDatabase.getTrainingAttendance();
+    } else {
+      const { data, error } = await supabase
+        .from('training_attendance')
+        .select('*');
       if (error) throw error;
       return data as TrainingAttendance[];
     }
@@ -889,11 +896,7 @@ export const dataService = {
       const profiles = MockDatabase.getProfiles();
       
       return attendance
-        .filter(x => trainingIds.includes(x.training_id))
-        .map(a => ({
-          ...a,
-          profiles: profiles.find(p => p.id === a.user_id)
-        }));
+        .filter(x => trainingIds.includes(x.training_id));
     } else {
       const daysInMonth = new Date(year, month, 0).getDate();
       const start = `${year}-${String(month).padStart(2, '0')}-01`;
@@ -914,7 +917,7 @@ export const dataService = {
       // 2. Obtener asistencias de dichos entrenamientos
       const { data, error } = await supabase
         .from('training_attendance')
-        .select('*, profiles(*)')
+        .select('*')
         .in('training_id', trainingIds);
 
       if (error) throw error;
@@ -926,45 +929,37 @@ export const dataService = {
     if (isMockMode) {
       await delay(300);
       let attendance = MockDatabase.getTrainingAttendance();
-      // Borrar registros viejos para esta sesión
       attendance = attendance.filter(x => x.training_id !== trainingId);
-
       const newItems = attendanceList.map((x, idx) => ({
         ...x,
         id: `att-${Date.now()}-${idx}`
       }));
       attendance.push(...newItems);
       MockDatabase.setTrainingAttendance(attendance);
-
-      const profiles = MockDatabase.getProfiles();
-      return newItems.map(a => ({
-        ...a,
-        profiles: profiles.find(p => p.id === a.user_id)
-      }));
+      return newItems;
     } else {
       const itemsToUpsert = attendanceList.map(item => ({
         training_id: item.training_id,
-        user_id: item.user_id,
+        player_id: item.player_id,
         status: item.status,
         observations: item.observations
       }));
 
       const { data, error } = await supabase
         .from('training_attendance')
-        .upsert(itemsToUpsert, { onConflict: 'training_id,user_id' })
-        .select('*, profiles(*)');
+        .upsert(itemsToUpsert, { onConflict: 'training_id,player_id' })
+        .select('*');
 
       if (error) throw error;
       return data as TrainingAttendance[];
     }
   },
 
-  async updateAttendance(trainingId: string, userId: string, status: any, observations?: string): Promise<TrainingAttendance> {
+  async updateAttendance(trainingId: string, playerId: string, status: any, observations?: string): Promise<TrainingAttendance> {
     if (isMockMode) {
       await delay(200);
       const attendance = MockDatabase.getTrainingAttendance();
-      const idx = attendance.findIndex(x => x.training_id === trainingId && x.user_id === userId);
-      
+      const idx = attendance.findIndex(x => x.training_id === trainingId && x.player_id === playerId);
       let updatedItem: TrainingAttendance;
       if (idx !== -1) {
         attendance[idx] = { ...attendance[idx], status, observations };
@@ -973,31 +968,57 @@ export const dataService = {
         updatedItem = {
           id: `att-${Date.now()}`,
           training_id: trainingId,
-          user_id: userId,
+          player_id: playerId,
           status,
           observations
         };
         attendance.push(updatedItem);
       }
       MockDatabase.setTrainingAttendance(attendance);
-
-      const profiles = MockDatabase.getProfiles();
-      return {
-        ...updatedItem,
-        profiles: profiles.find(p => p.id === userId)
-      };
+      return updatedItem;
     } else {
       const { data, error } = await supabase
         .from('training_attendance')
         .upsert(
-          { training_id: trainingId, user_id: userId, status, observations },
-          { onConflict: 'training_id,user_id' }
+          { training_id: trainingId, player_id: playerId, status, observations },
+          { onConflict: 'training_id,player_id' }
         )
-        .select('*, profiles(*)')
+        .select('*')
         .single();
 
       if (error) throw error;
       return data as TrainingAttendance;
+    }
+  },
+
+  async deleteAttendanceRecord(trainingId: string, playerId: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      let attendance = MockDatabase.getTrainingAttendance();
+      attendance = attendance.filter(x => !(x.training_id === trainingId && x.player_id === playerId));
+      MockDatabase.setTrainingAttendance(attendance);
+    } else {
+      const { error } = await supabase
+        .from('training_attendance')
+        .delete()
+        .eq('training_id', trainingId)
+        .eq('player_id', playerId);
+      if (error) throw error;
+    }
+  },
+
+  async deleteAllAttendanceForTraining(trainingId: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      let attendance = MockDatabase.getTrainingAttendance();
+      attendance = attendance.filter(x => x.training_id !== trainingId);
+      MockDatabase.setTrainingAttendance(attendance);
+    } else {
+      const { error } = await supabase
+        .from('training_attendance')
+        .delete()
+        .eq('training_id', trainingId);
+      if (error) throw error;
     }
   },
 

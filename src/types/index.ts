@@ -240,12 +240,12 @@ export type AttendanceStatus = 'Entrena' | 'A' | 'ED' | 'L' | 'E' | 'P' | 'LJ' |
 export interface TrainingAttendance {
   id: string;
   training_id: string;
-  user_id: string;
-  status: AttendanceStatus;
+  player_id: string;
+  status: string;
   observations?: string;
   created_at?: string;
   updated_at?: string;
-  profiles?: Profile;
+  players?: Player;
 }
 
 export interface TacticalPlayer {
