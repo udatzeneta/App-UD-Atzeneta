@@ -107,10 +107,7 @@ export const Players: React.FC = () => {
     queryFn: async () => {
       if (!selectedPlayer) return [];
       const allAtt = await dataService.getTrainingAttendance();
-      if (selectedPlayer.profile_id) {
-        return allAtt.filter((a: TrainingAttendance) => a.user_id === selectedPlayer.profile_id);
-      }
-      return [];
+      return allAtt.filter((a: TrainingAttendance) => a.player_id === selectedPlayer.id);
     },
     enabled: !!selectedPlayer
   });

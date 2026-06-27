@@ -82,11 +82,11 @@ export const PlayerDetail: React.FC = () => {
   const { data: attendanceRecords = [] } = useQuery<TrainingAttendance[]>({
     queryKey: ['playerAttendance', playerId],
     queryFn: async () => {
-      if (!player?.profile_id) return [];
+      if (!playerId) return [];
       const allAtt = await dataService.getTrainingAttendance();
-      return allAtt.filter((a: TrainingAttendance) => a.user_id === player.profile_id);
+      return allAtt.filter((a: TrainingAttendance) => a.player_id === playerId);
     },
-    enabled: !!player?.profile_id && detailTab === 'stats'
+    enabled: !!playerId && detailTab === 'stats'
   });
 
   const { data: trainings = [] } = useQuery({

@@ -394,12 +394,12 @@ const DEFAULT_SETTINGS: Settings = {
 
 // 12. Asistencias por defecto semilladas
 const DEFAULT_ATTENDANCE: TrainingAttendance[] = [
-  { id: 'att-1', training_id: 't-3', user_id: MOCK_USER_IDS.player, status: 'Entrena', observations: 'Excelente desempeño' },
-  { id: 'att-2', training_id: 't-3', user_id: MOCK_USER_IDS.player2, status: 'Entrena' },
-  { id: 'att-3', training_id: 't-3', user_id: MOCK_USER_IDS.player3, status: 'ED', observations: 'Molestias en el abductor, trabaja con fisio' },
-  { id: 'att-4', training_id: 't-4', user_id: MOCK_USER_IDS.player, status: 'A', observations: 'Sin justificar' },
-  { id: 'att-5', training_id: 't-4', user_id: MOCK_USER_IDS.player2, status: 'Entrena' },
-  { id: 'att-6', training_id: 't-4', user_id: MOCK_USER_IDS.player3, status: 'L', observations: 'Esguince de tobillo' },
+  { id: 'att-1', training_id: 't-3', player_id: 'p-1', status: 'Entrena', observations: 'Excelente desempeño' },
+  { id: 'att-2', training_id: 't-3', player_id: 'p-2', status: 'Entrena' },
+  { id: 'att-3', training_id: 't-3', player_id: 'p-3', status: 'ED', observations: 'Molestias en el abductor, trabaja con fisio' },
+  { id: 'att-4', training_id: 't-4', player_id: 'p-1', status: 'A', observations: 'Sin justificar' },
+  { id: 'att-5', training_id: 't-4', player_id: 'p-2', status: 'Entrena' },
+  { id: 'att-6', training_id: 't-4', player_id: 'p-3', status: 'L', observations: 'Esguince de tobillo' },
 ];
 
 // 13. Jugadores por defecto
