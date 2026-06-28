@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
@@ -42,6 +42,7 @@ export const Matches: React.FC = () => {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Permisos específicos
   const canCreate = hasPermission('matches', 'crear');
@@ -172,6 +173,22 @@ export const Matches: React.FC = () => {
     setIsActionModalOpen(false);
     navigate(`/matches/${selectedMatchForActions.id}/report`);
   };
+
+  React.useEffect(() => {
+    const action = searchParams.get('action');
+    const matchId = searchParams.get('matchId');
+
+    if (action === 'convocatoria' && matchId && matches.length > 0) {
+      const match = matches.find(m => m.id === matchId);
+      if (match) {
+        searchParams.delete('action');
+        searchParams.delete('matchId');
+        setSearchParams(searchParams);
+        openSquadModal(match);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, matches, setSearchParams]);
 
   const saveSquadMutation = useMutation({
     mutationFn: async ({ 
@@ -1503,10 +1520,10 @@ export const Matches: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-1 no-scrollbar border border-brand-black-border/60 p-2.5 rounded-b-xl bg-brand-black-card/40">
-                <div className="space-y-2">
+              <div className="flex-1 overflow-y-auto pr-1 no-scrollbar border border-brand-black-border/60 p-2 rounded-b-xl bg-brand-black-card/40">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {dbPlayers.length === 0 ? (
-                    <div className="text-center py-8 text-brand-gray-muted text-xs italic">
+                    <div className="col-span-full text-center py-8 text-brand-gray-muted text-xs italic">
                       No hay jugadores en la plantilla.
                     </div>
                   ) : (
@@ -1520,34 +1537,34 @@ export const Matches: React.FC = () => {
                           onClick={() => {
                             if (!isBaja) togglePlayerInSquad(player.id);
                           }}
-                          className={`flex items-center justify-between p-2 rounded-lg border transition-all ${
+                          className={`flex items-center justify-between p-1.5 rounded border transition-all ${
                             isBaja ? 'bg-brand-black/20 border-brand-red-900/30 opacity-60 cursor-not-allowed' :
                             isSelected
                               ? 'bg-brand-red-600/10 border-brand-red-600/50 cursor-pointer'
                               : 'bg-brand-black/40 border-brand-black-border hover:border-brand-black-border/80 cursor-pointer'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             {/* Avatar */}
-                            <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                            <div className="w-6 h-6 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
                               {player.photo_url ? (
                                 <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
                               ) : (
-                                <Users className="w-4 h-4 text-brand-gray-dark" />
+                                <Users className="w-3 h-3 text-brand-gray-dark" />
                               )}
                             </div>
                             <div>
                               <div className="flex items-center gap-1.5">
                                 {player.dorsal && (
-                                  <span className="text-[10px] font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none">
+                                  <span className="text-[9px] font-black text-brand-red-600 bg-brand-red-600/10 px-1 py-0.5 rounded leading-none">
                                     {player.dorsal}
                                   </span>
                                 )}
-                                <span className="text-xs font-semibold text-brand-gray-light leading-none">
+                                <span className="text-[11px] font-semibold text-brand-gray-light leading-none truncate max-w-[90px]">
                                   {player.nickname || player.full_name}
                                 </span>
                                 {isBaja && (
-                                  <span className="text-[9px] font-black bg-brand-red-600 text-white px-1.5 py-0.5 rounded uppercase ml-1">
+                                  <span className="text-[8px] font-black bg-brand-red-600 text-white px-1 py-0.5 rounded uppercase ml-1">
                                     Baja
                                   </span>
                                 )}
@@ -1555,13 +1572,13 @@ export const Matches: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="flex items-center">
-                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
+                          <div className="flex items-center shrink-0 pl-1">
+                            <div className={`w-4 h-4 rounded-sm border flex items-center justify-center transition-all ${
                               isSelected
                                 ? 'bg-brand-red-600 border-brand-red-600 text-white'
                                 : 'border-brand-gray-dark bg-transparent'
                             }`}>
-                              {isSelected && <Check className="w-3.5 h-3.5" />}
+                              {isSelected && <Check className="w-3 h-3" />}
                             </div>
                           </div>
                         </div>

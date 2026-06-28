@@ -187,10 +187,9 @@ export const Dashboard: React.FC = () => {
   const handleMatchAction = (action: 'convocatoria' | 'datos') => {
     if (!mSelectedMatchId) return;
     if (action === 'convocatoria') {
-      // Redirigir a la pestaña de convocatoria (tab=convocatoria si la URL lo soporta, o simplemente al match)
-      navigate(`/match/${mSelectedMatchId}?tab=convocatoria`);
+      navigate(`/matches?action=convocatoria&matchId=${mSelectedMatchId}`);
     } else {
-      navigate(`/match/${mSelectedMatchId}`);
+      navigate(`/matches/${mSelectedMatchId}/report`);
     }
   };
 
