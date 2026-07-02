@@ -940,7 +940,7 @@ export const Players: React.FC = () => {
                 const positions = ['GK', 'DEF_L', 'DEF_C', 'DEF_R', 'MID_C', 'EXT_L', 'EXT_R', 'FWD_C'];
 
                 return positions.map((posId) => {
-                  const playersInPos = filteredPlayers.filter(p => getPlayerGroup(p.position) === posId);
+                  const playersInPos = filteredPlayers.filter(p => getPlayerGroup(p.position || '') === posId);
                   if (playersInPos.length === 0) return null;
                   
                   return (

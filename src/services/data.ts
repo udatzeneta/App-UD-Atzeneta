@@ -14,9 +14,9 @@ const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
     const futureTrainings = trainings.filter(t => t.date >= todayStr);
     
     if (isMockMode) {
-      const allAttendances = MockDatabase.getTrainingAttendances();
+      const allAttendances = MockDatabase.getTrainingAttendance();
       for (const t of futureTrainings) {
-        let att = allAttendances.find(a => a.training_id === t.id && a.player_id === injury.player_id);
+        let att = allAttendances.find((a: any) => a.training_id === t.id && a.player_id === injury.player_id);
         if (att) {
           att.status = 'L';
           att.observations = `Baja competitiva: ${injury.diagnosis}`;
@@ -30,7 +30,7 @@ const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
           });
         }
       }
-      MockDatabase.setTrainingAttendances(allAttendances);
+      MockDatabase.setTrainingAttendance(allAttendances);
     } else {
       for (const t of futureTrainings) {
         const { data: existing } = await supabase
@@ -142,7 +142,6 @@ export const dataService = {
       const newItem: Training = { ...item, id: `t-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setTrainings(list);
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -163,7 +162,6 @@ export const dataService = {
       if (idx === -1) throw new Error('Entrenamiento no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setTrainings(list);
-      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -338,7 +336,6 @@ export const dataService = {
       const newItem: Match = { ...item, id: `m-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setMatches(list);
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -359,7 +356,6 @@ export const dataService = {
       if (idx === -1) throw new Error('Partido no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setMatches(list);
-      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -797,7 +793,6 @@ export const dataService = {
       const newItem: ScoutingPlayer = { ...item, id: `s-${Date.now()}`, created_at: new Date().toISOString() };
       list.push(newItem);
       MockDatabase.setScouting(list);
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -820,7 +815,6 @@ export const dataService = {
       if (idx === -1) throw new Error('Jugador en scouting no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setScouting(list);
-      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -873,7 +867,6 @@ export const dataService = {
       const newItem: OpponentAnalysis = { ...item, id: `oa-${Date.now()}`, created_at: new Date().toISOString() };
       list.push(newItem);
       MockDatabase.setOpponentAnalysis(list);
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -894,7 +887,6 @@ export const dataService = {
       if (idx === -1) throw new Error('Análisis no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setOpponentAnalysis(list);
-      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -1190,7 +1182,6 @@ export const dataService = {
       const newItem: Player = { ...item, id: `p-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setPlayers(list);
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1211,7 +1202,6 @@ export const dataService = {
       if (idx === -1) throw new Error('Jugador no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setPlayers(list);
-      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -1275,7 +1265,6 @@ export const dataService = {
         players[pIdx].weight = item.weight;
         MockDatabase.setPlayers(players);
       }
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1333,7 +1322,6 @@ export const dataService = {
         }
         MockDatabase.setPlayers(players);
       }
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1550,7 +1538,6 @@ export const dataService = {
       const newItem: SocialEvent = { ...item, id: `se-${Date.now()}` };
       list.push(newItem);
       localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
-      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       try {
