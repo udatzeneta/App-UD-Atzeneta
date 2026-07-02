@@ -1,4 +1,8 @@
-import React from 'react';
+import os
+
+file_path = "/Users/imac/Programas/App UD Atzeneta/src/components/BodyMap.tsx"
+
+new_content = """import React from 'react';
 import { PlayerInjury } from '../types';
 
 // Frontal (Centro X ≈ 25%)
@@ -57,21 +61,6 @@ const severityColor = (severity: string) => {
   }
 };
 
-const getWorstSeverity = (injuries: PlayerInjury[]) => {
-  if (injuries.some(i => i.severity === 'Grave')) return 'Grave';
-  if (injuries.some(i => i.severity === 'Moderada')) return 'Moderada';
-  return 'Leve';
-};
-
-const getGlowColors = (severity: string) => {
-  switch (severity) {
-    case 'Grave': return { bg: 'bg-red-500', bgDark: 'bg-red-600', shadow: 'rgba(239,68,68,1)' };
-    case 'Moderada': return { bg: 'bg-orange-400', bgDark: 'bg-orange-500', shadow: 'rgba(249,115,22,1)' };
-    case 'Leve': return { bg: 'bg-yellow-300', bgDark: 'bg-yellow-400', shadow: 'rgba(250,204,21,1)' };
-    default: return { bg: 'bg-red-500', bgDark: 'bg-red-600', shadow: 'rgba(239,68,68,1)' };
-  }
-};
-
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '';
   const [year, month, day] = dateStr.split('-');
@@ -85,11 +74,11 @@ export const BodyMap: React.FC<BodyMapProps> = ({ injuries, onZoneClick }) => {
 
   return (
     <div className="space-y-4">
-      <div className="relative w-full max-w-[800px] mx-auto rounded-xl overflow-hidden border border-brand-black-border" style={{ minHeight: '400px' }}>
+      <div className="relative w-full max-w-[800px] mx-auto bg-white rounded-xl overflow-hidden shadow-inner border border-gray-200" style={{ minHeight: '400px' }}>
         
         {/* IMAGEN DEL SISTEMA MUSCULAR */}
         <img 
-          src="/muscular_map.png" 
+          src="/muscular_map.jpg" 
           alt="Anatomía Muscular" 
           className="w-full h-auto object-contain pointer-events-none select-none"
         />
@@ -99,8 +88,6 @@ export const BodyMap: React.FC<BodyMapProps> = ({ injuries, onZoneClick }) => {
           const zoneInjuries = activeInjuries.filter(inj => inj.body_zone === zone.key);
           const hasInjury = zoneInjuries.length > 0;
           const side = BODY_ZONES_FRONT.includes(zone) ? 'frontal' : 'posterior';
-          const worstSeverity = hasInjury ? getWorstSeverity(zoneInjuries) : 'Leve';
-          const glow = getGlowColors(worstSeverity);
 
           return (
             <div
@@ -115,27 +102,21 @@ export const BodyMap: React.FC<BodyMapProps> = ({ injuries, onZoneClick }) => {
                 
                 {/* Sombreado de la Lesión */}
                 {hasInjury && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className={`absolute w-12 h-12 md:w-16 md:h-16 ${glow.bg}/60 rounded-full blur-md animate-pulse`} />
-                    <div className={`absolute w-6 h-6 md:w-8 md:h-8 ${glow.bgDark}/80 rounded-full blur-[2px]`} />
-                    <div 
-                      className={`w-4 h-4 md:w-5 md:h-5 ${glow.bgDark} text-white text-[10px] md:text-xs font-black flex items-center justify-center rounded-full z-10 border border-white/50`}
-                      style={{ boxShadow: `0 0 15px ${glow.shadow}` }}
-                    >
-                      {zoneInjuries.length}
-                    </div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-10 h-10 md:w-14 md:h-14 bg-red-600/50 rounded-full blur-[6px] animate-pulse mix-blend-multiply" />
+                    <div className="w-4 h-4 md:w-6 md:h-6 bg-red-600/80 rounded-full blur-[2px] z-10 shadow-lg" />
                   </div>
                 )}
               </div>
 
-              {/* Etiquetas con las fechas de la lesión (Solo visibles al hacer hover) */}
+              {/* Etiquetas con las fechas de la lesión (Solo visibles si hay lesión) */}
               {hasInjury && (
-                <div className="absolute top-1/2 left-full ml-2 md:ml-4 -translate-y-1/2 flex flex-col gap-1 pointer-events-none z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="absolute top-1/2 left-full ml-1 md:ml-3 -translate-y-1/2 flex flex-col gap-1 pointer-events-none z-30">
                   {zoneInjuries.map(inj => (
-                    <div key={inj.id} className="bg-black/90 border border-brand-red-600/40 text-white text-[9px] md:text-xs px-2 py-1.5 rounded whitespace-nowrap shadow-xl flex items-center gap-1.5 backdrop-blur-md">
-                      <span className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${severityColor(inj.severity)} animate-pulse shadow-[0_0_5px_currentColor]`} />
+                    <div key={inj.id} className="bg-black/85 border border-white/20 text-white text-[8px] md:text-[10px] px-1.5 py-1 rounded whitespace-nowrap shadow-xl flex items-center gap-1.5 backdrop-blur-sm">
+                      <span className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${severityColor(inj.severity)} animate-pulse`} />
                       <span className="font-bold">{formatDate(inj.injury_date)}</span>
-                      <span className="text-gray-400">{"->"}</span>
+                      <span className="text-gray-400">-></span>
                       <span className="font-bold text-brand-red-600">{inj.actual_return ? formatDate(inj.actual_return) : 'Activa'}</span>
                     </div>
                   ))}
@@ -174,3 +155,9 @@ export const BodyMap: React.FC<BodyMapProps> = ({ injuries, onZoneClick }) => {
     </div>
   );
 };
+"""
+
+with open(file_path, "w", encoding="utf-8") as f:
+    f.write(new_content)
+
+print("BodyMap component rewritten successfully!")

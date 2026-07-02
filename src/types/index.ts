@@ -329,7 +329,9 @@ export interface PlayerInjury {
   baja_date?: string;
   estimated_return?: string;
   actual_return?: string;
+  origin?: string;
   follow_up_notes?: string;
+  competitive_leave?: boolean;
   created_at?: string;
 }
 

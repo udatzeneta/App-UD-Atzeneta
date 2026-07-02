@@ -2,6 +2,121 @@ import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
 import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent } from '../types';
 
+
+const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
+  if (!injury.competitive_leave || injury.status === 'Recuperado') return;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  try {
+    // 1. Trainings (Attendances)
+    const trainings = await dataService.getTrainings();
+    const futureTrainings = trainings.filter(t => t.date >= todayStr);
+    
+    if (isMockMode) {
+      const allAttendances = MockDatabase.getTrainingAttendances();
+      for (const t of futureTrainings) {
+        let att = allAttendances.find(a => a.training_id === t.id && a.player_id === injury.player_id);
+        if (att) {
+          att.status = 'L';
+          att.observations = `Baja competitiva: ${injury.diagnosis}`;
+        } else {
+          allAttendances.push({
+            id: `att-${Date.now()}-${Math.random()}`,
+            training_id: t.id,
+            player_id: injury.player_id,
+            status: 'L',
+            observations: `Baja competitiva: ${injury.diagnosis}`
+          });
+        }
+      }
+      MockDatabase.setTrainingAttendances(allAttendances);
+    } else {
+      for (const t of futureTrainings) {
+        const { data: existing } = await supabase
+          .from('training_attendances')
+          .select('*')
+          .eq('training_id', t.id)
+          .eq('player_id', injury.player_id)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase.from('training_attendances').update({
+            status: 'L',
+            observations: `Baja competitiva: ${injury.diagnosis}`
+          }).eq('id', existing.id);
+        } else {
+          await supabase.from('training_attendances').insert({
+            training_id: t.id,
+            player_id: injury.player_id,
+            status: 'L',
+            observations: `Baja competitiva: ${injury.diagnosis}`
+          });
+        }
+      }
+    }
+
+    // 2. Matches (PlayerMatchStats)
+    const matches = await dataService.getMatches();
+    const futureMatches = matches.filter(m => m.date >= todayStr);
+
+    if (isMockMode) {
+      const allStats = MockDatabase.getPlayerMatchStats();
+      for (const m of futureMatches) {
+        let stat = allStats.find(s => s.match_id === m.id && s.player_id === injury.player_id);
+        if (stat) {
+          stat.is_called_up = false;
+          stat.comments = `Baja competitiva: ${injury.diagnosis}`;
+        } else {
+          allStats.push({
+            id: `stat-${Date.now()}-${Math.random()}`,
+            match_id: m.id,
+            player_id: injury.player_id,
+            is_called_up: false,
+            minutes_played: 0,
+            goals: 0,
+            assists: 0,
+            yellow_cards: 0,
+            red_card: false,
+            comments: `Baja competitiva: ${injury.diagnosis}`
+          });
+        }
+      }
+      MockDatabase.setPlayerMatchStats(allStats);
+    } else {
+      for (const m of futureMatches) {
+        const { data: existing } = await supabase
+          .from('player_match_stats')
+          .select('*')
+          .eq('match_id', m.id)
+          .eq('player_id', injury.player_id)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase.from('player_match_stats').update({
+            is_called_up: false,
+            comments: `Baja competitiva: ${injury.diagnosis}`
+          }).eq('id', existing.id);
+        } else {
+          await supabase.from('player_match_stats').insert({
+            match_id: m.id,
+            player_id: injury.player_id,
+            is_called_up: false,
+            minutes_played: 0,
+            goals: 0,
+            assists: 0,
+            yellow_cards: 0,
+            red_card: false,
+            comments: `Baja competitiva: ${injury.diagnosis}`
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error applying competitive leave effects", err);
+  }
+};
+
 export const dataService = {
   // =====================================================================
   // ENTRENAMIENTOS (TRAININGS)
@@ -27,6 +142,7 @@ export const dataService = {
       const newItem: Training = { ...item, id: `t-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setTrainings(list);
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -47,6 +163,7 @@ export const dataService = {
       if (idx === -1) throw new Error('Entrenamiento no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setTrainings(list);
+      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -221,6 +338,7 @@ export const dataService = {
       const newItem: Match = { ...item, id: `m-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setMatches(list);
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -241,6 +359,7 @@ export const dataService = {
       if (idx === -1) throw new Error('Partido no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setMatches(list);
+      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -678,6 +797,7 @@ export const dataService = {
       const newItem: ScoutingPlayer = { ...item, id: `s-${Date.now()}`, created_at: new Date().toISOString() };
       list.push(newItem);
       MockDatabase.setScouting(list);
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -700,6 +820,7 @@ export const dataService = {
       if (idx === -1) throw new Error('Jugador en scouting no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setScouting(list);
+      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -752,6 +873,7 @@ export const dataService = {
       const newItem: OpponentAnalysis = { ...item, id: `oa-${Date.now()}`, created_at: new Date().toISOString() };
       list.push(newItem);
       MockDatabase.setOpponentAnalysis(list);
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -772,6 +894,7 @@ export const dataService = {
       if (idx === -1) throw new Error('Análisis no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setOpponentAnalysis(list);
+      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -1067,6 +1190,7 @@ export const dataService = {
       const newItem: Player = { ...item, id: `p-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setPlayers(list);
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1087,6 +1211,7 @@ export const dataService = {
       if (idx === -1) throw new Error('Jugador no encontrado');
       list[idx] = { ...list[idx], ...item };
       MockDatabase.setPlayers(list);
+      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -1150,6 +1275,7 @@ export const dataService = {
         players[pIdx].weight = item.weight;
         MockDatabase.setPlayers(players);
       }
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1207,6 +1333,7 @@ export const dataService = {
         }
         MockDatabase.setPlayers(players);
       }
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1259,13 +1386,14 @@ export const dataService = {
       const pIdx = players.findIndex(p => p.id === item.player_id);
       if (pIdx !== -1) {
         const remaining = list.filter(x => x.player_id === item.player_id);
-        const hasBaja = remaining.some(x => x.status === 'Baja');
+        const hasBaja = remaining.some(x => x.status === 'Baja' || (x.competitive_leave && x.status !== 'Recuperado'));
         const hasLesionado = remaining.some(x => x.status === 'Activa');
         const hasDuda = remaining.some(x => x.status === 'En tratamiento');
         players[pIdx].physical_status = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
         MockDatabase.setPlayers(players);
       }
       
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       const { data, error } = await supabase
@@ -1275,8 +1403,8 @@ export const dataService = {
         .single();
       if (error) throw error;
       
-      const { data: remaining } = await supabase.from('player_injuries').select('status').eq('player_id', item.player_id);
-      const hasBaja = remaining?.some(x => x.status === 'Baja');
+      const { data: remaining } = await supabase.from('player_injuries').select('status, competitive_leave').eq('player_id', item.player_id);
+      const hasBaja = remaining?.some(x => x.status === 'Baja' || (x.competitive_leave && x.status !== 'Recuperado'));
       const hasLesionado = remaining?.some(x => x.status === 'Activa');
       const hasDuda = remaining?.some(x => x.status === 'En tratamiento');
       const newStatus = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
@@ -1286,6 +1414,7 @@ export const dataService = {
         .update({ physical_status: newStatus })
         .eq('id', item.player_id);
         
+      applyCompetitiveLeaveEffects(data as PlayerInjury);
       return data as PlayerInjury;
     }
   },
@@ -1305,13 +1434,14 @@ export const dataService = {
       const pIdx = players.findIndex(p => p.id === playerId);
       if (pIdx !== -1) {
         const remaining = list.filter(x => x.player_id === playerId);
-        const hasBaja = remaining.some(x => x.status === 'Baja');
+        const hasBaja = remaining.some(x => x.status === 'Baja' || (x.competitive_leave && x.status !== 'Recuperado'));
         const hasLesionado = remaining.some(x => x.status === 'Activa');
         const hasDuda = remaining.some(x => x.status === 'En tratamiento');
         players[pIdx].physical_status = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
         MockDatabase.setPlayers(players);
       }
       
+      applyCompetitiveLeaveEffects(list[idx]);
       return list[idx];
     } else {
       const { data, error } = await supabase
@@ -1324,8 +1454,8 @@ export const dataService = {
       
       // Update player's physical status in real mode
       if (item.status && data) {
-        const { data: remaining } = await supabase.from('player_injuries').select('status').eq('player_id', data.player_id);
-        const hasBaja = remaining?.some(x => x.status === 'Baja');
+        const { data: remaining } = await supabase.from('player_injuries').select('status, competitive_leave').eq('player_id', data.player_id);
+        const hasBaja = remaining?.some(x => x.status === 'Baja' || (x.competitive_leave && x.status !== 'Recuperado'));
         const hasLesionado = remaining?.some(x => x.status === 'Activa');
         const hasDuda = remaining?.some(x => x.status === 'En tratamiento');
         const newStatus = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
@@ -1336,6 +1466,7 @@ export const dataService = {
           .eq('id', data.player_id);
       }
       
+      applyCompetitiveLeaveEffects(data as PlayerInjury);
       return data as PlayerInjury;
     }
   },
@@ -1353,7 +1484,7 @@ export const dataService = {
         const pIdx = players.findIndex(p => p.id === injury.player_id);
         if (pIdx !== -1) {
           const remaining = list.filter(x => x.player_id === injury.player_id);
-          const hasBaja = remaining.some(x => x.status === 'Baja');
+          const hasBaja = remaining.some(x => x.status === 'Baja' || (x.competitive_leave && x.status !== 'Recuperado'));
           const hasLesionado = remaining.some(x => x.status === 'Activa');
           const hasDuda = remaining.some(x => x.status === 'En tratamiento');
           players[pIdx].physical_status = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
@@ -1369,8 +1500,8 @@ export const dataService = {
       if (error) throw error;
 
       if (injury) {
-        const { data: remaining } = await supabase.from('player_injuries').select('status').eq('player_id', injury.player_id);
-        const hasBaja = remaining?.some(x => x.status === 'Baja');
+        const { data: remaining } = await supabase.from('player_injuries').select('status, competitive_leave').eq('player_id', injury.player_id);
+        const hasBaja = remaining?.some(x => x.status === 'Baja' || (x.competitive_leave && x.status !== 'Recuperado'));
         const hasLesionado = remaining?.some(x => x.status === 'Activa');
         const hasDuda = remaining?.some(x => x.status === 'En tratamiento');
         const newStatus = hasBaja ? 'Baja' : hasLesionado ? 'Lesionado' : hasDuda ? 'En duda' : 'Disponible';
@@ -1419,6 +1550,7 @@ export const dataService = {
       const newItem: SocialEvent = { ...item, id: `se-${Date.now()}` };
       list.push(newItem);
       localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
+      applyCompetitiveLeaveEffects(newItem);
       return newItem;
     } else {
       try {

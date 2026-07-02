@@ -10,7 +10,7 @@ import { TableSkeleton } from '../components/Skeletons';
 import {
   ArrowLeft, Users, Edit2, Trash2, Scale, HeartPulse, Activity, Calendar,
   TrendingUp, Ruler, UserCheck, Phone, Mail, Trophy, AlertTriangle,
-  FileText, ChevronRight, ShieldCheck, ShieldAlert, Plus, X, Check
+  FileText, ChevronRight, ShieldCheck, ShieldAlert, Plus, X, Check, Stethoscope
 } from 'lucide-react';
 import { Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, TrainingAttendance, Match, Training } from '../types';
 import { exportToCSV, exportToPDF } from '../utils/export';
@@ -38,11 +38,13 @@ export const PlayerDetail: React.FC = () => {
   const [injuryStatus, setInjuryStatus] = useState<'Activa' | 'En tratamiento' | 'Recuperado' | 'Baja'>('Activa');
   const [injuryDiagnosis, setInjuryDiagnosis] = useState('');
   const [injuryTreatment, setInjuryTreatment] = useState('');
+  const [injuryOrigin, setInjuryOrigin] = useState('');
   const [injuryDate, setInjuryDate] = useState(new Date().toISOString().split('T')[0]);
   const [injuryBajaDate, setInjuryBajaDate] = useState('');
   const [injuryEstReturn, setInjuryEstReturn] = useState('');
   const [injuryActReturn, setInjuryActReturn] = useState('');
   const [injuryFollowUp, setInjuryFollowUp] = useState('');
+  const [injuryCompetitiveLeave, setInjuryCompetitiveLeave] = useState(false);
 
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [newWeight, setNewWeight] = useState('');
@@ -212,11 +214,13 @@ export const PlayerDetail: React.FC = () => {
     setInjuryStatus('Activa');
     setInjuryDiagnosis('');
     setInjuryTreatment('');
+    setInjuryOrigin('');
     setInjuryDate(new Date().toISOString().split('T')[0]);
     setInjuryBajaDate('');
     setInjuryEstReturn('');
     setInjuryActReturn('');
     setInjuryFollowUp('');
+    setInjuryCompetitiveLeave(false);
     setIsInjuryModalOpen(true);
   };
 
@@ -228,11 +232,13 @@ export const PlayerDetail: React.FC = () => {
     setInjuryStatus(inj.status);
     setInjuryDiagnosis(inj.diagnosis);
     setInjuryTreatment(inj.treatment || '');
+    setInjuryOrigin(inj.origin || '');
     setInjuryDate(inj.injury_date);
     setInjuryBajaDate(inj.baja_date || '');
     setInjuryEstReturn(inj.estimated_return || '');
     setInjuryActReturn(inj.actual_return || '');
     setInjuryFollowUp(inj.follow_up_notes || '');
+    setInjuryCompetitiveLeave(inj.competitive_leave || false);
     setIsInjuryModalOpen(true);
   };
 
@@ -253,11 +259,13 @@ export const PlayerDetail: React.FC = () => {
       status: injuryStatus,
       diagnosis: injuryDiagnosis,
       treatment: injuryTreatment || undefined,
+      origin: injuryOrigin || undefined,
       injury_date: injuryDate,
       baja_date: injuryStatus === 'Baja' ? (injuryBajaDate || injuryDate) : undefined,
       estimated_return: injuryEstReturn || undefined,
       actual_return: injuryActReturn || undefined,
       follow_up_notes: injuryFollowUp || undefined,
+      competitive_leave: injuryCompetitiveLeave,
     };
 
     if (editingInjury) {
@@ -447,6 +455,87 @@ export const PlayerDetail: React.FC = () => {
             </g>
           ))}
         </svg>
+      </div>
+    );
+  };
+
+  const renderBMIAnalysis = () => {
+    const latestWeightStr = weights.length > 0 ? weights[weights.length - 1].weight : player?.weight;
+    const currentWeight = parseFloat(latestWeightStr as unknown as string);
+    const currentHeightStr = player?.height;
+    
+    if (!currentWeight || !currentHeightStr) {
+      return (
+        <div className="bg-brand-black/20 border border-dashed border-brand-black-border p-4 rounded-lg flex items-start gap-3 mb-4">
+          <Stethoscope className="w-5 h-5 text-brand-gray-muted shrink-0 mt-0.5" />
+          <div className="text-xs text-brand-gray-muted">
+            <p className="font-bold text-white mb-1">Análisis Médico (IMC)</p>
+            Para calcular el Índice de Masa Corporal (IMC) y conocer el rango de peso saludable, añade la <strong>Estatura</strong> en la ficha técnica y asegúrate de tener un <strong>Peso</strong> registrado.
+          </div>
+        </div>
+      );
+    }
+
+    let heightInMeters = parseFloat(currentHeightStr as unknown as string);
+    if (heightInMeters > 3) heightInMeters = heightInMeters / 100;
+
+    const bmi = currentWeight / (heightInMeters * heightInMeters);
+    const targetBMI = 22;
+    const idealWeight = targetBMI * (heightInMeters * heightInMeters);
+    
+    let category = '';
+    let colorClass = '';
+    let recommendation = '';
+
+    if (bmi < 18.5) {
+      category = 'Bajo Peso';
+      colorClass = 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30';
+      recommendation = 'Peso inferior al normal. Podrías necesitar un plan nutricional para ganar masa muscular.';
+    } else if (bmi >= 18.5 && bmi < 25) {
+      category = 'Peso Saludable';
+      colorClass = 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30';
+      recommendation = 'Tu peso está dentro del rango normal y saludable (18.5 - 24.9). ¡Sigue así!';
+    } else if (bmi >= 25 && bmi < 30) {
+      category = 'Sobrepeso';
+      colorClass = 'text-orange-400 bg-orange-400/10 border-orange-400/30';
+      recommendation = 'Ligero sobrepeso. Se recomienda ajustar la dieta y el trabajo aeróbico.';
+    } else {
+      category = 'Obesidad';
+      colorClass = 'text-brand-red-600 bg-brand-red-600/10 border-brand-red-600/30';
+      recommendation = 'IMC de obesidad. Es importante consultar con el cuerpo médico para un plan integral.';
+    }
+
+    return (
+      <div className={`p-4 mb-4 rounded-lg border ${colorClass} flex flex-col md:flex-row gap-4 items-center`}>
+        <div className="shrink-0 flex flex-col items-center">
+          <div className="w-16 h-16 rounded-full border-4 border-current flex items-center justify-center font-black text-xl shadow-[0_0_15px_currentColor]">
+            {bmi.toFixed(1)}
+          </div>
+          <div className="text-[10px] text-center mt-1.5 font-bold uppercase tracking-wider opacity-80">IMC Actual</div>
+        </div>
+        
+        <div className="flex-1 text-xs">
+          <div className="flex items-center gap-2 mb-1">
+            <Stethoscope className="w-4 h-4" />
+            <span className="font-bold uppercase tracking-wider text-sm">{category}</span>
+          </div>
+          <p className="opacity-90 mb-2 leading-relaxed">
+            {recommendation}
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-[10px] opacity-80 mt-3 pt-3 border-t border-current/20">
+            <div>
+              <span className="font-bold block">Fórmula de cálculo:</span>
+              <span className="font-mono">{currentWeight}kg / ({heightInMeters}m)²</span>
+            </div>
+            <div>
+              <span className="font-bold block">Peso ideal estimado (IMC 22):</span>
+              <span className="font-mono">~{idealWeight.toFixed(1)} kg</span>
+            </div>
+          </div>
+          <p className="text-[9px] opacity-60 mt-3 italic leading-tight">
+            *El IMC es una estimación general que no tiene en cuenta la masa muscular ni la densidad ósea. Sirve como punto de partida y no como un diagnóstico absoluto.
+          </p>
+        </div>
       </div>
     );
   };
@@ -980,7 +1069,10 @@ export const PlayerDetail: React.FC = () => {
             {isLoadingWeights ? (
               <div className="text-center py-8 text-brand-gray-muted text-xs">Cargando historial de peso...</div>
             ) : (
-              renderWeightChart()
+              <>
+                {renderBMIAnalysis()}
+                {renderWeightChart()}
+              </>
             )}
           </div>
         )}
@@ -1125,6 +1217,17 @@ export const PlayerDetail: React.FC = () => {
           </div>
 
           <div>
+            <label className="form-label">Origen / Cómo se produjo</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Ej. Durante un sprint, golpe fortuito, mal apoyo..."
+              value={injuryOrigin}
+              onChange={e => setInjuryOrigin(e.target.value)}
+            />
+          </div>
+
+          <div>
             <label className="form-label">Tratamiento</label>
             <input
               type="text"
@@ -1159,6 +1262,19 @@ export const PlayerDetail: React.FC = () => {
               value={injuryFollowUp}
               onChange={e => setInjuryFollowUp(e.target.value)}
             />
+          </div>
+
+          <div className="flex items-center gap-2 p-3 bg-brand-red-600/10 border border-brand-red-600/30 rounded-lg">
+            <input 
+              type="checkbox" 
+              id="competitive_leave"
+              checked={injuryCompetitiveLeave}
+              onChange={e => setInjuryCompetitiveLeave(e.target.checked)}
+              className="form-checkbox text-brand-red-600 rounded bg-brand-black border-brand-black-border focus:ring-brand-red-600"
+            />
+            <label htmlFor="competitive_leave" className="text-sm font-bold text-brand-red-600 cursor-pointer">
+              Baja competitiva (excluye al jugador de convocatorias y entrenamientos)
+            </label>
           </div>
 
           <div className="flex gap-2 justify-end pt-4 border-t border-brand-black-border">
