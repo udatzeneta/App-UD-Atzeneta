@@ -7,9 +7,12 @@ import { dataService } from '../services/data';
 import { Training, TrainingTask, TrainingSessionTask } from '../types';
 import { useToast } from '../context/ToastContext';
 import { TaskBoardEditor } from '../components/TaskBoardEditor';
+import { useParams, useNavigate } from 'react-router-dom';
 
 export const SessionEditor: React.FC = () => {
-  const { addToast } = useToast();
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { showToast } = useToast();
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [selectedTrainingId, setSelectedTrainingId] = useState<string>('');
   
@@ -57,7 +60,7 @@ export const SessionEditor: React.FC = () => {
       }
     } catch (error) {
       console.error("Error loading SessionEditor data:", error);
-      addToast({ type: 'error', message: 'Error cargando datos del editor.' });
+      showToast('error', 'Error', 'Error cargando datos del editor.');
     } finally {
       setLoading(false);
     }
@@ -68,7 +71,7 @@ export const SessionEditor: React.FC = () => {
       const data = await dataService.getSessionTasksByTraining(trainingId);
       setSessionTasks(data);
     } catch (error) {
-      addToast({ type: 'error', message: 'Error cargando las tareas de la sesión.' });
+      showToast('error', 'Error', 'Error cargando las tareas de la sesión.');
     }
   };
 
@@ -86,9 +89,9 @@ export const SessionEditor: React.FC = () => {
       
       await dataService.saveSessionTasks(selectedTrainingId, tasksToSave);
       await loadSessionTasks(selectedTrainingId); 
-      addToast({ type: 'success', message: 'Sesión guardada correctamente.' });
+      showToast('success', 'Éxito', 'Sesión guardada correctamente.');
     } catch (error) {
-      addToast({ type: 'error', message: 'Error al guardar la sesión.' });
+      showToast('error', 'Error', 'Error al guardar la sesión.');
     } finally {
       setIsSaving(false);
     }
@@ -96,7 +99,7 @@ export const SessionEditor: React.FC = () => {
 
   const addTaskToSession = (task: TrainingTask) => {
     if (!selectedTrainingId) {
-      addToast({ type: 'warning', message: 'Selecciona una sesión de entrenamiento primero.' });
+      showToast('info', 'Atención', 'Selecciona una sesión de entrenamiento primero.');
       return;
     }
     
@@ -111,7 +114,7 @@ export const SessionEditor: React.FC = () => {
     
     setSessionTasks([...sessionTasks, newTask]);
     setIsLibraryModalOpen(false); // Cerramos tras añadir para volver a la sesión
-    addToast({ type: 'success', message: 'Tarea añadida a la sesión.' });
+    showToast('success', 'Éxito', 'Tarea añadida a la sesión.');
   };
 
   const removeTaskFromSession = (index: number) => {
@@ -124,17 +127,17 @@ export const SessionEditor: React.FC = () => {
 
   const handleTaskModalSave = async () => {
     if (!editingTask.title || !editingTask.duration || !editingTask.category) {
-      addToast({ type: 'warning', message: 'Rellena todos los campos obligatorios del panel derecho.' });
+      showToast('info', 'Atención', 'Rellena todos los campos obligatorios del panel derecho.');
       return;
     }
 
     try {
       if (editingTask.id) {
         await dataService.updateTrainingTask(editingTask.id, editingTask);
-        addToast({ type: 'success', message: 'Tarea actualizada.' });
+        showToast('success', 'Éxito', 'Tarea actualizada.');
       } else {
         await dataService.createTrainingTask(editingTask as Omit<TrainingTask, 'id'>);
-        addToast({ type: 'success', message: 'Nueva tarea creada.' });
+        showToast('success', 'Éxito', 'Nueva tarea creada.');
       }
       
       const tasksData = await dataService.getTrainingTasks();
@@ -145,7 +148,7 @@ export const SessionEditor: React.FC = () => {
         loadSessionTasks(selectedTrainingId);
       }
     } catch (error) {
-      addToast({ type: 'error', message: 'Error al guardar la tarea.' });
+      showToast('error', 'Error', 'Error al guardar la tarea.');
     }
   };
 
