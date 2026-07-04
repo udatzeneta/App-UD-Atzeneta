@@ -6,7 +6,7 @@ import { GlobalSearch } from '../components/GlobalSearch';
 import {
   LayoutDashboard, Calendar, Trophy, Dumbbell, ShieldAlert,
   Award, Search, BarChart3, Settings, Menu, X, LogOut, ChevronRight,
-  ClipboardCheck, Users
+  ClipboardCheck, Users, ClipboardList
 } from 'lucide-react';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -22,6 +22,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
     { name: 'Partidos', path: '/matches', pageKey: 'matches', icon: Trophy },
     { name: 'Jugadores', path: '/players', pageKey: 'players', icon: Users },
     { name: 'Entrenamientos', path: '/trainings', pageKey: 'trainings', icon: Dumbbell },
+    { name: 'Editor Sesión', path: '/training-editor', pageKey: 'training_editor', icon: ClipboardList },
     { name: 'Asistencia', path: '/attendance', pageKey: 'attendance', icon: ClipboardCheck },
     { name: 'Multas', path: '/fines', pageKey: 'fines', icon: ShieldAlert },
     { name: 'Puntos', path: '/points', pageKey: 'points', icon: Award },

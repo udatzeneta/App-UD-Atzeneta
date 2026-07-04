@@ -1,7 +1,8 @@
 import { 
   Role, Profile, Permission, Training, Match, Fine, PointLog, 
   ScoutingPlayer, OpponentAnalysis, Settings, RolePermission, UserPermission,
-  TrainingAttendance, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, PlayerMatchStats
+  TrainingAttendance, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, PlayerMatchStats,
+  TrainingTask, TrainingSessionTask
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
@@ -571,6 +572,40 @@ const DEFAULT_PLAYER_INJURIES: PlayerInjury[] = [
   }
 ];
 
+// 17. Tareas de Entrenamiento por defecto
+const DEFAULT_TRAINING_TASKS: TrainingTask[] = [
+  {
+    id: 'tt-1',
+    title: 'Rondo 4v2',
+    description: 'Rondo clásico en espacio reducido. 2 toques máximo.',
+    duration: 15,
+    category: 'Calentamiento',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'tt-2',
+    title: 'Partido Condicionado 7v7',
+    description: 'Partido en medio campo. Gol válido solo tras 5 pases mínimos o centro lateral.',
+    duration: 25,
+    category: 'Principal',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'tt-3',
+    title: 'Finalizaciones con centros',
+    description: 'Circuito de pases, apertura a banda, centro y remate con oposición de 1 defensa.',
+    duration: 20,
+    category: 'Principal',
+    created_at: new Date().toISOString()
+  }
+];
+
+// 18. Relación Sesión-Tareas por defecto
+const DEFAULT_TRAINING_SESSION_TASKS: TrainingSessionTask[] = [
+  { id: 'tst-1', training_id: 't-1', task_id: 'tt-1', order_index: 0, duration: 15 },
+  { id: 'tst-2', training_id: 't-1', task_id: 'tt-2', order_index: 1, duration: 30 }
+];
+
 
 // =====================================================================
 // MOTOR DE PERSISTENCIA MOCK EN LOCALSTORAGE
@@ -743,6 +778,22 @@ export class MockDatabase {
 
   static setPlayerMatchStats(data: PlayerMatchStats[]): void {
     this.set('player_match_stats', data);
+  }
+
+  static getTrainingTasks(): TrainingTask[] {
+    return this.get('training_tasks', DEFAULT_TRAINING_TASKS);
+  }
+
+  static setTrainingTasks(data: TrainingTask[]): void {
+    this.set('training_tasks', data);
+  }
+
+  static getTrainingSessionTasks(): TrainingSessionTask[] {
+    return this.get('training_session_tasks', DEFAULT_TRAINING_SESSION_TASKS);
+  }
+
+  static setTrainingSessionTasks(data: TrainingSessionTask[]): void {
+    this.set('training_session_tasks', data);
   }
 
   // Sesión actual mockeada

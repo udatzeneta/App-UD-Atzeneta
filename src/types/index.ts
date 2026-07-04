@@ -345,4 +345,25 @@ export interface SocialEvent {
   created_at?: string;
 }
 
+export interface TrainingTask {
+  id: string;
+  title: string;
+  description: string;
+  duration: number; // en minutos
+  category: string; // Calentamiento, Principal, etc.
+  board_data?: string; // JSON con los elementos de la pizarra táctica
+  created_at?: string;
+}
+
+export interface TrainingSessionTask {
+  id: string;
+  training_id: string;
+  task_id: string;
+  order_index: number;
+  duration?: number; // override duration en minutos
+  notes?: string;
+  
+  // Relación opcional para visualizar
+  task?: TrainingTask;
+}
 

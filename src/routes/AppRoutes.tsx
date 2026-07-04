@@ -11,6 +11,7 @@ import { MatchReport } from '../pages/MatchReport';
 import { Players } from '../pages/Players';
 import { PlayerDetail } from '../pages/PlayerDetail';
 import { Trainings } from '../pages/Trainings';
+import { SessionEditor } from '../pages/SessionEditor';
 import { Attendance } from '../pages/Attendance';
 import { Fines } from '../pages/Fines';
 import { Points } from '../pages/Points';
@@ -96,6 +97,10 @@ export const AppRoutes: React.FC = () => {
 
           <Route element={<ProtectedRoute pageKey="trainings" />}>
             <Route path="/trainings" element={<Trainings />} />
+          </Route>
+
+          <Route element={<ProtectedRoute pageKey="training_editor" />}>
+            <Route path="/training-editor" element={<SessionEditor />} />
           </Route>
 
           <Route element={<ProtectedRoute pageKey="attendance" />}>

@@ -1,6 +1,6 @@
 import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
-import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent } from '../types';
+import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent, TrainingTask, TrainingSessionTask } from '../types';
 
 
 const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
@@ -1514,7 +1514,7 @@ export const dataService = {
           .select('*')
           .order('date', { ascending: false });
         if (error) {
-          if (error.code === '42P01' || error.message.includes('relation "social_events" does not exist')) {
+          if (error.code === '42P01' || error.code === 'PGRST205' || error.message.includes('relation "social_events" does not exist')) {
             console.warn('⚠️ La tabla "social_events" no existe en Supabase. Usando localStorage como fallback.');
             const list = localStorage.getItem('ud_atzeneta_social_events');
             return list ? JSON.parse(list) : [];
@@ -1547,7 +1547,7 @@ export const dataService = {
           .select()
           .single();
         if (error) {
-          if (error.code === '42P01' || error.message.includes('relation "social_events" does not exist')) {
+          if (error.code === '42P01' || error.code === 'PGRST205' || error.message.includes('relation "social_events" does not exist')) {
             console.warn('⚠️ Guardando en localStorage fallback. Crea la tabla en Supabase para sincronizar.');
             const listRaw = localStorage.getItem('ud_atzeneta_social_events');
             const list: SocialEvent[] = listRaw ? JSON.parse(listRaw) : [];
@@ -1588,7 +1588,7 @@ export const dataService = {
           .delete()
           .eq('id', id);
         if (error) {
-          if (error.code === '42P01' || error.message.includes('relation "social_events" does not exist')) {
+          if (error.code === '42P01' || error.code === 'PGRST205' || error.message.includes('relation "social_events" does not exist')) {
             const listRaw = localStorage.getItem('ud_atzeneta_social_events');
             if (listRaw) {
               let list: SocialEvent[] = JSON.parse(listRaw);
@@ -1608,6 +1608,190 @@ export const dataService = {
           localStorage.setItem('ud_atzeneta_social_events', JSON.stringify(list));
         }
       }
+    }
+  },
+
+  // =====================================================================
+  // TAREAS DE ENTRENAMIENTO (TRAINING TASKS)
+  // =====================================================================
+  async getTrainingTasks(): Promise<TrainingTask[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getTrainingTasks();
+    } else {
+      const { data, error } = await supabase
+        .from('training_tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        if (error.code === '42P01' || error.code === 'PGRST205') return MockDatabase.getTrainingTasks();
+        throw error;
+      }
+      return data as TrainingTask[];
+    }
+  },
+
+  async createTrainingTask(item: Omit<TrainingTask, 'id'>): Promise<TrainingTask> {
+    if (isMockMode) {
+      await delay(200);
+      const list = MockDatabase.getTrainingTasks();
+      const newItem: TrainingTask = { ...item, id: `tt-${Date.now()}` };
+      list.push(newItem);
+      MockDatabase.setTrainingTasks(list);
+      return newItem;
+    } else {
+      const { data, error } = await supabase
+        .from('training_tasks')
+        .insert(item)
+        .select()
+        .single();
+      if (error) {
+        if (error.code === '42P01' || error.code === 'PGRST205') {
+          const list = MockDatabase.getTrainingTasks();
+          const newItem: TrainingTask = { ...item, id: `tt-${Date.now()}` };
+          list.push(newItem);
+          MockDatabase.setTrainingTasks(list);
+          return newItem;
+        }
+        throw error;
+      }
+      return data as TrainingTask;
+    }
+  },
+
+  async updateTrainingTask(id: string, item: Partial<TrainingTask>): Promise<TrainingTask> {
+    if (isMockMode) {
+      await delay(200);
+      const list = MockDatabase.getTrainingTasks();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx === -1) throw new Error('Tarea no encontrada');
+      list[idx] = { ...list[idx], ...item };
+      MockDatabase.setTrainingTasks(list);
+      return list[idx];
+    } else {
+      const { data, error } = await supabase
+        .from('training_tasks')
+        .update(item)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) {
+         if (error.code === '42P01' || error.code === 'PGRST205') {
+            const list = MockDatabase.getTrainingTasks();
+            const idx = list.findIndex(x => x.id === id);
+            if (idx === -1) throw new Error('Tarea no encontrada');
+            list[idx] = { ...list[idx], ...item };
+            MockDatabase.setTrainingTasks(list);
+            return list[idx];
+         }
+         throw error;
+      }
+      return data as TrainingTask;
+    }
+  },
+
+  async deleteTrainingTask(id: string): Promise<void> {
+    if (isMockMode) {
+      await delay(200);
+      let list = MockDatabase.getTrainingTasks();
+      list = list.filter(x => x.id !== id);
+      MockDatabase.setTrainingTasks(list);
+    } else {
+      const { error } = await supabase
+        .from('training_tasks')
+        .delete()
+        .eq('id', id);
+      if (error) {
+         if (error.code === '42P01' || error.code === 'PGRST205') {
+            let list = MockDatabase.getTrainingTasks();
+            list = list.filter(x => x.id !== id);
+            MockDatabase.setTrainingTasks(list);
+            return;
+         }
+         throw error;
+      }
+    }
+  },
+
+  async getSessionTasksByTraining(trainingId: string): Promise<TrainingSessionTask[]> {
+    if (isMockMode) {
+      await delay(200);
+      const sessionTasks = MockDatabase.getTrainingSessionTasks().filter(x => x.training_id === trainingId);
+      const allTasks = MockDatabase.getTrainingTasks();
+      
+      // Poblamos la relación task
+      return sessionTasks.map(st => ({
+        ...st,
+        task: allTasks.find(t => t.id === st.task_id)
+      })).sort((a, b) => a.order_index - b.order_index);
+    } else {
+      const { data, error } = await supabase
+        .from('training_session_tasks')
+        .select('*, task:training_tasks(*)')
+        .eq('training_id', trainingId)
+        .order('order_index', { ascending: true });
+      if (error) {
+        if (error.code === '42P01' || error.code === 'PGRST205') {
+           const sessionTasks = MockDatabase.getTrainingSessionTasks().filter(x => x.training_id === trainingId);
+           const allTasks = MockDatabase.getTrainingTasks();
+           return sessionTasks.map(st => ({
+             ...st,
+             task: allTasks.find(t => t.id === st.task_id)
+           })).sort((a, b) => a.order_index - b.order_index);
+        }
+        throw error;
+      }
+      return data as TrainingSessionTask[];
+    }
+  },
+
+  async saveSessionTasks(trainingId: string, tasks: Omit<TrainingSessionTask, 'id'>[]): Promise<TrainingSessionTask[]> {
+    if (isMockMode) {
+      await delay(200);
+      let sessionTasks = MockDatabase.getTrainingSessionTasks();
+      // Eliminar actuales de este training
+      sessionTasks = sessionTasks.filter(x => x.training_id !== trainingId);
+      
+      // Insertar nuevos
+      const newItems = tasks.map((x, idx) => ({
+        ...x,
+        id: `tst-${Date.now()}-${idx}`
+      }));
+      sessionTasks.push(...newItems);
+      MockDatabase.setTrainingSessionTasks(sessionTasks);
+      return newItems;
+    } else {
+      // En real: 1. Delete todos los del training 2. Insertar los nuevos (o usar upsert si hay id)
+      // Simplificado: delete + insert
+      const deleteRes = await supabase
+        .from('training_session_tasks')
+        .delete()
+        .eq('training_id', trainingId);
+        
+      if (deleteRes.error && deleteRes.error.code !== '42P01' && deleteRes.error.code !== 'PGRST205') throw deleteRes.error;
+
+      if (tasks.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('training_session_tasks')
+        .insert(tasks)
+        .select('*, task:training_tasks(*)');
+        
+      if (error) {
+         if (error.code === '42P01' || error.code === 'PGRST205') {
+            let sessionTasks = MockDatabase.getTrainingSessionTasks();
+            sessionTasks = sessionTasks.filter(x => x.training_id !== trainingId);
+            const newItems = tasks.map((x, idx) => ({
+              ...x,
+              id: `tst-${Date.now()}-${idx}`
+            }));
+            sessionTasks.push(...newItems);
+            MockDatabase.setTrainingSessionTasks(sessionTasks);
+            return newItems;
+         }
+         throw error;
+      }
+      return data as TrainingSessionTask[];
     }
   }
 };
