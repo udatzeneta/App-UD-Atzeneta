@@ -9,7 +9,7 @@ interface Props {
 }
 
 export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks }) => {
-  const { profile } = useAuth();
+  const { user } = useAuth();
 
   const renderTaskRow = (st: TrainingSessionTask) => {
     const task = st.task;
@@ -54,7 +54,7 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks }) => 
            <img src="https://golsmedia.com/wp-content/uploads/2025/05/atzeneta-1-1024x576.jpg" className="h-full object-contain grayscale" alt="Escudo" />
         </div>
         <div className="text-center flex-1">
-          <h1 className="text-xl font-bold uppercase">{profile?.full_name || 'Entrenador'}</h1>
+          <h1 className="text-xl font-bold uppercase">{user?.full_name || 'Entrenador'}</h1>
           <h2 className="text-sm font-bold">Entrenador - Nivel III</h2>
         </div>
         <div className="w-16 h-16 flex items-center justify-center font-bold text-xs">
