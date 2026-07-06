@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Reorder } from 'framer-motion';
 import { 
-  ClipboardList, Plus, Trash2, GripVertical, Save, X, Edit2, Search, Dumbbell, FolderSearch
+  ClipboardList, Plus, Trash2, GripVertical, Save, X, Edit2, Search, Dumbbell, FolderSearch, Printer
 } from 'lucide-react';
 import { dataService } from '../services/data';
 import { Training, TrainingTask, TrainingSessionTask } from '../types';
 import { useToast } from '../context/ToastContext';
 import { TaskBoardEditor } from '../components/TaskBoardEditor';
+import { SessionPrintView } from '../components/SessionPrintView';
 import { useParams, useNavigate } from 'react-router-dom';
 
 export const SessionEditor: React.FC = () => {
@@ -28,7 +29,7 @@ export const SessionEditor: React.FC = () => {
   
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Partial<TrainingTask>>({
-    title: '', description: '', duration: 15, category: 'Principal', board_data: ''
+    title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: []
   });
 
   useEffect(() => {
@@ -132,19 +133,44 @@ export const SessionEditor: React.FC = () => {
     }
 
     try {
+      let savedTask;
       if (editingTask.id) {
-        await dataService.updateTrainingTask(editingTask.id, editingTask);
+        savedTask = await dataService.updateTrainingTask(editingTask.id, editingTask);
         showToast('success', 'Éxito', 'Tarea actualizada.');
       } else {
-        await dataService.createTrainingTask(editingTask as Omit<TrainingTask, 'id'>);
-        showToast('success', 'Éxito', 'Nueva tarea creada.');
+        savedTask = await dataService.createTrainingTask(editingTask as Omit<TrainingTask, 'id'>);
+        showToast('success', 'Éxito', 'Nueva tarea creada y añadida a la sesión.');
+        
+        if (selectedTrainingId) {
+          const newTaskToAdd = {
+            id: `st-${Date.now()}`,
+            training_id: selectedTrainingId,
+            task_id: savedTask.id,
+            order_index: sessionTasks.length,
+            duration: savedTask.duration,
+            notes: '',
+            task: savedTask
+          };
+          
+          const newSessionTasks = [...sessionTasks, newTaskToAdd];
+          setSessionTasks(newSessionTasks);
+          
+          const tasksToSave = newSessionTasks.map((st, index) => ({
+            training_id: selectedTrainingId,
+            task_id: st.task_id,
+            order_index: index,
+            duration: st.duration,
+            notes: st.notes
+          }));
+          await dataService.saveSessionTasks(selectedTrainingId, tasksToSave);
+        }
       }
       
       const tasksData = await dataService.getTrainingTasks();
       setLibraryTasks(tasksData);
       setIsTaskModalOpen(false);
       
-      if (selectedTrainingId) {
+      if (selectedTrainingId && editingTask.id) {
         loadSessionTasks(selectedTrainingId);
       }
     } catch (error) {
@@ -153,7 +179,7 @@ export const SessionEditor: React.FC = () => {
   };
 
   const openNewTaskModal = () => {
-    setEditingTask({ title: '', description: '', duration: 15, category: 'Principal', board_data: '' });
+    setEditingTask({ title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: [] });
     setIsTaskModalOpen(true);
   };
 
@@ -174,7 +200,8 @@ export const SessionEditor: React.FC = () => {
   const filteredLibraryTasks = libraryTasks.filter(t => t.title.toLowerCase().includes(librarySearch.toLowerCase()) || t.category.toLowerCase().includes(librarySearch.toLowerCase()));
 
   return (
-    <div className="space-y-6">
+    <>
+    <div className="space-y-6 print:hidden">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -204,10 +231,19 @@ export const SessionEditor: React.FC = () => {
           <button
             onClick={handleSaveSession}
             disabled={!selectedTrainingId || isSaving}
-            className="flex items-center gap-2 bg-brand-red-600 hover:bg-brand-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-glow-red disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary"
           >
             <Save className="w-4 h-4" />
-            {isSaving ? 'Guardando...' : 'Guardar Sesión'}
+            <span className="hidden sm:inline">{isSaving ? 'Guardando...' : 'Guardar Sesión'}</span>
+          </button>
+
+          <button
+            onClick={() => window.print()}
+            disabled={!selectedTrainingId}
+            className="btn-secondary"
+            title="Imprimir PDF"
+          >
+            <Printer className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -438,6 +474,31 @@ export const SessionEditor: React.FC = () => {
                 </div>
 
                 <div>
+                  <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase">Tipo de Tarea</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Posesión', 'Rondo', 'Partido reducido', 'Partido', 'Circuito', 'Finalización', 'Ataque-Defensa', 'Secuencia Pases'].map(type => {
+                      const isSelected = (editingTask.task_types || []).includes(type);
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => {
+                            const current = editingTask.task_types || [];
+                            if (isSelected) {
+                              setEditingTask({ ...editingTask, task_types: current.filter(t => t !== type) });
+                            } else {
+                              setEditingTask({ ...editingTask, task_types: [...current, type] });
+                            }
+                          }}
+                          className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${isSelected ? 'bg-brand-red-600 border-brand-red-600 text-white' : 'bg-brand-black border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light'}`}
+                        >
+                          {type}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase">Categoría</label>
                   <select
                     value={editingTask.category}
@@ -452,15 +513,37 @@ export const SessionEditor: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase">Duración (min)</label>
-                  <input 
-                    type="number"
-                    value={editingTask.duration}
-                    onChange={(e) => setEditingTask({...editingTask, duration: parseInt(e.target.value) || 0})}
-                    className="w-full bg-brand-black border border-brand-black-border rounded-lg px-2 py-1.5 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none"
-                    min="1"
-                  />
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase text-center">Series</label>
+                    <input 
+                      type="number"
+                      value={editingTask.series || ''}
+                      onChange={(e) => setEditingTask({...editingTask, series: parseInt(e.target.value) || undefined})}
+                      className="w-full bg-brand-black border border-brand-black-border rounded-lg px-2 py-1.5 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none text-center"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase text-center">Min/Serie</label>
+                    <input 
+                      type="number"
+                      value={editingTask.series_duration || ''}
+                      onChange={(e) => setEditingTask({...editingTask, series_duration: parseInt(e.target.value) || undefined})}
+                      className="w-full bg-brand-black border border-brand-black-border rounded-lg px-2 py-1.5 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none text-center"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase text-center">Total (min)</label>
+                    <input 
+                      type="number"
+                      value={editingTask.duration || ''}
+                      onChange={(e) => setEditingTask({...editingTask, duration: parseInt(e.target.value) || 0})}
+                      className="w-full bg-brand-black border border-brand-black-border rounded-lg px-2 py-1.5 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none text-center"
+                      min="1"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex-1">
@@ -488,5 +571,10 @@ export const SessionEditor: React.FC = () => {
       )}
 
     </div>
+    
+    <div className="hidden print:block bg-white text-black min-h-screen">
+      {selectedTraining && <SessionPrintView session={selectedTraining} sessionTasks={sessionTasks} />}
+    </div>
+    </>
   );
 };

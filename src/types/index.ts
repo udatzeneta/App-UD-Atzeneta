@@ -350,6 +350,9 @@ export interface TrainingTask {
   title: string;
   description: string;
   duration: number; // en minutos
+  series?: number; // number of series
+  series_duration?: number; // duration per series in minutos
+  task_types?: string[]; // tipos de tarea (Posesion, Rondo, etc)
   category: string; // Calentamiento, Principal, etc.
   board_data?: string; // JSON con los elementos de la pizarra táctica
   created_at?: string;
