@@ -4,9 +4,10 @@ import {
   ClipboardList, Plus, Trash2, GripVertical, Save, X, Edit2, Search, Dumbbell, FolderSearch, Printer
 } from 'lucide-react';
 import { dataService } from '../services/data';
-import { Training, TrainingTask, TrainingSessionTask } from '../types';
+import { Training, TrainingTask, TrainingSessionTask, Player } from '../types';
 import { useToast } from '../context/ToastContext';
 import { TaskBoardEditor } from '../components/TaskBoardEditor';
+import { TeamsBoardEditor } from '../components/TeamsBoardEditor';
 import { SessionPrintView } from '../components/SessionPrintView';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -19,6 +20,7 @@ export const SessionEditor: React.FC = () => {
   
   const [libraryTasks, setLibraryTasks] = useState<TrainingTask[]>([]);
   const [sessionTasks, setSessionTasks] = useState<TrainingSessionTask[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -29,8 +31,11 @@ export const SessionEditor: React.FC = () => {
   
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Partial<TrainingTask>>({
-    title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: []
+    title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: [], coach_roles: '', teams_board_data: ''
   });
+  const [activeBoardTab, setActiveBoardTab] = useState<'tactical' | 'teams'>('tactical');
+  
+  const [localObjective, setLocalObjective] = useState('');
 
   useEffect(() => {
     loadInitialData();
@@ -39,20 +44,25 @@ export const SessionEditor: React.FC = () => {
   useEffect(() => {
     if (selectedTrainingId) {
       loadSessionTasks(selectedTrainingId);
+      const currentTraining = trainings.find(t => t.id === selectedTrainingId);
+      setLocalObjective(currentTraining?.objective || '');
     } else {
       setSessionTasks([]);
+      setLocalObjective('');
     }
   }, [selectedTrainingId]);
 
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [trainingsData, tasksData] = await Promise.all([
+      const [trainingsData, tasksData, playersData] = await Promise.all([
         dataService.getTrainings(),
-        dataService.getTrainingTasks()
+        dataService.getTrainingTasks(),
+        dataService.getPlayers()
       ]);
       setTrainings(trainingsData);
       setLibraryTasks(tasksData);
+      setPlayers(playersData);
       
       if (trainingsData.length > 0) {
         const sorted = [...trainingsData].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -178,13 +188,29 @@ export const SessionEditor: React.FC = () => {
     }
   };
 
+  const handleObjectiveBlur = async () => {
+    if (!selectedTrainingId) return;
+    const currentTraining = trainings.find(t => t.id === selectedTrainingId);
+    if (currentTraining && localObjective !== currentTraining.objective) {
+      try {
+        await dataService.updateTraining(selectedTrainingId, { objective: localObjective.trim() });
+        setTrainings(prev => prev.map(t => t.id === selectedTrainingId ? { ...t, objective: localObjective } : t));
+        showToast('success', 'Objetivo actualizado', 'Se ha guardado el objetivo de la sesión.');
+      } catch (error) {
+        showToast('error', 'Error', 'No se pudo actualizar el objetivo.');
+      }
+    }
+  };
+
   const openNewTaskModal = () => {
-    setEditingTask({ title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: [] });
+    setEditingTask({ title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: [], coach_roles: '', teams_board_data: '' });
+    setActiveBoardTab('tactical');
     setIsTaskModalOpen(true);
   };
 
   const openEditTaskModal = (task: TrainingTask) => {
     setEditingTask({ ...task });
+    setActiveBoardTab('tactical');
     setIsTaskModalOpen(true);
   };
 
@@ -198,6 +224,24 @@ export const SessionEditor: React.FC = () => {
 
   const selectedTraining = trainings.find(t => t.id === selectedTrainingId);
   const filteredLibraryTasks = libraryTasks.filter(t => t.title.toLowerCase().includes(librarySearch.toLowerCase()) || t.category.toLowerCase().includes(librarySearch.toLowerCase()));
+
+  const sortedTrainingsChronologically = [...trainings].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const getTrainingNumber = (id: string) => {
+    const index = sortedTrainingsChronologically.findIndex(t => t.id === id);
+    return index !== -1 ? index + 1 : 0;
+  };
+  
+  const sortedTrainings = [...trainings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const getCategoryColor = (category: string) => {
+    switch(category?.toLowerCase()) {
+      case 'calentamiento': return 'border-yellow-500/50 bg-yellow-500/5';
+      case 'principal': return 'border-brand-red-600/50 bg-brand-red-600/5';
+      case 'estrategia': return 'border-blue-500/50 bg-blue-500/5';
+      case 'vuelta a la calma': return 'border-green-500/50 bg-green-500/5';
+      default: return 'border-brand-black-border bg-brand-black';
+    }
+  };
 
   return (
     <>
@@ -218,12 +262,12 @@ export const SessionEditor: React.FC = () => {
           <select
             value={selectedTrainingId}
             onChange={(e) => setSelectedTrainingId(e.target.value)}
-            className="bg-brand-black-card border border-brand-black-border rounded-lg px-4 py-2 text-brand-gray-light text-sm focus:border-brand-red-600 outline-none min-w-[250px]"
+            className="bg-brand-black-card border border-brand-black-border rounded-lg px-4 py-2 text-brand-gray-light text-sm focus:border-brand-red-600 outline-none min-w-[300px]"
           >
             <option value="">Selecciona un entrenamiento...</option>
-            {trainings.map(t => (
+            {sortedTrainings.map(t => (
               <option key={t.id} value={t.id}>
-                {new Date(t.date).toLocaleDateString()} - {t.objective || 'Sin objetivo'}
+                Sesión {getTrainingNumber(t.id)} | {new Date(t.date).toLocaleDateString()} - {t.objective || 'Sin objetivo'}
               </option>
             ))}
           </select>
@@ -256,32 +300,50 @@ export const SessionEditor: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold text-brand-gray-light flex items-center gap-2">
               <ClipboardList className="w-4 h-4 text-brand-red-600" />
-              Sesión Actual
+              {selectedTraining ? `Sesión ${getTrainingNumber(selectedTraining.id)}` : 'Sesión Actual'}
             </h2>
             {selectedTraining && (
-              <div className="mt-2 text-xs text-brand-gray-muted flex items-center gap-4">
-                <span>🗓 {new Date(selectedTraining.date).toLocaleDateString()}</span>
-                <span>📍 {selectedTraining.location}</span>
-                <span className="bg-brand-black px-2 py-1 rounded">⏱ Total: {sessionTasks.reduce((acc, curr) => acc + (curr.duration || 0), 0)}' / {selectedTraining.duration}'</span>
+              <div className="mt-2 text-xs text-brand-gray-muted flex flex-wrap items-center gap-3">
+                <span className="bg-brand-black px-2 py-1 rounded">🗓 {new Date(selectedTraining.date).toLocaleDateString()}</span>
+                <span className="bg-brand-black px-2 py-1 rounded">📍 {selectedTraining.location}</span>
+                <span className="bg-brand-black px-2 py-1 rounded">⏱ Planificado: {selectedTraining.duration}'</span>
+                <span className={`px-2 py-1 rounded font-bold ${sessionTasks.reduce((acc, curr) => acc + (curr.duration || 0), 0) > selectedTraining.duration ? 'text-brand-red-600 bg-brand-red-600/10' : 'text-green-500 bg-green-500/10'}`}>
+                   ⏱ Tareas: {sessionTasks.reduce((acc, curr) => acc + (curr.duration || 0), 0)}'
+                </span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsLibraryModalOpen(true)}
-              className="flex items-center gap-2 bg-brand-black border border-brand-black-border hover:border-brand-gray-muted text-brand-gray-light px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              <FolderSearch className="w-4 h-4" />
-              Librería de Tareas
-            </button>
-            <button
-              onClick={openNewTaskModal}
-              className="flex items-center gap-2 bg-brand-red-600/20 text-brand-red-600 hover:bg-brand-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Crear Nueva Tarea
-            </button>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto mt-3 sm:mt-0 border-t border-brand-black-border pt-3 sm:border-0 sm:pt-0">
+            {selectedTraining && (
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  value={localObjective}
+                  onChange={(e) => setLocalObjective(e.target.value)}
+                  onBlur={handleObjectiveBlur}
+                  placeholder="Objetivo principal de la sesión..."
+                  className="w-full bg-brand-black border border-brand-black-border rounded-lg px-3 py-2 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none"
+                  title="Objetivo de la sesión (se guarda al salir de la caja)"
+                />
+              </div>
+            )}
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => setIsLibraryModalOpen(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-brand-black border border-brand-black-border hover:border-brand-gray-muted text-brand-gray-light px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <FolderSearch className="w-4 h-4" />
+                Librería
+              </button>
+              <button
+                onClick={openNewTaskModal}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-brand-red-600/20 text-brand-red-600 hover:bg-brand-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Nueva Tarea
+              </button>
+            </div>
           </div>
         </div>
 
@@ -309,28 +371,42 @@ export const SessionEditor: React.FC = () => {
                 <Reorder.Item 
                   key={sessionTask.id} 
                   value={sessionTask}
-                  className="bg-brand-black border border-brand-black-border rounded-lg p-4 flex gap-4 items-center group shadow-sm hover:border-brand-gray-muted transition-colors"
+                  className={`border rounded-lg p-4 flex gap-4 items-center group shadow-sm transition-colors relative ${getCategoryColor(sessionTask.task?.category || '')}`}
                 >
-                  <div className="cursor-grab active:cursor-grabbing p-1 text-brand-gray-muted hover:text-white bg-brand-black-hover rounded">
+                  <div className="cursor-grab active:cursor-grabbing p-1 text-brand-gray-muted hover:text-white rounded absolute left-2 top-1/2 -translate-y-1/2">
                     <GripVertical className="w-5 h-5" />
+                  </div>
+                  
+                  {/* Thumbnail Preview */}
+                  <div className="ml-6 w-56 sm:w-60 h-40 shrink-0 overflow-hidden relative rounded border border-white/10 pointer-events-none bg-black/40 flex items-center justify-center">
+                     {sessionTask.task?.board_data ? (
+                        <div style={{ width: '480px', height: '320px', transform: 'scale(0.5)', transformOrigin: 'center' }} className="flex flex-col justify-center shrink-0">
+                           <TaskBoardEditor value={sessionTask.task.board_data} readOnly hideToolbar rotateFullField />
+                        </div>
+                     ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-xs text-brand-gray-muted text-center p-2 opacity-50">
+                           <ClipboardList className="w-8 h-8 mb-2" />
+                           Sin dibujo
+                        </div>
+                     )}
                   </div>
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start">
-                      <h3 className="text-base font-bold text-brand-gray-light truncate">
+                      <h3 className="text-base font-bold text-white truncate pr-2">
                         {index + 1}. {sessionTask.task?.title || 'Tarea Desconocida'}
                       </h3>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] uppercase tracking-wider font-semibold text-brand-gray-muted bg-brand-black-hover px-2 py-1 rounded">
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[10px] uppercase tracking-wider font-bold text-white/80 bg-black/40 px-2 py-1 rounded">
                           {sessionTask.task?.category}
                         </span>
-                        <span className="text-sm font-bold text-white flex items-center gap-1">
+                        <span className="text-sm font-bold text-brand-red-600 flex items-center gap-1 bg-brand-red-600/10 px-2 py-1 rounded">
                           ⏱ {sessionTask.duration}'
                         </span>
                       </div>
                     </div>
                     {sessionTask.task?.description && (
-                       <p className="mt-2 text-xs text-brand-gray-muted line-clamp-2">{sessionTask.task.description}</p>
+                       <p className="mt-3 text-sm text-brand-gray-light/80 line-clamp-6 leading-relaxed">{sessionTask.task.description}</p>
                     )}
                   </div>
 
@@ -452,12 +528,38 @@ export const SessionEditor: React.FC = () => {
             
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
               
-              {/* Left: Tactical Board */}
-              <div className="flex-1 p-0 overflow-hidden border-b lg:border-b-0 lg:border-r border-brand-black-border bg-[#0a0a0a]">
-                 <TaskBoardEditor 
-                    value={editingTask.board_data || ''} 
-                    onChange={(val) => setEditingTask(prev => ({ ...prev, board_data: val }))} 
-                 />
+              {/* Left: Tactical / Teams Board */}
+              <div className="flex-1 flex flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-brand-black-border bg-[#0a0a0a]">
+                 {/* Tabs header */}
+                 <div className="flex border-b border-brand-black-border bg-brand-black shrink-0">
+                    <button 
+                      onClick={() => setActiveBoardTab('tactical')}
+                      className={`flex-1 py-2 text-xs font-bold transition-colors border-b-2 ${activeBoardTab === 'tactical' ? 'border-brand-red-600 text-white' : 'border-transparent text-brand-gray-muted hover:text-white'}`}
+                    >
+                      Pizarra Táctica
+                    </button>
+                    <button 
+                      onClick={() => setActiveBoardTab('teams')}
+                      className={`flex-1 py-2 text-xs font-bold transition-colors border-b-2 ${activeBoardTab === 'teams' ? 'border-brand-red-600 text-white' : 'border-transparent text-brand-gray-muted hover:text-white'}`}
+                    >
+                      Equipos
+                    </button>
+                 </div>
+                 {/* Tab Content */}
+                 <div className="flex-1 overflow-hidden relative">
+                   {activeBoardTab === 'tactical' ? (
+                     <TaskBoardEditor 
+                        value={editingTask.board_data || ''} 
+                        onChange={(val) => setEditingTask(prev => ({ ...prev, board_data: val }))} 
+                     />
+                   ) : (
+                     <TeamsBoardEditor
+                        value={editingTask.teams_board_data || ''}
+                        onChange={(val) => setEditingTask(prev => ({ ...prev, teams_board_data: val }))}
+                        players={players}
+                     />
+                   )}
+                 </div>
               </div>
 
               {/* Right: Task Details Form */}
@@ -470,6 +572,17 @@ export const SessionEditor: React.FC = () => {
                     onChange={(e) => setEditingTask({...editingTask, title: e.target.value})}
                     className="w-full bg-brand-black border border-brand-black-border rounded-lg px-2 py-1.5 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none"
                     placeholder="Ej. Posesión 4v4 + comodines"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-brand-gray-muted mb-1 uppercase">Roles Entrenadores</label>
+                  <input 
+                    type="text"
+                    value={editingTask.coach_roles || ''}
+                    onChange={(e) => setEditingTask({...editingTask, coach_roles: e.target.value})}
+                    className="w-full bg-brand-black border border-brand-black-border rounded-lg px-2 py-1.5 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none"
+                    placeholder="Ej. Entr 1: Corrige presión..."
                   />
                 </div>
 
@@ -572,9 +685,15 @@ export const SessionEditor: React.FC = () => {
 
     </div>
     
-    <div className="hidden print:block bg-white text-black min-h-screen">
-      {selectedTraining && <SessionPrintView session={selectedTraining} sessionTasks={sessionTasks} />}
-    </div>
+    {selectedTraining && (
+      <div className="hidden print:block">
+        <SessionPrintView 
+          session={selectedTraining} 
+          sessionTasks={sessionTasks} 
+          sessionNumber={getTrainingNumber(selectedTraining.id)}
+        />
+      </div>
+    )}
     </>
   );
 };

@@ -93,3 +93,21 @@
     animation: blink-red-bg 2s ease-in-out infinite;
   }
 }
+
+@media print {
+  @page {
+    margin: 5mm;
+    size: A4 portrait;
+  }
+  
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white !important;
+  }
+
+  .print-container {
+    height: 287mm !important; /* A4 height minus margins */
+    overflow: hidden !important;
+  }
+}

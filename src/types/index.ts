@@ -355,6 +355,8 @@ export interface TrainingTask {
   task_types?: string[]; // tipos de tarea (Posesion, Rondo, etc)
   category: string; // Calentamiento, Principal, etc.
   board_data?: string; // JSON con los elementos de la pizarra táctica
+  coach_roles?: string;
+  teams_board_data?: string;
   created_at?: string;
 }
 

@@ -142,10 +142,16 @@ export const Trainings: React.FC = () => {
   const totalTrainingsCount = trainings.length;
   const monthlyTrainingsCount = trainings.filter(t => filterByDate(t.date)).length;
 
+  const sortedTrainingsChronologically = [...trainings].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const getTrainingNumber = (id: string) => {
+    const index = sortedTrainingsChronologically.findIndex(t => t.id === id);
+    return index !== -1 ? index + 1 : 0;
+  };
+
   const filteredTrainings = trainings.filter(t => {
     const matchSearch = t.objective.toLowerCase().includes(search.toLowerCase()) || t.location.toLowerCase().includes(search.toLowerCase());
     return matchSearch;
-  });
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
   const exportHeaders = ['Fecha', 'Hora', 'Lugar', 'Duración (Mins)', 'Objetivo', 'Observaciones'];
@@ -303,8 +309,8 @@ export const Trainings: React.FC = () => {
                   <tr key={t.id} className="hover:bg-brand-black-hover/20 transition-colors">
                     <td className="table-td">
                       <div className="flex flex-col">
-                        <span className="font-semibold text-brand-gray-light">{t.date}</span>
-                        <span className="text-[11px] text-brand-gray-muted mt-0.5">{t.time} hs</span>
+                        <span className="font-semibold text-brand-gray-light">Sesión {getTrainingNumber(t.id)}</span>
+                        <span className="text-[11px] text-brand-gray-muted mt-0.5">{t.date} | {t.time} hs</span>
                       </div>
                     </td>
                     <td className="table-td">
@@ -366,7 +372,7 @@ export const Trainings: React.FC = () => {
               <div key={t.id} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3.5">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h4 className="text-sm font-semibold text-brand-gray-light">{t.objective}</h4>
+                    <h4 className="text-sm font-semibold text-brand-gray-light">Sesión {getTrainingNumber(t.id)}: {t.objective}</h4>
                     <span className="text-[11px] text-brand-gray-muted flex items-center gap-1 mt-1">
                       <Calendar className="w-3.5 h-3.5" /> {t.date} | <Clock className="w-3.5 h-3.5" /> {t.time} hs
                     </span>

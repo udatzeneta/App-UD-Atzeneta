@@ -47,6 +47,7 @@ export default {
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out forwards',
         'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'slide-in-left': 'slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'accordion-down': 'accordionDown 0.2s ease-out',
         'accordion-up': 'accordionUp 0.2s ease-out',
       },
@@ -58,6 +59,10 @@ export default {
         slideUp: {
           '0%': { transform: 'translateY(10px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        slideInLeft: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(0)' },
         },
       }
     },
