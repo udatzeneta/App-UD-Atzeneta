@@ -8,9 +8,10 @@ interface Props {
   session: Training;
   sessionTasks: TrainingSessionTask[];
   sessionNumber?: number;
+  showTeamsBoard?: boolean;
 }
 
-export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessionNumber }) => {
+export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessionNumber, showTeamsBoard = true }) => {
   const { user } = useAuth();
 
   const getCategoryColor = (category: string) => {
@@ -24,13 +25,13 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessi
   };
 
   return (
-    <div className="w-[210mm] h-[297mm] mx-auto text-black bg-white font-sans p-4 flex flex-col overflow-hidden box-border print-container">
+    <div className="w-[210mm] mx-auto text-black bg-white font-sans p-4 flex flex-col box-border print-container">
       
       {/* Header section */}
       <div className="flex justify-between items-end border-b-2 border-black pb-2 mb-2 shrink-0">
         <div className="flex flex-col">
           <div className="flex items-center gap-2 mb-1">
-             <img src="https://golsmedia.com/wp-content/uploads/2025/05/atzeneta-1-1024x576.jpg" className="h-8 object-contain grayscale" alt="Escudo" />
+             <img src="/club-logo.png" className="h-10 object-contain" alt="Escudo" />
              <h1 className="text-xl font-black uppercase tracking-tight">UD Atzeneta</h1>
           </div>
           <h2 className="text-sm font-bold text-gray-700">SESIÓN {sessionNumber || 1} • {new Date(session.date).toLocaleDateString('es-ES')}</h2>
@@ -49,20 +50,21 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessi
       </div>
       
       {/* Tasks List */}
-      <div className="flex-1 flex flex-col gap-3 min-h-0">
+      <div className="flex flex-col gap-2">
         {sessionTasks.map((st, i) => {
           const t = st.task;
           if (!t) return null;
-          
+
           return (
-            <div key={st.id} className="border border-black flex flex-col overflow-hidden bg-white max-h-[130mm] page-break-inside-avoid">
+            <div key={st.id} className="pdf-task border border-black flex flex-col overflow-hidden bg-white" style={{ height: '82mm', breakInside: 'avoid' }}>
               
               {/* Task Header */}
-              <div className={`${getCategoryColor(t.category)} px-2 py-1 flex justify-between items-center shrink-0`}>
-                <span className="font-bold text-[11px] uppercase truncate pr-2">{i+1}. {t.title}</span>
-                <div className="flex gap-2 text-[10px] font-bold shrink-0">
-                  <span className="opacity-80">{t.category}</span>
-                  <span>⏱ {t.duration}'</span>
+              <div className={`${getCategoryColor(t.category)} px-2 py-1.5 flex justify-between items-center shrink-0`}>
+                <div className="font-black text-xs uppercase text-white leading-normal mr-2">
+                  {i + 1}. {t.title}
+                </div>
+                <div className="text-[10px] font-bold text-white shrink-0">
+                  {t.category} ⏱ {t.duration}'
                 </div>
               </div>
               
@@ -70,7 +72,7 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessi
               <div className="flex flex-1 min-h-0">
                 
                 {/* Col 1: Details */}
-                <div className="w-[30%] shrink-0 p-2 border-r border-black flex flex-col text-[10px] leading-snug overflow-hidden">
+                <div className="w-[28%] shrink-0 p-2 border-r border-black flex flex-col text-[10px] leading-snug overflow-hidden">
                   <div className="font-bold mb-1 border-b border-gray-300 pb-0.5">DESCRIPCIÓN:</div>
                   <p className="flex-1 overflow-hidden whitespace-pre-wrap">{t.description}</p>
                   
@@ -89,25 +91,25 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessi
                 
                 {/* Col 2 & 3: Boards Area */}
                 <div className="flex-1 flex flex-row relative min-w-0">
-                  {/* Task Board (Col 2, expands to Col 3 if no teams board) */}
-                  <div className={`relative flex items-center justify-center p-2 ${t.teams_board_data && t.teams_board_data.length > 10 ? 'w-1/2 border-r border-black' : 'w-full'}`}>
-                    {t.board_data ? (
-                      <div className="w-full h-full relative flex items-center justify-center">
-                         <TaskBoardEditor initialData={t.board_data} readOnly printMode hideToolbar rotateFullField />
-                      </div>
-                    ) : (
-                      <div className="text-gray-400 text-[10px] font-bold">Sin gráfico</div>
-                    )}
-                  </div>
-                  
-                  {/* Teams Board (Col 3) */}
-                  {t.teams_board_data && t.teams_board_data.length > 10 && (
-                    <div className="relative w-1/2 flex items-center justify-center p-2">
-                      <div className="w-full h-full relative">
-                         <TeamsBoardEditor value={t.teams_board_data} readOnly printMode />
-                      </div>
-                    </div>
-                  )}
+                   {/* Task Board (Col 2, expands to Col 3 if no teams board) */}
+                   <div className={`relative flex items-center justify-center p-2 ${showTeamsBoard && t.teams_board_data && t.teams_board_data.length > 10 ? 'w-[55%] border-r border-black' : 'w-full'}`}>
+                     {t.board_data ? (
+                       <div className="w-full h-full relative flex items-center justify-center">
+                          <TaskBoardEditor initialData={t.board_data} readOnly printMode hideToolbar rotateFullField printWidth={showTeamsBoard && t.teams_board_data && t.teams_board_data.length > 10 ? 518 : 1037} />
+                       </div>
+                     ) : (
+                       <div className="text-gray-400 text-[10px] font-bold">Sin gráfico</div>
+                     )}
+                   </div>
+                   
+                   {/* Teams Board (Col 3) */}
+                   {showTeamsBoard && t.teams_board_data && t.teams_board_data.length > 10 && (
+                     <div className="relative w-[45%] flex items-center justify-center p-2">
+                       <div className="w-full h-full relative">
+                          <TeamsBoardEditor value={t.teams_board_data} readOnly printMode printWidth={518} />
+                       </div>
+                     </div>
+                   )}
                 </div>
                 
               </div>

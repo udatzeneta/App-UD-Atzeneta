@@ -31,9 +31,10 @@ interface TeamsBoardEditorProps {
   players?: Player[];
   readOnly?: boolean;
   printMode?: boolean;
+  printWidth?: number; // Force fixed width in pixels for html2canvas
 }
 
-export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onChange, players = [], readOnly, printMode }) => {
+export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onChange, players = [], readOnly, printMode, printWidth }) => {
   const [elements, setElements] = useState<BoardPlayer[]>(() => {
     if (value) {
       try {
@@ -61,9 +62,48 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
   
   const [drawingLine, setDrawingLine] = useState<BoardLine | null>(null);
   
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currentX: number, currentY: number } | null>(null);
+  const hasDraggedRef = useRef(false);
+
   const boardRef = useRef<HTMLDivElement>(null);
+  const [boardWidth, setBoardWidth] = useState(0);
 
   const lastValueRef = useRef(value);
+  const elementsRef = useRef(elements);
+  useEffect(() => { elementsRef.current = elements; }, [elements]);
+
+  // Delete selected elements with keyboard
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (readOnly || activeTool !== 'select') return;
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (selectedElementIds.length > 0) {
+          setElements(prev => prev.filter(el => !selectedElementIds.includes(el.id)));
+          setSelectedElementIds([]);
+        }
+        if (selectedLineId) {
+          setLines(prev => prev.filter(l => l.id !== selectedLineId));
+          setSelectedLineId(null);
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [readOnly, activeTool, selectedElementIds, selectedLineId]);
+
+  // ResizeObserver para pasar cqw a píxeles exactos (arregla el bug de html2canvas con fuentes cqw)
+  useEffect(() => {
+    if (!boardRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      if (entries[0]) {
+        setBoardWidth(entries[0].contentRect.width);
+      }
+    });
+    observer.observe(boardRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // Parse initial data
   useEffect(() => {
@@ -145,7 +185,13 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-    if (activeTool === 'arrow' || activeTool === 'line') {
+    if (activeTool === 'select') {
+      if (!e.shiftKey) {
+        setSelectedElementIds([]);
+        setSelectedLineId(null);
+      }
+      setSelectionBox({ startX: x, startY: y, currentX: x, currentY: y });
+    } else if (activeTool === 'arrow' || activeTool === 'line') {
       setDrawingLine({
         id: `line-${Date.now()}`,
         type: activeTool,
@@ -181,26 +227,32 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
 
       if (drawingLine) {
         setDrawingLine(prev => prev ? { ...prev, endX: x, endY: y } : null);
+      } else if (selectionBox) {
+        setSelectionBox(prev => prev ? { ...prev, currentX: x, currentY: y } : null);
       } else if (activeDragId && activeDragLastPosRef.current) {
         const dx = x - activeDragLastPosRef.current.x;
         const dy = y - activeDragLastPosRef.current.y;
+        hasDraggedRef.current = true;
 
         if (activeDragId.startsWith('line-') || activeDragId.startsWith('arrow-')) {
-          setLines(prev => prev.map(l => {
-            if (l.id === activeDragId) {
-              return {
-                ...l,
-                startX: Math.max(0, Math.min(100, l.startX + dx)),
-                startY: Math.max(0, Math.min(100, l.startY + dy)),
-                endX: Math.max(0, Math.min(100, l.endX + dx)),
-                endY: Math.max(0, Math.min(100, l.endY + dy))
-              };
-            }
-            return l;
-          }));
+          if (selectedLineId === activeDragId) {
+            setLines(prev => prev.map(l => {
+              if (l.id === activeDragId) {
+                return {
+                  ...l,
+                  startX: Math.max(0, Math.min(100, l.startX + dx)),
+                  startY: Math.max(0, Math.min(100, l.startY + dy)),
+                  endX: Math.max(0, Math.min(100, l.endX + dx)),
+                  endY: Math.max(0, Math.min(100, l.endY + dy))
+                };
+              }
+              return l;
+            }));
+          }
         } else {
+          const idsToMove = selectedElementIds.includes(activeDragId) ? selectedElementIds : [activeDragId];
           setElements(prev => prev.map(el => {
-            if (el.id === activeDragId) {
+            if (idsToMove.includes(el.id)) {
               return { ...el, x: Math.max(0, Math.min(100, el.x + dx)), y: Math.max(0, Math.min(100, el.y + dy)) };
             }
             return el;
@@ -220,38 +272,97 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
         }
         setDrawingLine(null);
         setActiveTool('select');
+      } else if (selectionBox) {
+        const minX = Math.min(selectionBox.startX, selectionBox.currentX);
+        const maxX = Math.max(selectionBox.startX, selectionBox.currentX);
+        const minY = Math.min(selectionBox.startY, selectionBox.currentY);
+        const maxY = Math.max(selectionBox.startY, selectionBox.currentY);
+
+        if (maxX - minX > 1 && maxY - minY > 1) {
+          const newlySelected = elementsRef.current.filter(el => 
+            el.x >= minX && el.x <= maxX && el.y >= minY && el.y <= maxY
+          ).map(el => el.id);
+          
+          setSelectedElementIds(prev => {
+            const combined = new Set([...prev, ...newlySelected]);
+            return Array.from(combined);
+          });
+        }
+        setSelectionBox(null);
       }
       setActiveDragId(null);
       activeDragLastPosRef.current = null;
     };
 
-    if (drawingLine || activeDragId) {
+    if (drawingLine || activeDragId || selectionBox) {
       document.addEventListener('pointermove', handlePointerMove);
       document.addEventListener('pointerup', handlePointerUp);
+      document.addEventListener('pointercancel', handlePointerUp);
     }
 
     return () => {
       document.removeEventListener('pointermove', handlePointerMove);
       document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [drawingLine, activeDragId]);
+  }, [drawingLine, activeDragId, selectionBox, selectedElementIds, selectedLineId]);
 
-  const handleElementPointerDown = (e: React.PointerEvent, id: string) => {
-    if (activeTool !== 'select') return;
+  const handleElementPointerDown = (e: React.PointerEvent, id: string, type: 'element' | 'line') => {
+    if (readOnly || activeTool !== 'select') return;
     e.stopPropagation();
-    setActiveDragId(id);
-    const rect = boardRef.current?.getBoundingClientRect();
-    if (rect) {
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
-      const y = ((e.clientY - rect.top) / rect.height) * 100;
-      activeDragLastPosRef.current = { x, y };
+
+    let newSelectedElements = [...selectedElementIds];
+    let newSelectedLine = selectedLineId;
+
+    if (type === 'element') {
+      if (e.shiftKey) {
+        if (newSelectedElements.includes(id)) {
+          newSelectedElements = newSelectedElements.filter(eid => eid !== id);
+        } else {
+          newSelectedElements.push(id);
+        }
+      } else {
+        if (!newSelectedElements.includes(id)) {
+          newSelectedElements = [id];
+          newSelectedLine = null;
+        }
+      }
+    } else {
+      if (!e.shiftKey) {
+        newSelectedElements = [];
+        newSelectedLine = id;
+      } else {
+        newSelectedLine = selectedLineId === id ? null : id;
+      }
     }
+
+    setSelectedElementIds(newSelectedElements);
+    setSelectedLineId(newSelectedLine);
+    setActiveDragId(id);
+    if (boardRef.current) {
+      const rect = boardRef.current.getBoundingClientRect();
+      activeDragLastPosRef.current = { 
+        x: ((e.clientX - rect.left) / rect.width) * 100, 
+        y: ((e.clientY - rect.top) / rect.height) * 100 
+      };
+    }
+    hasDraggedRef.current = false;
   };
 
   const removeElement = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setElements(prev => prev.filter(el => el.id !== id));
-    setLines(prev => prev.filter(l => l.id !== id));
+    const idsToRemove = selectedElementIds.includes(id) ? selectedElementIds : [id];
+    setElements(prev => prev.filter(el => !idsToRemove.includes(el.id)));
+    if (selectedLineId === id) {
+      setLines(prev => prev.filter(l => l.id !== id));
+      setSelectedLineId(null);
+    } else {
+      setLines(prev => prev.filter(l => l.id !== id));
+    }
+    
+    if (idsToRemove.length > 0) {
+      setSelectedElementIds(prev => prev.filter(selectedId => !idsToRemove.includes(selectedId)));
+    }
   };
 
   const ColorButton = ({ color }: { color: string }) => {
@@ -281,12 +392,28 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
   };
 
   const getPrintColor = (c: string) => {
-    if (!printMode) return c;
-    if (c === '#ffffff' || c.toLowerCase() === 'white') return '#000000';
+    // En el PDF el fondo es blanco: el color blanco quedaría invisible, así que
+    // lo pasamos a un gris muy oscuro para que el nombre se lea.
+    if (printMode && (c === '#ffffff' || c?.toLowerCase() === '#fff')) return '#1f2937';
     return c;
   };
 
-  const px = (val: number) => `${(val / 5)}cqw`;
+  const hexToRgba = (hex: string, alpha: number) => {
+    if (!hex || !hex.startsWith('#')) return hex;
+    const r = parseInt(hex.slice(1, 3), 16) || 0;
+    const g = parseInt(hex.slice(3, 5), 16) || 0;
+    const b = parseInt(hex.slice(5, 7), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  const px = (val: number) => {
+    // En printMode SIEMPRE usamos printWidth para evitar la condición de carrera
+    // del ResizeObserver (boardWidth podría ser 0 cuando html2canvas captura el DOM).
+    if (printMode && printWidth) return `${(val * printWidth) / 500}px`;
+    // En el editor usamos el ancho real medido (más preciso).
+    if (boardWidth > 0) return `${(val * boardWidth) / 500}px`;
+    return `${(val / 5)}cqw`;
+  };
 
   return (
     <div className={`flex flex-col md:flex-row gap-4 h-full min-h-[400px] ${printMode ? 'w-full !h-full !min-h-0' : ''}`}>
@@ -380,10 +507,6 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
       {/* Area de la Pizarra */}
       <div 
         className={`flex-1 relative ${printMode ? '' : 'bg-brand-black-card border border-brand-black-border rounded-xl shadow-inner'} p-2 sm:p-4 overflow-hidden select-none`}
-        ref={boardRef}
-        onPointerDown={handleBoardPointerDown}
-        onDragOver={handleDragOverBoard}
-        onDrop={handleDropOnBoard}
       >
         {!printMode && (
           <div className="absolute top-2 left-2 z-20 pointer-events-none">
@@ -400,10 +523,11 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
           style={{ 
             aspectRatio: '105 / 68',
             width: '100%',
-            height: '100%',
+            height: 'auto',
             maxHeight: '800px',
             maxWidth: '1200px',
-            containerType: 'inline-size'
+            containerType: 'inline-size',
+            objectFit: 'contain'
           }}
           ref={boardRef}
           onPointerDown={handleBoardPointerDown}
@@ -427,7 +551,7 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
               <g 
                 key={line.id} 
                 className={activeTool === 'select' ? 'pointer-events-auto cursor-grab active:cursor-grabbing group' : ''}
-                onPointerDown={(e) => handleElementPointerDown(e, line.id)}
+                onPointerDown={(e) => handleElementPointerDown(e, line.id, 'line')}
               >
                 {/* Invisible wider area for easier grabbing */}
                 <line 
@@ -441,7 +565,7 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
                   stroke={line.color} 
                   strokeWidth="2.5"
                   markerEnd={line.type === 'arrow' ? 'url(#arrowhead-teams)' : ''}
-                  style={{ stroke: line.color }}
+                  style={{ stroke: line.color, filter: selectedLineId === line.id ? 'drop-shadow(0 0 4px rgba(255,0,0,0.8))' : 'none' }}
                 />
                 {activeTool === 'select' && !readOnly && (
                    <circle
@@ -457,12 +581,27 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
             ))}
           </svg>
 
+          {/* Marquee de selección */}
+          {selectionBox && (
+            <div
+              className="absolute border border-brand-red-600 bg-brand-red-600/15 pointer-events-none z-40"
+              style={{
+                left: `${Math.min(selectionBox.startX, selectionBox.currentX)}%`,
+                top: `${Math.min(selectionBox.startY, selectionBox.currentY)}%`,
+                width: `${Math.abs(selectionBox.currentX - selectionBox.startX)}%`,
+                height: `${Math.abs(selectionBox.currentY - selectionBox.startY)}%`,
+              }}
+            />
+          )}
+
           {/* DOM Elements Layer (Players and Text) */}
           <div className="absolute inset-0 w-full h-full z-20 pointer-events-none">
-            {elements.map(el => (
+            {elements.map(el => {
+              const isSelected = selectedElementIds.includes(el.id);
+              return (
               <div
                 key={el.id}
-                onPointerDown={(e) => handleElementPointerDown(e, el.id)}
+                onPointerDown={(e) => handleElementPointerDown(e, el.id, 'element')}
                 className="absolute group pointer-events-auto"
                 style={{
                   left: `${el.x}%`,
@@ -470,65 +609,71 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
                   transform: 'translate(-50%, -50%)',
                   cursor: activeTool === 'select' ? (activeDragId === el.id ? 'grabbing' : 'grab') : 'default',
                   zIndex: activeDragId === el.id ? 30 : 20,
-                  touchAction: 'none'
+                  touchAction: 'none',
+                  whiteSpace: 'nowrap'
                 }}
               >
                 {el.type === 'player' ? (
                   /* Name Tag */
-                  <div 
-                    className={`rounded-full font-bold whitespace-nowrap shadow-md flex items-center justify-center border-solid`}
-                    style={{ 
-                       padding: `${px(4)} ${px(12)}`,
-                       borderWidth: px(2),
-                       fontSize: px(11),
-                       gap: px(4),
-                       backgroundColor: printMode ? 'white' : `${getPrintColor(el.color)}40`,
-                       borderColor: getPrintColor(el.color),
+                  <div
+                    className={`rounded-full font-bold transition-all ${printMode ? '' : 'shadow-md'} ${isSelected && !printMode ? 'ring-2 ring-brand-red-600 ring-offset-1 ring-offset-brand-black-card scale-105' : ''}`}
+                    style={{
+                       display: 'inline-block',
+                       textAlign: 'center',
+                       whiteSpace: 'nowrap',
+                       padding: printMode ? `0 ${px(2)}` : `${px(2)} ${px(8)}`,
+                       fontSize: printMode ? px(12) : px(16),
+                       lineHeight: 1.25,
+                       backgroundColor: printMode ? 'transparent' : hexToRgba(getPrintColor(el.color), 0.25),
                        textShadow: printMode ? 'none' : '0 1px 2px rgba(0,0,0,0.8)',
                        color: printMode ? getPrintColor(el.color) : 'white'
                     }}
                   >
-                    <User style={{ width: px(12), height: px(12), color: getPrintColor(el.color) }} />
-                    {el.nickname}
-                    
-                    {/* Delete button (shows when in select mode) */}
-                    <button 
-                      onClick={(e) => removeElement(el.id, e)}
-                      className={`rounded-full bg-black/40 hover:bg-black/80 transition-all text-white ${activeTool === 'select' && !printMode ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-                      style={{ padding: px(2), marginLeft: px(4) }}
-                      title="Eliminar"
-                    >
-                      <Trash2 style={{ width: px(12), height: px(12) }} />
-                    </button>
+                    <span
+                      className={printMode ? 'inline-block align-middle' : 'truncate max-w-[150px] inline-block align-middle'}
+                      style={{ display: 'inline-block', verticalAlign: 'middle' }}
+                    >{el.nickname}</span>
+
+                    {/* Delete button (solo en edición; en print no se renderiza para no descentrar el texto) */}
+                    {!printMode && (
+                      <button
+                        onClick={(e) => removeElement(el.id, e)}
+                        className={`rounded-full bg-black/40 hover:bg-black/80 transition-all text-white ${activeTool === 'select' && isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                        style={{ padding: px(2), marginLeft: px(4) }}
+                        title="Eliminar"
+                      >
+                        <Trash2 style={{ width: px(14), height: px(14) }} />
+                      </button>
+                    )}
                   </div>
                 ) : (
                   /* Free Text */
-                  <div className="relative group">
+                  <div className={`relative group transition-all ${isSelected && !printMode ? 'ring-2 ring-brand-red-600 rounded px-1 scale-105' : ''}`}>
                     <input
                       value={el.text}
                       onChange={(e) => {
                         setElements(prev => prev.map(item => item.id === el.id ? { ...item, text: e.target.value } : item));
                       }}
                       className="bg-transparent border-none font-bold text-center outline-none whitespace-nowrap"
-                      style={{ 
+                      style={{
                         fontSize: px(14),
-                        color: printMode ? getPrintColor(el.color) : el.color, 
-                        textShadow: printMode ? 'none' : '0 1px 3px rgba(0,0,0,1)' 
+                        color: el.color,
+                        textShadow: '0 1px 3px rgba(0,0,0,1)'
                       }}
                       size={Math.max(3, (el.text || '').length)}
                     />
                     <button 
                       onClick={(e) => removeElement(el.id, e)}
-                      className={`absolute rounded-full bg-black/80 transition-all text-white shadow-md z-10 ${activeTool === 'select' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      className={`absolute rounded-full bg-black/80 transition-all text-white shadow-md z-10 ${activeTool === 'select' && isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                       style={{ top: `-${px(12)}`, right: `-${px(12)}`, padding: px(4) }}
                       title="Eliminar texto"
                     >
-                      <Trash2 style={{ width: px(12), height: px(12) }} />
+                      <Trash2 style={{ width: px(14), height: px(14) }} />
                     </button>
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
 
         </div>

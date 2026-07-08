@@ -106,8 +106,9 @@
     background: white !important;
   }
 
-  .print-container {
-    height: 287mm !important; /* A4 height minus margins */
-    overflow: hidden !important;
+  /* Cada tarea no se parte entre páginas; el contenido fluye a varias hojas. */
+  .pdf-task {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }

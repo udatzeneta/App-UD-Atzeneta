@@ -36,7 +36,7 @@ export const authService = {
           return {
             id: data.user.id,
             email: data.user.email || email.trim(),
-            full_name: 'Administración UD Atzeneta',
+            full_name: 'Entrenes UD Atzeneta',
             role_id: 1, // Admin
             created_at: new Date().toISOString()
           };
@@ -47,7 +47,7 @@ export const authService = {
         return {
           id: data.user.id,
           email: data.user.email || email.trim(),
-          full_name: 'Administración UD Atzeneta',
+          full_name: 'Entrenes UD Atzeneta',
           role_id: 1, // Admin
           created_at: new Date().toISOString()
         };

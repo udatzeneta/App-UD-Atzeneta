@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Reorder } from 'framer-motion';
 import { 
-  ClipboardList, Plus, Trash2, GripVertical, Save, X, Edit2, Search, Dumbbell, FolderSearch, Printer
+  ClipboardList, Plus, Trash2, GripVertical, Save, X, Edit2, Search, Dumbbell, FolderSearch, Printer, Download
 } from 'lucide-react';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 import { dataService } from '../services/data';
 import { Training, TrainingTask, TrainingSessionTask, Player } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -36,6 +38,9 @@ export const SessionEditor: React.FC = () => {
   const [activeBoardTab, setActiveBoardTab] = useState<'tactical' | 'teams'>('tactical');
   
   const [localObjective, setLocalObjective] = useState('');
+
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [showTeamsInPdf, setShowTeamsInPdf] = useState(true);
 
   useEffect(() => {
     loadInitialData();
@@ -214,6 +219,36 @@ export const SessionEditor: React.FC = () => {
     setIsTaskModalOpen(true);
   };
 
+  const handleDownloadPDF = () => {
+    const element = document.getElementById('pdf-export-content');
+    const currentTraining = trainings.find(t => t.id === selectedTrainingId);
+    if (!element || !currentTraining) return;
+
+    // Generate date string DD_MM_YY
+    const d = new Date(currentTraining.date);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = String(d.getFullYear()).slice(-2);
+    
+    // session number
+    const sNum = getTrainingNumber(currentTraining.id);
+    
+    const filename = `entrene_UD_Atzeneta_${sNum}_${day}_${month}_${year}.pdf`;
+
+    const opt = {
+      margin:       0,
+      filename:     filename,
+      image:        { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+      jsPDF:        { unit: 'mm' as const, format: 'a4', orientation: 'portrait' as const },
+      // Paginación: deja que el contenido fluya a varias páginas y evita cortar
+      // una tarea por la mitad (cada tarea lleva la clase .pdf-task).
+      pagebreak:    { mode: ['css', 'legacy'], avoid: '.pdf-task' }
+    };
+
+    html2pdf().set(opt).from(element).save();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -282,12 +317,12 @@ export const SessionEditor: React.FC = () => {
           </button>
 
           <button
-            onClick={() => window.print()}
+            onClick={() => setIsPreviewModalOpen(true)}
             disabled={!selectedTrainingId}
             className="btn-secondary"
-            title="Imprimir PDF"
+            title="Exportar a PDF"
           >
-            <Printer className="w-4 h-4" />
+            <Download className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -299,7 +334,7 @@ export const SessionEditor: React.FC = () => {
         <div className="p-4 border-b border-brand-black-border flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-sm font-bold text-brand-gray-light flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-brand-red-600" />
+              <img src="/club-logo.png" className="w-5 h-5 object-contain" alt="Escudo" />
               {selectedTraining ? `Sesión ${getTrainingNumber(selectedTraining.id)}` : 'Sesión Actual'}
             </h2>
             {selectedTraining && (
@@ -381,7 +416,7 @@ export const SessionEditor: React.FC = () => {
                   <div className="ml-6 w-56 sm:w-60 h-40 shrink-0 overflow-hidden relative rounded border border-white/10 pointer-events-none bg-black/40 flex items-center justify-center">
                      {sessionTask.task?.board_data ? (
                         <div style={{ width: '480px', height: '320px', transform: 'scale(0.5)', transformOrigin: 'center' }} className="flex flex-col justify-center shrink-0">
-                           <TaskBoardEditor value={sessionTask.task.board_data} readOnly hideToolbar rotateFullField />
+                           <TaskBoardEditor value={sessionTask.task.board_data} readOnly hideToolbar rotateFullField={true} />
                         </div>
                      ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center text-xs text-brand-gray-muted text-center p-2 opacity-50">
@@ -678,6 +713,71 @@ export const SessionEditor: React.FC = () => {
                 </button>
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Modal: PDF Preview --- */}
+      {isPreviewModalOpen && selectedTraining && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsPreviewModalOpen(false)} />
+          <div className="relative bg-brand-black border border-brand-black-border rounded-xl w-full max-w-6xl max-h-[95vh] flex flex-col shadow-premium animate-fade-in overflow-hidden">
+            
+            <div className="flex justify-between items-center px-4 py-3 border-b border-brand-black-border bg-brand-black-card shrink-0">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Download className="w-4 h-4 text-brand-red-600" />
+                Exportar Sesión a PDF
+              </h2>
+              <button onClick={() => setIsPreviewModalOpen(false)} className="text-brand-gray-muted hover:text-white p-1 bg-brand-black-hover rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+              <div className="w-full lg:w-72 bg-brand-black-card border-b lg:border-b-0 lg:border-r border-brand-black-border p-5 shrink-0 flex flex-col gap-6">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-2">Opciones de Exportación</h3>
+                  <p className="text-xs text-brand-gray-muted mb-6">Configura cómo se verá el documento final de tu sesión de entrenamiento.</p>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer group bg-brand-black p-3 border border-brand-black-border rounded-lg hover:border-brand-gray-muted transition-colors">
+                    <div className="relative shrink-0">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only" 
+                        checked={showTeamsInPdf}
+                        onChange={(e) => setShowTeamsInPdf(e.target.checked)}
+                      />
+                      <div className={`w-10 h-6 bg-[#1a1a1a] border border-brand-black-border rounded-full transition-colors ${showTeamsInPdf ? 'bg-brand-red-600 border-brand-red-600' : ''}`}></div>
+                      <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${showTeamsInPdf ? 'translate-x-4' : ''}`}></div>
+                    </div>
+                    <span className="text-sm font-semibold text-brand-gray-light group-hover:text-white transition-colors">
+                      Mostrar Equipos
+                    </span>
+                  </label>
+                </div>
+
+                <button 
+                  onClick={handleDownloadPDF}
+                  className="w-full py-3 text-sm font-bold bg-brand-red-600 hover:bg-brand-red-700 text-white rounded-lg transition-colors shadow-glow-red flex items-center justify-center gap-2 mt-auto"
+                >
+                  <Download className="w-5 h-5" />
+                  Descargar PDF
+                </button>
+              </div>
+
+              <div className="flex-1 bg-[#2a2a2a] overflow-auto p-4 sm:p-8 flex justify-center relative items-start no-scrollbar">
+                 <div className="transform-origin-top shadow-2xl transition-all bg-white origin-top scale-75 sm:scale-90 lg:scale-95 xl:scale-100">
+                   <div id="pdf-export-content" className="bg-white">
+                      <SessionPrintView 
+                        session={selectedTraining} 
+                        sessionTasks={sessionTasks} 
+                        sessionNumber={getTrainingNumber(selectedTraining.id)}
+                        showTeamsBoard={showTeamsInPdf}
+                      />
+                   </div>
+                 </div>
+              </div>
             </div>
           </div>
         </div>

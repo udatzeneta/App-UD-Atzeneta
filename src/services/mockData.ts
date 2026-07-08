@@ -92,7 +92,7 @@ const DEFAULT_PROFILES: Profile[] = [
   {
     id: MOCK_USER_IDS.udatzenetaAdmin,
     email: 'udatzenetact@gmail.com',
-    full_name: 'Administración UD Atzeneta',
+    full_name: 'Entrenes UD Atzeneta',
     role_id: 1,
     avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
     phone: '600111333',

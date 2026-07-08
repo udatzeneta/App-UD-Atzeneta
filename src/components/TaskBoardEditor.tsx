@@ -43,6 +43,7 @@ interface TaskBoardEditorProps {
   hideToolbar?: boolean;
   printMode?: boolean;
   rotateFullField?: boolean;
+  printWidth?: number;
 }
 
 const TiroLeagueBall = ({ size = "100%", style = {} }: { size?: string | number, style?: React.CSSProperties }) => (
@@ -94,7 +95,7 @@ const TiroLeagueBall = ({ size = "100%", style = {} }: { size?: string | number,
   </svg>
 );
 
-export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChange, initialData, readOnly, hideToolbar, printMode, rotateFullField }) => {
+export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChange, initialData, readOnly, hideToolbar, printMode, rotateFullField, printWidth }) => {
   const [fieldType, setFieldType] = useState<FieldType>('half');
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [lines, setLines] = useState<BoardLine[]>([]);
@@ -221,7 +222,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         y,
         rotation: 0,
         color: activeColor,
-        scale: 1,
+        scale: 0.75, // Default elements smaller
         text: (activeTool === 'text' || activeTool.startsWith('shape-')) ? (activeTool === 'text' ? 'Texto' : '') : undefined,
         filled: false,
         dashed: false
@@ -591,6 +592,14 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     setLines(lines.map(l => l.id === id ? { ...l, thickness } : l));
   };
 
+  const hexToRgba = (hex: string, alpha: number) => {
+    if (!hex || !hex.startsWith('#')) return hex;
+    const r = parseInt(hex.slice(1, 3), 16) || 0;
+    const g = parseInt(hex.slice(3, 5), 16) || 0;
+    const b = parseInt(hex.slice(5, 7), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
   // --- RENDERING ---
 
   const renderFieldBackground = () => {
@@ -602,29 +611,31 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         : '0 0 68 68';
 
     const lineProps = {
-      stroke: printMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.9)',
+      stroke: 'rgba(255,255,255,0.9)',
       strokeWidth: 0.28,
       fill: 'none' as const,
       strokeLinecap: 'round' as const,
       strokeLinejoin: 'round' as const,
     };
     
-    const circleFill = printMode ? 'rgba(0,0,0,0.4)' : 'white';
+    const circleFill = 'white';
 
     return (
-      <div className="absolute inset-0 overflow-hidden" style={{ background: printMode ? '#ffffff' : 'transparent' }}>
-        {/* Césped con franjas de siega */}
+      <div className="absolute inset-0 overflow-hidden" style={{ background: 'transparent' }}>
+        {/* Césped con franjas de siega usando divs para máxima compatibilidad con exportación PDF */}
+        <div className="absolute inset-0 bg-[#3f9445]">
+          {Array.from({ length: 15 }).map((_, i) => (
+            <div key={i} className="absolute w-full bg-[#48a04f]" style={{ top: `${i * 14}%`, height: '7%' }} />
+          ))}
+        </div>
+        
+        {/* Iluminación y viñeta para dar profundidad (oculto en PDF para evitar fallos de renderizado) */}
         {!printMode && (
-          <>
-            <div className="absolute inset-0" style={{
-              background: 'repeating-linear-gradient(0deg, #3f9445 0 7%, #48a04f 7% 14%)'
-            }} />
-            {/* Iluminación y viñeta para dar profundidad */}
-            <div className="absolute inset-0" style={{
-              background: 'radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.12), rgba(0,0,0,0) 55%), radial-gradient(ellipse at 50% 105%, rgba(0,0,0,0.35), rgba(0,0,0,0) 60%)'
-            }} />
-          </>
+          <div className="absolute inset-0" style={{
+            background: 'radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.12), rgba(0,0,0,0) 55%), radial-gradient(ellipse at 50% 105%, rgba(0,0,0,0.35), rgba(0,0,0,0) 60%)'
+          }} />
         )}
+        <div className="absolute inset-0 border border-white/30" />
 
         {fieldType !== 'blank' && (
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
@@ -704,12 +715,33 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
   };
 
   const getPrintColor = (c: string) => {
-    if (!printMode) return c;
-    if (c === '#ffffff' || c.toLowerCase() === 'white') return '#000000';
     return c;
   };
 
-  const px = (val: number) => `${(val / 5)}cqw`;
+  const px = (val: number) => {
+    // Usamos SIEMPRE el ancho real medido del campo (fittedW), tanto en el editor
+    // como en la impresión, para que los elementos guarden exactamente la misma
+    // proporción respecto al campo que se ve en el editor.
+    // Solo si aún no hay medida (p.ej. impresión del navegador con display:none)
+    // recurrimos al printWidth fijo como aproximación, y en último caso a cqw.
+    let baseW = fittedW;
+    if (baseW === 0 && printMode && printWidth) baseW = printWidth;
+    if (baseW === 0) return `${(val / 5)}cqw`;
+
+    // Si el campo está rotado, el baseW (que es el ancho del contenedor horizontal)
+    // no corresponde al ancho lógico del campo interior (que es el lado corto).
+    // El contenedor interior rotado (-90deg) tiene un ancho físico equivalente a baseW * (68/105).
+    if (isRotated) {
+      baseW = baseW * (68 / 105);
+    } else if (isCropped) {
+      // Si el campo está recortado (modo blank en impresión), el contenedor interior
+      // se amplía artificialmente multiplicándolo por (100 / cropWidth).
+      // Debemos aplicar el mismo factor a baseW para que los elementos escalen proporcionalmente.
+      baseW = baseW * (100 / cropWidth);
+    }
+
+    return `${(val * baseW) / 500}px`;
+  };
 
   const renderElement = (el: BoardElement) => {
     const isSelected = selectedElementIds.includes(el.id);
@@ -721,6 +753,11 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     // since container queries (cqw) handle adaptive screen/print scaling!
     const manualScale = el.scale || 1;
     
+    let baseZIndex = 2;
+    if (isShape) baseZIndex = 1;
+    else if (['player', 'ball'].includes(el.type)) baseZIndex = 3;
+    else if (el.type === 'text') baseZIndex = 4;
+    
     const baseStyle: React.CSSProperties = {
       position: 'absolute',
       left: `${el.x}%`,
@@ -728,7 +765,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
       transform: `translate(-50%, -50%) rotate(${el.rotation}deg) ${isShape ? '' : `scale(${manualScale})`}`,
       cursor: activeTool === 'select' ? (activeDragId === el.id ? 'grabbing' : 'grab') : 'default',
       filter: isSelected ? 'drop-shadow(0 0 0px #fff) drop-shadow(0 0 4px #dc2626)' : 'none',
-      zIndex: isSelected ? 10 : 2,
+      zIndex: isSelected ? 10 : baseZIndex,
       touchAction: 'none'
     };
 
@@ -736,12 +773,19 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     
     switch (el.type) {
       case 'player':
-        content = <div style={{
-          width: px(24), height: px(24), borderRadius: '50%',
-          background: `radial-gradient(circle at 30% 30%, ${displayColor}, #111)`,
-          boxShadow: 'inset -2px -2px 4px rgba(0,0,0,0.5), inset 2px 2px 4px rgba(255,255,255,0.4), 2px 3px 4px rgba(0,0,0,0.4)',
-          border: '1px solid rgba(255,255,255,0.2)'
-        }} />;
+        content = (
+          <div className="relative flex items-center justify-center">
+            <div style={{
+              width: px(24), height: px(24), borderRadius: '50%',
+              background: printMode ? displayColor : `radial-gradient(circle at 30% 30%, ${displayColor}, #111)`,
+              boxShadow: printMode ? 'none' : 'inset -2px -2px 4px rgba(0,0,0,0.5), inset 2px 2px 4px rgba(255,255,255,0.4), 2px 3px 4px rgba(0,0,0,0.4)',
+              border: '1px solid rgba(255,255,255,0.2)'
+            }} />
+            {el.text && (
+              <span className="absolute text-white font-bold whitespace-nowrap" style={{ fontSize: px(11), textShadow: printMode ? 'none' : '0 1px 2px rgba(0,0,0,0.8)', color: printMode ? 'black' : 'white' }}>{el.text}</span>
+            )}
+          </div>
+        );
         break;
       case 'cone':
         content = (
@@ -754,25 +798,25 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'cone-tall':
         content = (
-          <svg width={px(20)} height={px(24)} viewBox="0 0 20 24" style={{ filter: 'drop-shadow(2px 2px 2px rgba(0,0,0,0.4))' }}>
-            <rect x="1" y="20" width="18" height="3" rx="1" fill={displayColor} filter="brightness(0.8)" />
-            <ellipse cx="10" cy="20" rx="7" ry="2" fill={displayColor} filter="brightness(0.9)" />
+          <svg width={px(20)} height={px(24)} viewBox="0 0 20 24" style={{ filter: printMode ? 'none' : 'drop-shadow(2px 2px 2px rgba(0,0,0,0.4))' }}>
+            <rect x="1" y="20" width="18" height="3" rx="1" fill={displayColor} filter={printMode ? undefined : "brightness(0.8)"} />
+            <ellipse cx="10" cy="20" rx="7" ry="2" fill={displayColor} filter={printMode ? undefined : "brightness(0.9)"} />
             <path d="M 4 20 L 8 2 L 12 2 L 16 20 Z" fill={displayColor} />
-            <ellipse cx="10" cy="2" rx="2" ry="1" fill={displayColor} filter="brightness(1.2)" />
+            <ellipse cx="10" cy="2" rx="2" ry="1" fill={displayColor} filter={printMode ? undefined : "brightness(1.2)"} />
           </svg>
         );
         break;
       case 'pole':
         content = (
-          <div className="relative flex flex-col items-center justify-end" style={{ filter: 'drop-shadow(2px 2px 3px rgba(0,0,0,0.4))' }}>
-            <div className="rounded-t-sm" style={{ width: px(2), height: px(40), background: `linear-gradient(90deg, #fff 0%, ${displayColor} 40%, ${displayColor} 60%, #333 100%)` }} />
+          <div className="relative flex flex-col items-center justify-end" style={{ filter: printMode ? 'none' : 'drop-shadow(2px 2px 3px rgba(0,0,0,0.4))' }}>
+            <div className="rounded-t-sm" style={{ width: px(2), height: px(40), background: printMode ? displayColor : `linear-gradient(90deg, #fff 0%, ${displayColor} 40%, ${displayColor} 60%, #333 100%)` }} />
             <div className="rounded-t-full bg-black border-b border-gray-700 z-10" style={{ width: px(16), height: px(6) }} />
           </div>
         );
         break;
       case 'hurdle':
         content = (
-          <div className="relative" style={{ width: px(32), height: px(12), color: displayColor, filter: 'drop-shadow(1px 2px 2px rgba(0,0,0,0.4))' }}>
+          <div className="relative" style={{ width: px(32), height: px(12), color: displayColor, filter: printMode ? 'none' : 'drop-shadow(1px 2px 2px rgba(0,0,0,0.4))' }}>
             <div className="absolute top-0 w-full bg-current" style={{ height: px(3) }} />
             <div className="absolute left-[5%] bg-gray-300" style={{ top: px(3), width: px(3), height: px(8) }} />
             <div className="absolute right-[5%] bg-gray-300" style={{ top: px(3), width: px(3), height: px(8) }} />
@@ -781,7 +825,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'hurdle-high':
         content = (
-          <div className="relative" style={{ width: px(32), height: px(20), color: displayColor, filter: 'drop-shadow(1px 2px 2px rgba(0,0,0,0.4))' }}>
+          <div className="relative" style={{ width: px(32), height: px(20), color: displayColor, filter: printMode ? 'none' : 'drop-shadow(1px 2px 2px rgba(0,0,0,0.4))' }}>
             <div className="absolute top-0 w-full bg-current" style={{ height: px(3) }} />
             <div className="absolute left-[5%] bg-gray-300" style={{ top: px(3), width: px(3), height: px(16) }} />
             <div className="absolute right-[5%] bg-gray-300" style={{ top: px(3), width: px(3), height: px(16) }} />
@@ -790,7 +834,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'goal':
         content = (
-          <svg width={px(60)} height={px(24)} viewBox="0 0 60 24" style={{ filter: 'drop-shadow(0px 3px 3px rgba(0,0,0,0.5))' }}>
+          <svg width={px(60)} height={px(24)} viewBox="0 0 60 24" style={{ filter: printMode ? 'none' : 'drop-shadow(0px 3px 3px rgba(0,0,0,0.5))' }}>
             <path d="M 5 3 L 55 3 L 57 19 L 3 19 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="2" strokeLinejoin="round" />
             <path d="M 1 20 L 59 20" stroke="white" strokeWidth="4" strokeLinecap="round" />
           </svg>
@@ -798,7 +842,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'mini-goal':
         content = (
-          <svg width={px(24)} height={px(16)} viewBox="0 0 24 16" style={{ filter: 'drop-shadow(0px 2px 2px rgba(0,0,0,0.5))' }}>
+          <svg width={px(24)} height={px(16)} viewBox="0 0 24 16" style={{ filter: printMode ? 'none' : 'drop-shadow(0px 2px 2px rgba(0,0,0,0.5))' }}>
             <path d="M 3 2 L 21 2 L 22 11 L 2 11 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
             <path d="M 1 12 L 23 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
           </svg>
@@ -806,34 +850,38 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'goal-f11':
         content = (
-          <svg width={px(80)} height={px(24)} viewBox="0 0 80 24" style={{ filter: 'drop-shadow(0px 3px 3px rgba(0,0,0,0.5))' }}>
-            <path d="M 6 3 L 74 3 L 77 19 L 3 19 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-            <path d="M 1 20 L 79 20" stroke="white" strokeWidth="4" strokeLinecap="round" />
+          <svg width={px(73.2)} height={px(20)} viewBox="0 0 73.2 20" style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }}>
+            <path d="M 4 2 L 69.2 2 L 71 16 L 2 16 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 17 L 72.2 17" stroke="white" strokeWidth="3" strokeLinecap="round" />
           </svg>
         );
         break;
       case 'goal-f8':
         content = (
-          <svg width={px(50)} height={px(20)} viewBox="0 0 50 20" style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.5))' }}>
-            <path d="M 4 2 L 46 2 L 48 15 L 2 15 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 1 16 L 49 16" stroke="white" strokeWidth="3" strokeLinecap="round" />
+          <svg width={px(40)} height={px(16)} viewBox="0 0 40 16" style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.5))' }}>
+            <path d="M 3 2 L 37 2 L 38 12 L 2 12 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 13 L 39 13" stroke="white" strokeWidth="3" strokeLinecap="round" />
           </svg>
         );
         break;
       case 'goal-f5':
         content = (
-          <svg width={px(36)} height={px(16)} viewBox="0 0 36 16" style={{ filter: 'drop-shadow(0px 2px 2px rgba(0,0,0,0.5))' }}>
-            <path d="M 3 2 L 33 2 L 34 11 L 2 11 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 1 12 L 35 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+          <svg width={px(30)} height={px(12)} viewBox="0 0 30 12" style={{ filter: 'drop-shadow(0px 2px 2px rgba(0,0,0,0.5))' }}>
+            <path d="M 2 2 L 28 2 L 29 9 L 1 9 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 10 L 29 10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
           </svg>
         );
         break;
-      case 'shape-circle':
+      case 'shape-square':
         content = (
           <div style={{
-            width: px(el.width || (40 * manualScale)), height: px(el.height || (40 * manualScale)), borderRadius: '50%',
-            backgroundColor: el.filled ? `${displayColor}40` : 'transparent',
+            width: el.width ? px(el.width) : px(40 * manualScale),
+            height: el.height ? px(el.height) : px(40 * manualScale),
+            minWidth: el.width ? px(el.width) : px(40 * manualScale),
+            minHeight: el.height ? px(el.height) : px(40 * manualScale),
+            boxSizing: 'border-box',
             border: `${px(el.thickness || 2)} ${el.dashed ? 'dashed' : 'solid'} ${displayColor}`,
+            backgroundColor: el.filled ? hexToRgba(displayColor, 0.25) : 'transparent',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: displayColor, fontSize: px(12), fontWeight: 'bold'
           }}>
@@ -841,12 +889,17 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
           </div>
         );
         break;
-      case 'shape-square':
+      case 'shape-circle':
         content = (
           <div style={{
-            width: px(el.width || (40 * manualScale)), height: px(el.height || (40 * manualScale)), borderRadius: '4px',
-            backgroundColor: el.filled ? `${displayColor}40` : 'transparent',
+            width: el.width ? px(el.width) : px(40 * manualScale),
+            height: el.height ? px(el.height) : px(40 * manualScale),
+            minWidth: el.width ? px(el.width) : px(40 * manualScale),
+            minHeight: el.height ? px(el.height) : px(40 * manualScale),
+            boxSizing: 'border-box',
+            borderRadius: '50%',
             border: `${px(el.thickness || 2)} ${el.dashed ? 'dashed' : 'solid'} ${displayColor}`,
+            backgroundColor: el.filled ? hexToRgba(displayColor, 0.25) : 'transparent',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: displayColor, fontSize: px(12), fontWeight: 'bold'
           }}>
@@ -858,7 +911,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         content = <div style={{
           width: px(24), height: px(24), borderRadius: '50%',
           border: `${px(3)} solid ${displayColor}`,
-          boxShadow: '1px 2px 3px rgba(0,0,0,0.4), inset 1px 2px 3px rgba(0,0,0,0.4)'
+          boxShadow: printMode ? 'none' : '1px 2px 3px rgba(0,0,0,0.4), inset 1px 2px 3px rgba(0,0,0,0.4)'
         }} />;
         break;
       case 'bosu':
@@ -894,7 +947,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'ball':
         content = (
-          <div style={{ width: px(16), height: px(16) }}>
+          <div style={{ width: px(16), height: px(16), filter: printMode ? 'none' : 'drop-shadow(2px 2px 3px rgba(0,0,0,0.5))' }}>
             <TiroLeagueBall />
           </div>
         );
@@ -1099,10 +1152,13 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     if (isCropped && (elements.length > 0 || lines.length > 0)) {
         let minX = 100, maxX = 0, minY = 100, maxY = 0;
         elements.forEach(el => {
-          if (el.x < minX) minX = el.x;
-          if (el.x > maxX) maxX = el.x;
-          if (el.y < minY) minY = el.y;
-          if (el.y > maxY) maxY = el.y;
+          const halfW = el.width ? (el.width / 5) / 2 : (40 * (el.scale || 1) / 5) / 2;
+          const halfH = el.height ? (el.height / 5) / 2 : (40 * (el.scale || 1) / 5) / 2;
+          
+          if (el.x - halfW < minX) minX = el.x - halfW;
+          if (el.x + halfW > maxX) maxX = el.x + halfW;
+          if (el.y - halfH < minY) minY = el.y - halfH;
+          if (el.y + halfH > maxY) maxY = el.y + halfH;
         });
         lines.forEach(line => {
           if (line.startX < minX) minX = line.startX;
@@ -1115,10 +1171,10 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
           if (line.endY > maxY) maxY = line.endY;
         });
         
-        minX = Math.max(0, minX - 10);
-        maxX = Math.min(100, maxX + 10);
-        minY = Math.max(0, minY - 10);
-        maxY = Math.min(100, maxY + 10);
+        minX = Math.max(0, minX - 5);
+        maxX = Math.min(100, maxX + 5);
+        minY = Math.max(0, minY - 5);
+        maxY = Math.min(100, maxY + 5);
         
         if (maxX - minX < 10) { minX = 0; maxX = 100; }
         if (maxY - minY < 10) { minY = 0; maxY = 100; }
@@ -1149,14 +1205,23 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     // caja de referencia coincide con lo que se ve (los elementos se colocan bien).
     let fittedW = 0, fittedH = 0;
     if (availSize.width > 0 && availSize.height > 0) {
-      const containerRatio = availSize.width / availSize.height;
+      let pX = 0, pY = 0;
+      if (fitContainerRef.current) {
+        const style = window.getComputedStyle(fitContainerRef.current);
+        pX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+        pY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      }
+      const contentW = availSize.width - pX;
+      const contentH = availSize.height - pY;
+      
+      const containerRatio = contentW / contentH;
       if (containerRatio > aspectRatioNum) {
         // El contenedor es más ancho que el campo → limita la altura
-        fittedH = availSize.height;
+        fittedH = contentH;
         fittedW = fittedH * aspectRatioNum;
       } else {
         // El contenedor es más estrecho → limita la anchura
-        fittedW = availSize.width;
+        fittedW = contentW;
         fittedH = fittedW / aspectRatioNum;
       }
     }
@@ -1363,22 +1428,13 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         {/* Field container */}
         <div 
           className={`relative touch-none cursor-crosshair rounded shadow-lg border border-white/10 ${isCropped ? 'overflow-hidden' : 'overflow-hidden'} ${printMode ? 'mx-auto' : ''}`}
-          style={printMode ? {
-            // Modo impresión (PDF): el layout no tiene alto definido, mantenemos el ancho fijo.
-            aspectRatio: containerAspect,
-            width: fieldType === 'blank' ? '60%' : '100%',
-            height: 'auto',
-            maxHeight: '100%',
-            maxWidth: '100%',
-            objectFit: 'contain',
-            containerType: 'normal'
-          } : {
-            // En pantalla usamos un tamaño en píxeles calculado por medición ("contain"),
-            // de modo que la caja de referencia coincide exactamente con el campo visible:
-            // el campo entero encaja completo y los elementos se colocan donde se pulsa.
+          style={{
+            // Usamos el mismo cálculo (fittedW, fittedH) tanto para editor como impresión.
             aspectRatio: containerAspect,
             width: fittedW ? `${fittedW}px` : '100%',
             height: fittedW ? `${fittedH}px` : 'auto',
+            maxWidth: '100%',
+            maxHeight: '100%',
             containerType: 'normal'
           }}
           ref={boardRef}
