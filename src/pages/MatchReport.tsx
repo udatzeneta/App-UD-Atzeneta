@@ -309,7 +309,7 @@ export const MatchReport: React.FC = () => {
         const count = Math.max(0, parseInt(val) || 0);
         let arr = [...(player.event_minutes.goals || [])];
         if (arr.length < count) {
-          while (arr.length < count) arr.push(90); // default minute
+          while (arr.length < count) arr.push('90'); // default minute
         } else {
           arr = arr.slice(0, count);
         }
@@ -318,7 +318,7 @@ export const MatchReport: React.FC = () => {
         const count = Math.max(0, parseInt(val) || 0);
         let arr = [...(player.event_minutes.conceded_goals || [])];
         if (arr.length < count) {
-          while (arr.length < count) arr.push(90);
+          while (arr.length < count) arr.push('90');
         } else {
           arr = arr.slice(0, count);
         }
@@ -327,7 +327,7 @@ export const MatchReport: React.FC = () => {
         const count = Math.max(0, parseInt(val) || 0);
         let arr = [...(player.event_minutes.own_goals || [])];
         if (arr.length < count) {
-          while (arr.length < count) arr.push(90);
+          while (arr.length < count) arr.push('90');
         } else {
           arr = arr.slice(0, count);
         }
@@ -336,7 +336,7 @@ export const MatchReport: React.FC = () => {
         const count = Math.max(0, parseInt(val) || 0);
         let arr = [...(player.event_minutes.assists || [])];
         if (arr.length < count) {
-          while (arr.length < count) arr.push(90);
+          while (arr.length < count) arr.push('90');
         } else {
           arr = arr.slice(0, count);
         }
@@ -345,7 +345,7 @@ export const MatchReport: React.FC = () => {
         const count = Math.max(0, parseInt(val) || 0);
         let arr = [...(player.event_minutes.yellow_cards || [])];
         if (arr.length < count) {
-          while (arr.length < count) arr.push(90);
+          while (arr.length < count) arr.push('90');
         } else {
           arr = arr.slice(0, count);
         }
@@ -354,7 +354,7 @@ export const MatchReport: React.FC = () => {
         const hasRed = !!val;
         updated.event_minutes = {
           ...updated.event_minutes,
-          red_card: hasRed ? (player.event_minutes.red_card || 90) : null
+          red_card: hasRed ? (player.event_minutes.red_card || '90') : null
         };
       }
 
