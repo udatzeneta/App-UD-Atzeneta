@@ -6,6 +6,8 @@ import { useToast } from '../context/ToastContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { CardSkeleton } from '../components/Skeletons';
 import { exportMatchReportToPDF } from '../utils/export';
+import logos from '../assets/logos.json';
+import type { Team } from '../types';
 import {
   ArrowLeft, Trophy, Target, Shield, Calendar, Clock,
   PlusCircle, Check, X, ChevronDown, ChevronUp, AlertCircle,
@@ -31,13 +33,18 @@ interface LocalPlayerStats {
   red_card: boolean;
   positive_aspects: string;
   improve_aspects: string;
+  comments?: string;
+  substituted_for?: string;
+  substituted_minute?: number;
   event_minutes: {
-    goals: number[];
-    assists: number[];
-    yellow_cards: number[];
-    red_card: number | null;
-    conceded_goals: number[];
-    own_goals: number[];
+    goals: string[];
+    assists: string[];
+    yellow_cards: string[];
+    red_card: string | null;
+    conceded_goals: string[];
+    own_goals: string[];
+    penalty_goals: string[];
+    conceded_penalty_goals: string[];
   };
 }
 
@@ -53,7 +60,6 @@ export const MatchReport: React.FC = () => {
   // Estados Locales del Partido
   const [scoreUs, setScoreUs] = useState<number>(0);
   const [scoreThem, setScoreThem] = useState<number>(0);
-  const [matchStatus, setMatchStatus] = useState<'Programado' | 'Jugado' | 'Suspendido'>('Jugado');
   const [tacticalSystem, setTacticalSystem] = useState<string>('4-3-3');
   const [teamPositive, setTeamPositive] = useState<string>('');
   const [teamImprove, setTeamImprove] = useState<string>('');
@@ -72,8 +78,11 @@ export const MatchReport: React.FC = () => {
 
   // Formulario rápido para añadir evento en cronología
   const [timelinePlayerId, setTimelinePlayerId] = useState<string>('');
-  const [timelineEventType, setTimelineEventType] = useState<'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals'>('goals');
-  const [timelineMinute, setTimelineMinute] = useState<number>(1);
+  const [timelineEventType, setTimelineEventType] = useState<'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | ''>('');
+  const [timelinePeriod, setTimelinePeriod] = useState<string>('1T');
+  const [timelineMinute, setTimelineMinute] = useState<string>('1');
+  const [timelinePlayerInId, setTimelinePlayerInId] = useState<string>('');
+  const [timelinePlayerInPosition, setTimelinePlayerInPosition] = useState<string>('');
 
   // 1. Cargar Partido
   const { data: matchesList = [], isLoading: isLoadingMatch } = useQuery({
@@ -98,12 +107,36 @@ export const MatchReport: React.FC = () => {
     enabled: !!matchId
   });
 
+  const { data: dbTeams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: dataService.getTeams
+  });
+
+  const getTeamLogo = (teamName: string): string => {
+    const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const target = normalize(teamName);
+    
+    const dbTeam = dbTeams.find(t => normalize(t.name) === target);
+    if (dbTeam?.shield_url) {
+      return dbTeam.shield_url;
+    }
+    
+    const matchKey = Object.keys(logos).find(key => normalize(key) === target);
+    if (matchKey) {
+      return (logos as Record<string, string>)[matchKey];
+    }
+    return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+  };
+
+  const matchStatus = useMemo<'Programado' | 'Jugado'>(() => {
+    return Object.values(playerStats).some(p => p.is_called_up) ? 'Jugado' : 'Programado';
+  }, [playerStats]);
+
   // Inicializar estado del formulario con los datos de BD
   useEffect(() => {
     if (matchData) {
       setScoreUs(matchData.score_us !== null ? matchData.score_us : 0);
       setScoreThem(matchData.score_them !== null ? matchData.score_them : 0);
-      setMatchStatus(matchData.status);
       setTacticalSystem(matchData.tactical_system || '4-3-3');
       setTeamPositive(matchData.team_positive_aspects || '');
       setTeamImprove(matchData.team_improve_aspects || '');
@@ -131,13 +164,18 @@ export const MatchReport: React.FC = () => {
           red_card: init ? !!init.red_card : false,
           positive_aspects: init ? init.positive_aspects || '' : '',
           improve_aspects: init ? init.improve_aspects || '' : '',
+          comments: init ? init.comments || '' : '',
+          substituted_for: init ? init.substituted_for || undefined : undefined,
+          substituted_minute: init ? init.substituted_minute || undefined : undefined,
           event_minutes: {
             goals: init?.event_minutes?.goals || [],
             assists: init?.event_minutes?.assists || [],
             yellow_cards: init?.event_minutes?.yellow_cards || [],
             red_card: init?.event_minutes?.red_card || null,
             conceded_goals: init?.event_minutes?.conceded_goals || [],
-            own_goals: init?.event_minutes?.own_goals || []
+            own_goals: init?.event_minutes?.own_goals || [],
+            penalty_goals: init?.event_minutes?.penalty_goals || [],
+            conceded_penalty_goals: init?.event_minutes?.conceded_penalty_goals || [],
           }
         };
       });
@@ -326,7 +364,7 @@ export const MatchReport: React.FC = () => {
   };
 
   // Manejar cambios en los minutos específicos de un evento
-  const handleEventMinuteChange = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals', index: number, value: number) => {
+  const handleEventMinuteChange = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'penalty_goals' | 'conceded_penalty_goals', index: number, value: string) => {
     setPlayerStats(prev => {
       const next = { ...prev };
       const player = next[playerId];
@@ -347,29 +385,68 @@ export const MatchReport: React.FC = () => {
   };
 
   // Añadir un evento específico desde la cronología
-  const handleAddMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals', minute: number) => {
+  const handleAddMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals', minuteStr: string, playerInId?: string, positionIn?: string) => {
     setPlayerStats(prev => {
       const next = { ...prev };
       const player = next[playerId];
       if (!player) return prev;
 
+      if (type === 'substitution') {
+        // Obtenemos el minuto global para los minutos jugados y el campograma
+        let minuteNum = 90;
+        const parts = minuteStr.trim().split(' ');
+        if (parts.length > 1) {
+          const period = parts[0].toUpperCase();
+          const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
+          if (period === '1T') minuteNum = min;
+          else if (period === '2T') minuteNum = min + 45;
+          else if (period === '1P') minuteNum = min + 90;
+          else if (period === '2P') minuteNum = min + 105;
+          else minuteNum = min;
+        } else {
+          minuteNum = parseInt(minuteStr.split('+')[0].replace(/\D/g, '')) || 90;
+        }
+        
+        if (playerInId) {
+          const playerIn = next[playerInId];
+          if (playerIn) {
+            next[playerId] = {
+              ...player,
+              substituted_for: playerInId,
+              substituted_minute: minuteNum,
+              minutes_played: minuteNum
+            };
+            next[playerInId] = {
+              ...playerIn,
+              position: positionIn || playerIn.position || '',
+              minutes_played: Math.max(0, 90 - minuteNum)
+            };
+          }
+        }
+        return next;
+      }
+
       const eventMin = { ...player.event_minutes };
 
       if (type === 'red_card') {
-        eventMin.red_card = minute;
+        eventMin.red_card = minuteStr;
         next[playerId] = {
           ...player,
           red_card: true,
           event_minutes: eventMin
         };
       } else {
-        const arr = [...(eventMin[type] || []), minute];
-        arr.sort((a, b) => a - b);
-        eventMin[type] = arr;
+        const evType = type as 'goals' | 'assists' | 'yellow_cards' | 'conceded_goals' | 'own_goals' | 'penalty_goals' | 'conceded_penalty_goals';
+        const arr = [...(eventMin[evType] || []), minuteStr];
+        eventMin[evType] = arr;
+        
+        const countField = evType === 'penalty_goals' ? 'goals' : evType === 'conceded_penalty_goals' ? 'conceded_goals' : evType;
+        const total = (eventMin[countField === 'goals' ? 'goals' : countField === 'conceded_goals' ? 'conceded_goals' : evType]?.length || 0) + 
+                      (countField === 'goals' ? (eventMin.penalty_goals?.length || 0) : countField === 'conceded_goals' ? (eventMin.conceded_penalty_goals?.length || 0) : 0);
         
         next[playerId] = {
           ...player,
-          [type]: arr.length,
+          [countField]: total,
           event_minutes: eventMin
         };
       }
@@ -379,11 +456,29 @@ export const MatchReport: React.FC = () => {
   };
 
   // Quitar un evento específico desde la cronología
-  const handleRemoveMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals', minute: number, indexInType?: number) => {
+  const handleRemoveMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals', minuteStr: string, indexInType?: number) => {
     setPlayerStats(prev => {
       const next = { ...prev };
       const player = next[playerId];
       if (!player) return prev;
+
+      if (type === 'substitution') {
+        const playerInId = player.substituted_for;
+        next[playerId] = {
+          ...player,
+          substituted_for: undefined,
+          substituted_minute: undefined,
+          minutes_played: 90
+        };
+        if (playerInId && next[playerInId]) {
+          next[playerInId] = {
+            ...next[playerInId],
+            minutes_played: 0,
+            position: ''
+          };
+        }
+        return next;
+      }
 
       const eventMin = { ...player.event_minutes };
 
@@ -395,18 +490,22 @@ export const MatchReport: React.FC = () => {
           event_minutes: eventMin
         };
       } else {
-        const arr = [...(eventMin[type] || [])];
-        const targetIdx = indexInType !== undefined ? indexInType : arr.indexOf(minute);
-        if (targetIdx !== -1) {
-          arr.splice(targetIdx, 1);
-        }
-        eventMin[type] = arr;
+        const evType = type as 'goals' | 'assists' | 'yellow_cards' | 'conceded_goals' | 'own_goals' | 'penalty_goals' | 'conceded_penalty_goals';
+        if (indexInType !== undefined) {
+          const arr = [...(eventMin[evType] || [])];
+          arr.splice(indexInType, 1);
+          eventMin[evType] = arr;
 
-        next[playerId] = {
-          ...player,
-          [type]: arr.length,
-          event_minutes: eventMin
-        };
+          const countField = evType === 'penalty_goals' ? 'goals' : evType === 'conceded_penalty_goals' ? 'conceded_goals' : evType;
+          const total = (eventMin[countField === 'goals' ? 'goals' : countField === 'conceded_goals' ? 'conceded_goals' : evType]?.length || 0) + 
+                        (countField === 'goals' ? (eventMin.penalty_goals?.length || 0) : countField === 'conceded_goals' ? (eventMin.conceded_penalty_goals?.length || 0) : 0);
+
+          next[playerId] = {
+            ...player,
+            [countField]: total,
+            event_minutes: eventMin
+          };
+        }
       }
 
       return next;
@@ -414,14 +513,16 @@ export const MatchReport: React.FC = () => {
   };
 
   // Consolidar todos los eventos de forma ordenada para la línea de tiempo
+  // Consolidar todos los eventos de forma ordenada para la línea de tiempo
   const matchEvents = useMemo(() => {
     const eventsList: {
       id: string;
       playerId: string;
       playerName: string;
-      type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals';
-      minute: number;
+      type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals';
+      minute: string;
       indexInType: number;
+      extraInfo?: string;
     }[] = [];
 
     Object.values(playerStats).forEach(stat => {
@@ -429,74 +530,73 @@ export const MatchReport: React.FC = () => {
       const playerName = playerObj ? (playerObj.nickname || playerObj.full_name) : 'Jugador';
 
       stat.event_minutes.goals?.forEach((min, idx) => {
-        eventsList.push({
-          id: `${stat.player_id}-goals-${idx}-${min}`,
-          playerId: stat.player_id,
-          playerName,
-          type: 'goals',
-          minute: min,
-          indexInType: idx
-        });
+        eventsList.push({ id: `${stat.player_id}-goals-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'goals', minute: min, indexInType: idx });
+      });
+      
+      stat.event_minutes.penalty_goals?.forEach((min, idx) => {
+        eventsList.push({ id: `${stat.player_id}-penalty_goals-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'penalty_goals', minute: min, indexInType: idx });
       });
 
       stat.event_minutes.conceded_goals?.forEach((min, idx) => {
-        eventsList.push({
-          id: `${stat.player_id}-conceded_goals-${idx}-${min}`,
-          playerId: stat.player_id,
-          playerName,
-          type: 'conceded_goals',
-          minute: min,
-          indexInType: idx
-        });
+        eventsList.push({ id: `${stat.player_id}-conceded_goals-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'conceded_goals', minute: min, indexInType: idx });
+      });
+      
+      stat.event_minutes.conceded_penalty_goals?.forEach((min, idx) => {
+        eventsList.push({ id: `${stat.player_id}-conceded_penalty_goals-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'conceded_penalty_goals', minute: min, indexInType: idx });
       });
 
       stat.event_minutes.own_goals?.forEach((min, idx) => {
-        eventsList.push({
-          id: `${stat.player_id}-own_goals-${idx}-${min}`,
-          playerId: stat.player_id,
-          playerName,
-          type: 'own_goals',
-          minute: min,
-          indexInType: idx
-        });
+        eventsList.push({ id: `${stat.player_id}-own_goals-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'own_goals', minute: min, indexInType: idx });
       });
 
       stat.event_minutes.assists?.forEach((min, idx) => {
-        eventsList.push({
-          id: `${stat.player_id}-assists-${idx}-${min}`,
-          playerId: stat.player_id,
-          playerName,
-          type: 'assists',
-          minute: min,
-          indexInType: idx
-        });
+        eventsList.push({ id: `${stat.player_id}-assists-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'assists', minute: min, indexInType: idx });
       });
 
       stat.event_minutes.yellow_cards?.forEach((min, idx) => {
-        eventsList.push({
-          id: `${stat.player_id}-yellow_cards-${idx}-${min}`,
-          playerId: stat.player_id,
-          playerName,
-          type: 'yellow_cards',
-          minute: min,
-          indexInType: idx
-        });
+        eventsList.push({ id: `${stat.player_id}-yellow_cards-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'yellow_cards', minute: min, indexInType: idx });
       });
 
       if (stat.red_card && stat.event_minutes.red_card !== null && stat.event_minutes.red_card !== undefined) {
+        eventsList.push({ id: `${stat.player_id}-red_card-${stat.event_minutes.red_card}`, playerId: stat.player_id, playerName, type: 'red_card', minute: stat.event_minutes.red_card, indexInType: 0 });
+      }
+
+      if (stat.substituted_minute && stat.substituted_for) {
+        const subInObj = dbPlayers.find(p => p.id === stat.substituted_for);
         eventsList.push({
-          id: `${stat.player_id}-red_card-${stat.event_minutes.red_card}`,
+          id: `${stat.player_id}-substitution-${stat.substituted_minute}`,
           playerId: stat.player_id,
           playerName,
-          type: 'red_card',
-          minute: stat.event_minutes.red_card,
-          indexInType: 0
+          type: 'substitution',
+          minute: `${stat.substituted_minute}'`,
+          indexInType: 0,
+          extraInfo: subInObj ? (subInObj.nickname || subInObj.full_name) : 'Jugador'
         });
       }
     });
 
-    return eventsList.sort((a, b) => a.minute - b.minute);
+    return eventsList.sort((a, b) => {
+      const getMin = (m: string) => {
+        const num = parseInt(m.replace(/\D/g, ''));
+        return isNaN(num) ? 0 : num;
+      };
+      return getMin(a.minute) - getMin(b.minute);
+    });
   }, [playerStats, dbPlayers]);
+
+  // Actualizar el resultado automáticamente basado en las estadísticas
+  useEffect(() => {
+    let newScoreUs = 0;
+    let newScoreThem = 0;
+    
+    Object.values(playerStats).forEach(stat => {
+      newScoreUs += stat.goals || 0;
+      newScoreThem += (stat.conceded_goals || 0) + (stat.own_goals || 0);
+    });
+    
+    setScoreUs(newScoreUs);
+    setScoreThem(newScoreThem);
+  }, [playerStats]);
 
   // Alternar el estado "convocado" de un jugador
   const handleToggleCallUp = (playerId: string) => {
@@ -571,6 +671,9 @@ export const MatchReport: React.FC = () => {
         red_card: p.red_card,
         positive_aspects: p.positive_aspects.trim() || null,
         improve_aspects: p.improve_aspects.trim() || null,
+        comments: p.comments?.trim() || undefined,
+        substituted_for: p.substituted_for || undefined,
+        substituted_minute: p.substituted_minute || undefined,
         event_minutes: p.event_minutes
       }));
 
@@ -648,6 +751,9 @@ export const MatchReport: React.FC = () => {
           red_card: local.red_card,
           positive_aspects: local.positive_aspects || null,
           improve_aspects: local.improve_aspects || null,
+          comments: local.comments || null,
+          substituted_for: local.substituted_for || null,
+          substituted_minute: local.substituted_minute || null,
           event_minutes: local.event_minutes
         } as import('../types').PlayerMatchStats;
       });
@@ -744,90 +850,88 @@ export const MatchReport: React.FC = () => {
         </div>
       </div>
 
-      {/* Marcador e Información de Estado */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 bg-brand-black-card/45 border border-brand-black-border p-5 rounded-2xl">
-        <div className="lg:col-span-4 space-y-3.5 text-left">
-          <span className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider block">Configuración de Encuentro</span>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Estado</label>
-              <select
-                value={matchStatus}
-                onChange={(e) => setMatchStatus(e.target.value as any)}
-                className="form-input bg-brand-black-bg text-xs py-1.5"
-              >
-                <option value="Programado">Programado</option>
-                <option value="Jugado">Jugado</option>
-                <option value="Suspendido">Suspendido</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Táctica Base</label>
-              <select
-                value={tacticalSystem}
-                onChange={(e) => setTacticalSystem(e.target.value)}
-                className="form-input bg-brand-black-bg text-xs py-1.5"
-              >
-                {Object.keys(FORMATIONS_SLOTS).map(sys => (
-                  <option key={sys} value={sys}>{sys}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Marcador Central */}
-        <div className="lg:col-span-8 flex items-center justify-center gap-6 py-2 border-t lg:border-t-0 lg:border-l border-brand-black-border lg:pl-6">
-          <div className="text-center">
-            <h4 className="text-xs font-bold text-brand-gray-muted mb-1.5">UD ATZENETA</h4>
-            <div className="w-14 h-14 bg-white/5 rounded-xl border border-brand-black-border flex items-center justify-center">
-              <img 
-                src="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png" 
-                alt="UD Atzeneta" 
-                className="w-10 h-10 object-contain"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3.5">
-            {matchStatus === 'Jugado' ? (
-              <>
-                <input
-                  type="number"
-                  min="0"
-                  value={scoreUs}
-                  onChange={(e) => setScoreUs(Math.max(0, parseInt(e.target.value) || 0))}
-                  className="w-16 h-16 bg-brand-black border-2 border-brand-black-border text-center text-3xl font-black rounded-2xl text-brand-gray-light focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 transition-all"
-                />
-                <span className="text-2xl font-black text-brand-gray-dark">-</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={scoreThem}
-                  onChange={(e) => setScoreThem(Math.max(0, parseInt(e.target.value) || 0))}
-                  className="w-16 h-16 bg-brand-black border-2 border-brand-black-border text-center text-3xl font-black rounded-2xl text-brand-gray-light focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 transition-all"
-                />
-              </>
-            ) : (
-              <span className="text-sm font-semibold text-brand-gray-muted italic bg-brand-black px-4 py-2 rounded-xl border border-brand-black-border">
-                {matchStatus === 'Programado' ? 'Pendiente de Jugar' : 'Partido Suspendido'}
-              </span>
-            )}
-          </div>
-
-          <div className="text-center">
-            <h4 className="text-xs font-bold text-brand-gray-muted mb-1.5 truncate max-w-[120px]">{matchData.rival.toUpperCase()}</h4>
-            <div className="w-14 h-14 bg-white/5 rounded-xl border border-brand-black-border flex items-center justify-center">
-              <span className="text-lg font-bold text-brand-red-600">{matchData.rival.substring(0, 3).toUpperCase()}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Grid Principal: Campograma vs Tabla de Jugadores */}
+      {/* Grid Principal: Lado Izquierdo vs Lado Derecho */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* LADO IZQUIERDO: Campograma */}
+        {/* LADO IZQUIERDO: Marcador y Campograma */}
         <div className="xl:col-span-5 space-y-4">
+          
+          {/* Marcador e Información de Estado */}
+          <div className="bg-brand-black-card/45 border border-brand-black-border p-5 rounded-2xl space-y-5">
+            <div className="space-y-3.5 text-left">
+              <span className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider block">Configuración de Encuentro</span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Estado</label>
+                  <div className="form-input bg-brand-black-bg text-xs py-1.5 h-[34px] flex items-center font-bold text-brand-gray-light border-brand-black-border">
+                    <span className={matchStatus === 'Jugado' ? 'text-emerald-400' : 'text-brand-gray-muted'}>{matchStatus}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Táctica Base</label>
+                  <select
+                    value={tacticalSystem}
+                    onChange={(e) => setTacticalSystem(e.target.value)}
+                    className="form-input bg-brand-black-bg text-xs py-1.5"
+                  >
+                    {Object.keys(FORMATIONS_SLOTS).map(sys => (
+                      <option key={sys} value={sys}>{sys}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Marcador Central */}
+            <div className="flex items-center justify-between gap-2 pt-5 border-t border-brand-black-border">
+              <div className="text-center w-[30%] flex flex-col items-center">
+                <div className="w-12 h-12 bg-white/5 rounded-xl border border-brand-black-border flex items-center justify-center mb-1.5">
+                  <img 
+                    src="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png" 
+                    alt="UD Atzeneta" 
+                    className="w-8 h-8 object-contain"
+                  />
+                </div>
+                <h4 className="text-[10px] font-bold text-brand-gray-muted leading-tight">UD ATZENETA</h4>
+              </div>
+
+              <div className="flex items-center gap-2 justify-center w-[40%]">
+                {matchStatus === 'Jugado' ? (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      value={scoreUs}
+                      readOnly
+                      className="w-12 h-12 bg-brand-black border border-brand-black-border text-center text-xl font-black rounded-xl text-brand-gray-light focus:outline-none cursor-default"
+                    />
+                    <span className="text-lg font-black text-brand-gray-dark">-</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={scoreThem}
+                      readOnly
+                      className="w-12 h-12 bg-brand-black border border-brand-black-border text-center text-xl font-black rounded-xl text-brand-gray-light focus:outline-none cursor-default"
+                    />
+                  </>
+                ) : (
+                  <span className="text-[10px] font-semibold text-brand-gray-muted italic bg-brand-black px-2 py-1 rounded-lg border border-brand-black-border text-center">
+                    {matchStatus === 'Programado' ? 'Pendiente' : 'Suspendido'}
+                  </span>
+                )}
+              </div>
+
+              <div className="text-center w-[30%] flex flex-col items-center">
+                <div className="w-12 h-12 bg-white/5 rounded-xl border border-brand-black-border flex items-center justify-center mb-1.5 p-1 overflow-hidden">
+                  <img 
+                    src={getTeamLogo(matchData.rival)} 
+                    alt="Escudo Rival" 
+                    className="w-full h-full object-contain" 
+                  />
+                </div>
+                <h4 className="text-[10px] font-bold text-brand-gray-muted truncate w-full leading-tight">{matchData.rival.toUpperCase()}</h4>
+              </div>
+            </div>
+          </div>
           <div className="dashboard-card p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-brand-black-border pb-3">
               <div>
@@ -865,8 +969,23 @@ export const MatchReport: React.FC = () => {
 
               {/* Render de los slots de la formación */}
               {currentSlots.map((slot, idx) => {
-                const placedPlayerId = lineup[idx];
-                const playerObj = dbPlayers.find(p => p.id === placedPlayerId);
+                const starterId = lineup[idx];
+                
+                // Construir la cadena de sustituciones para mostrar múltiples jugadores si los hay
+                const playerChain: Array<{ id: string, minute: number | null, stats: any }> = [];
+                
+                if (starterId && playerStats) {
+                  let currentId = starterId;
+                  let currentStats = playerStats[currentId];
+                  playerChain.push({ id: currentId, minute: null, stats: currentStats });
+                  
+                  while (currentStats?.substituted_for) {
+                    const subMinute = currentStats.substituted_minute || null;
+                    currentId = currentStats.substituted_for;
+                    currentStats = playerStats[currentId];
+                    playerChain.push({ id: currentId, minute: subMinute, stats: currentStats });
+                  }
+                }
 
                 return (
                   <div
@@ -878,7 +997,7 @@ export const MatchReport: React.FC = () => {
                     }}
                     className="absolute z-10 flex flex-col items-center select-none"
                   >
-                    {playerObj ? (
+                    {playerChain.length > 0 ? (
                       // Slot Ocupado
                       <div className="relative flex flex-col items-center">
                         <button
@@ -890,21 +1009,68 @@ export const MatchReport: React.FC = () => {
                           <X className="w-2.5 h-2.5" />
                         </button>
                         
-                        <button
-                          type="button"
-                          onClick={() => setActiveSlotForSelection(activeSlotForSelection === idx ? null : idx)}
-                          className="w-11 h-11 rounded-full bg-brand-black-card border-2 border-yellow-500 shadow-premium flex items-center justify-center overflow-hidden hover:scale-105 active:scale-95 transition-all"
-                        >
-                          {playerObj.photo_url ? (
-                            <img src={playerObj.photo_url} alt={playerObj.full_name} className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-xs font-black text-brand-gray-light">{playerObj.dorsal || '?'}</span>
-                          )}
-                        </button>
-                        
-                        <span className="mt-1 bg-brand-black-card/90 text-brand-gray-light text-[9px] font-bold px-1 py-0.5 rounded shadow border border-brand-black-border max-w-[65px] truncate text-center leading-none">
-                          {playerObj.nickname || playerObj.full_name.split(' ')[0]}
-                        </span>
+                        <div className="flex flex-row items-end gap-1.5 bg-black/30 p-1 rounded-2xl backdrop-blur-sm">
+                          {playerChain.map((chainItem, chainIdx) => {
+                            const pObj = dbPlayers.find(p => p.id === chainItem.id);
+                            if (!pObj) return null;
+                            const isStarter = chainIdx === 0;
+                            const activeStats = chainItem.stats;
+                            
+                            return (
+                              <div key={chainItem.id} className="relative flex flex-col items-center group">
+                                {chainItem.minute && (
+                                  <span className="absolute -top-4 bg-brand-black-card text-white border border-brand-red-600/30 text-[8.5px] font-black px-1 rounded whitespace-nowrap z-40 shadow-sm">
+                                    {chainItem.minute}'
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveSlotForSelection(activeSlotForSelection === idx ? null : idx)}
+                                  className={`relative ${isStarter ? 'w-11 h-11' : 'w-9 h-9 opacity-95'} rounded-full bg-brand-black-card border-2 ${isStarter ? 'border-yellow-500' : 'border-brand-gray-light'} shadow-premium flex items-center justify-center hover:scale-105 active:scale-95 transition-all`}
+                                >
+                                  <div className="w-full h-full rounded-full overflow-hidden">
+                                    {pObj.photo_url ? (
+                                      <img src={pObj.photo_url} alt={pObj.full_name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-brand-black-card text-[10px] font-black text-brand-gray-light">
+                                        {pObj.dorsal || '?'}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Badges de Eventos sobre el jugador */}
+                                  {activeStats && (
+                                    <>
+                                      {activeStats.goals > 0 && (
+                                        <span className="absolute -top-3 -left-3 bg-brand-black/90 text-[10px] rounded-full px-1 shadow border border-brand-black-border z-30">
+                                          ⚽{activeStats.goals > 1 ? `x${activeStats.goals}` : ''}
+                                        </span>
+                                      )}
+                                      {activeStats.assists > 0 && (
+                                        <span className="absolute -bottom-2 -left-3 bg-brand-black/90 text-[10px] rounded-full px-1 shadow border border-brand-black-border z-30">
+                                          🥾{activeStats.assists > 1 ? `x${activeStats.assists}` : ''}
+                                        </span>
+                                      )}
+                                      {(activeStats.yellow_cards > 0 || activeStats.red_card) && (
+                                        <div className="absolute -bottom-2 -right-3 flex -space-x-0.5 z-30">
+                                          {Array.from({ length: activeStats.yellow_cards }).map((_, i) => (
+                                            <span key={i} className="text-[10px] drop-shadow-md">🟨</span>
+                                          ))}
+                                          {activeStats.red_card && <span className="text-[10px] drop-shadow-md">🟥</span>}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </button>
+                                
+                                <span className={`mt-0.5 bg-brand-black-card/90 text-brand-gray-light font-bold px-1 py-0.5 rounded shadow border border-brand-black-border max-w-[55px] truncate text-center leading-none ${isStarter ? 'text-[9px]' : 'text-[7.5px]'}`}>
+                                  {pObj.nickname || pObj.full_name.split(' ')[0]}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : (
                       // Slot Vacío
@@ -975,175 +1141,205 @@ export const MatchReport: React.FC = () => {
             <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-3">
               <span className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider block text-left">Registrar Nueva Incidencia</span>
               
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end text-left">
-                <div>
-                  <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Futbolista</label>
-                  <select
-                    value={timelinePlayerId}
-                    onChange={(e) => {
-                      const pId = e.target.value;
-                      setTimelinePlayerId(pId);
-                      // Si el jugador seleccionado no es portero, cambiar tipo de evento si estaba seleccionado gol encajado
-                      const playerObj = dbPlayers.find(p => p.id === pId);
-                      const stats = playerStats[pId];
-                      const isGK = playerObj?.position === 'Portero' || stats?.position === 'GK';
-                      if (!isGK && timelineEventType === 'conceded_goals') {
-                        setTimelineEventType('goals');
-                      }
-                    }}
-                    className="form-input bg-brand-black-bg text-xs py-1 px-2.5 w-full"
-                  >
-                    <option value="">-- Seleccionar --</option>
-                    {calledUpPlayers.map(p => {
-                      const stats = playerStats[p.id];
-                      const isGK = p.position === 'Portero' || stats?.position === 'GK';
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {p.dorsal ? `(${p.dorsal}) ` : ''}{p.nickname || p.full_name} {isGK ? ' (POR)' : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Evento</label>
+              <div className="space-y-4 text-left mt-3">
+                {/* Paso 1: Evento */}
+                <div className="bg-brand-black/30 p-2.5 rounded border border-brand-black-border">
+                  <label className="text-[10px] font-bold text-brand-gray-light uppercase block mb-1.5 flex items-center gap-1.5">
+                    <span className="bg-brand-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">1</span> 
+                    ¿Qué ha pasado?
+                  </label>
                   <select
                     value={timelineEventType}
-                    onChange={(e) => setTimelineEventType(e.target.value as any)}
-                    className="form-input bg-brand-black-bg text-xs py-1 px-2.5 w-full"
+                    onChange={(e) => {
+                      setTimelineEventType(e.target.value as any);
+                      // Reset player selection when changing event type to avoid mismatches
+                      setTimelinePlayerId('');
+                      setTimelinePlayerInId('');
+                      setTimelinePlayerInPosition('');
+                    }}
+                    className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
                   >
+                    <option value="">-- Selecciona el tipo de incidencia --</option>
                     <option value="goals">⚽ Gol</option>
+                    <option value="penalty_goals">⚽ Gol de Penalti</option>
                     <option value="assists">🥾 Asistencia</option>
-                    {(() => {
-                      const playerObj = dbPlayers.find(p => p.id === timelinePlayerId);
-                      const stats = playerStats[timelinePlayerId];
-                      const isGK = playerObj?.position === 'Portero' || stats?.position === 'GK';
-                      if (isGK) {
-                        return <option value="conceded_goals">🥅 Gol Encajado</option>;
-                      }
-                      return null;
-                    })()}
+                    <option value="conceded_goals">🥅 Gol en Contra</option>
+                    <option value="conceded_penalty_goals">🥅 Gol Recibido Penalti</option>
                     <option value="own_goals">💥 Gol en Propia</option>
                     <option value="yellow_cards">🟨 Tarjeta Amarilla</option>
                     <option value="red_card">🟥 Tarjeta Roja</option>
+                    <option value="substitution">🔄 Cambio</option>
                   </select>
                 </div>
 
-                <div className="flex gap-2">
-                  <div className="w-16 shrink-0">
-                    <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Minuto</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="120"
-                      value={timelineMinute}
-                      onChange={(e) => setTimelineMinute(Math.max(1, Math.min(120, parseInt(e.target.value) || 1)))}
-                      className="form-input bg-brand-black-bg text-xs py-1 px-2 text-center w-full"
-                    />
-                  </div>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!timelinePlayerId) {
-                        showToast('error', 'Campos requeridos', 'Debes seleccionar un futbolista.');
-                        return;
-                      }
-                      
-                      // Validar tarjeta roja única
-                      if (timelineEventType === 'red_card') {
-                        const stats = playerStats[timelinePlayerId];
-                        if (stats && stats.red_card) {
-                          showToast('error', 'Incidencia inválida', 'Este jugador ya tiene una tarjeta roja registrada.');
-                          return;
-                        }
-                      }
-
-                      handleAddMatchEvent(timelinePlayerId, timelineEventType, timelineMinute);
-                      showToast('success', 'Incidencia añadida', 'El evento ha sido registrado en la cronología.');
-                    }}
-                    className="btn-primary py-1.5 px-3 text-xs font-bold w-full flex justify-center items-center"
-                  >
-                    Añadir
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Listado de eventos cronológico */}
-            <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1 no-scrollbar border border-brand-black-border p-2.5 rounded-xl bg-brand-black/10">
-              {matchEvents.length === 0 ? (
-                <div className="text-center py-6 text-brand-gray-muted text-xs italic">
-                  Sin incidencias registradas.
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {matchEvents.map(evt => {
-                    let icon = '⚽';
-                    let typeText = 'Gol';
-                    let colorClass = 'text-brand-gray-light';
+                {/* Paso 2: Futbolista(s) */}
+                {timelineEventType !== '' && (
+                  <div className="bg-brand-black/30 p-2.5 rounded border border-brand-black-border animate-fadeIn space-y-3">
+                    <label className="text-[10px] font-bold text-brand-gray-light uppercase block mb-1.5 flex items-center gap-1.5">
+                      <span className="bg-brand-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">2</span> 
+                      ¿Quién {timelineEventType === 'substitution' ? 'está implicado en el cambio' : 'es el protagonista'}?
+                    </label>
                     
-                    if (evt.type === 'assists') {
-                      icon = '🥾';
-                      typeText = 'Asistencia';
-                      colorClass = 'text-emerald-400';
-                    } else if (evt.type === 'yellow_cards') {
-                      icon = '🟨';
-                      typeText = 'T. Amarilla';
-                      colorClass = 'text-yellow-400';
-                    } else if (evt.type === 'red_card') {
-                      icon = '🟥';
-                      typeText = 'T. Roja';
-                      colorClass = 'text-red-500';
-                    } else if (evt.type === 'conceded_goals') {
-                      icon = '🥅';
-                      typeText = 'Gol Encajado';
-                      colorClass = 'text-cyan-400';
-                    } else if (evt.type === 'own_goals') {
-                      icon = '💥';
-                      typeText = 'Gol en Propia';
-                      colorClass = 'text-orange-400';
-                    }
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">
+                          {timelineEventType === 'substitution' ? 'SALE DEL CAMPO' : 'Futbolista'}
+                        </label>
+                        <select
+                          value={timelinePlayerId}
+                          onChange={(e) => {
+                            const pId = e.target.value;
+                            setTimelinePlayerId(pId);
+                            const playerObj = dbPlayers.find(p => p.id === pId);
+                            const stats = playerStats[pId];
+                            const isGK = playerObj?.position === 'Portero' || stats?.position === 'GK';
+                            if (!isGK && timelineEventType === 'conceded_goals') {
+                              setTimelineEventType('goals');
+                            }
+                          }}
+                          className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
+                        >
+                          <option value="">-- Seleccionar --</option>
+                          {calledUpPlayers.map(p => {
+                            const stats = playerStats[p.id];
+                            const isGK = p.position === 'Portero' || stats?.position === 'GK';
+                            // Para cambios, lo ideal es que salga un titular o alguien ya en campo, pero permitimos todos de la convocatoria
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.dorsal ? `(${p.dorsal}) ` : ''}{p.nickname || p.full_name} {isGK ? ' (POR)' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
 
-                    return (
-                      <div
-                        key={evt.id}
-                        className="flex items-center justify-between p-2 bg-brand-black-card hover:bg-brand-black-hover rounded-lg border border-brand-black-border transition-colors text-xs"
-                      >
-                        <div className="flex items-center gap-2 text-left">
-                          <span className="font-bold text-[10px] text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded min-w-[32px] text-center">
-                            {evt.minute}'
-                          </span>
-                          <span className="text-sm leading-none shrink-0">{icon}</span>
+                      {timelineEventType === 'substitution' && (
+                        <div className="grid grid-cols-2 gap-2 animate-fadeIn border-t border-brand-black-border pt-2.5">
                           <div>
-                            <span className="font-semibold text-brand-gray-light block leading-tight">
-                              {evt.playerName}
-                            </span>
-                            <span className={`text-[9px] font-medium block uppercase ${colorClass}`}>
-                              {typeText}
-                            </span>
+                            <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1 text-cyan-400">ENTRA</label>
+                            <select
+                              value={timelinePlayerInId}
+                              onChange={(e) => setTimelinePlayerInId(e.target.value)}
+                              className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
+                            >
+                              <option value="">-- Suplente --</option>
+                              {calledUpPlayers.filter(p => !playerStats[p.id]?.is_starter).map(p => (
+                                <option key={p.id} value={p.id}>{p.nickname || p.full_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Posición</label>
+                            <select
+                              value={timelinePlayerInPosition}
+                              onChange={(e) => setTimelinePlayerInPosition(e.target.value)}
+                              className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
+                            >
+                              <option value="">Selecciona...</option>
+                              <option value="Portero">Portero</option>
+                              <option value="Lateral Derecho">Lateral Derecho</option>
+                              <option value="Central Derecho">Central Derecho</option>
+                              <option value="Central">Central</option>
+                              <option value="Central Izquierdo">Central Izquierdo</option>
+                              <option value="Lateral Izquierdo">Lateral Izquierdo</option>
+                              <option value="Pivote">Pivote</option>
+                              <option value="Interior Derecho">Interior Derecho</option>
+                              <option value="Interior">Interior</option>
+                              <option value="Interior Izquierdo">Interior Izquierdo</option>
+                              <option value="Mediapunta">Mediapunta</option>
+                              <option value="Extremo Derecho">Extremo Derecho</option>
+                              <option value="Extremo Izquierdo">Extremo Izquierdo</option>
+                              <option value="Delantero Centro">Delantero Centro</option>
+                            </select>
                           </div>
                         </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
+                {/* Paso 3: Momento y Añadir */}
+                {timelineEventType !== '' && timelinePlayerId !== '' && (timelineEventType !== 'substitution' || (timelinePlayerInId !== '' && timelinePlayerInPosition !== '')) && (
+                  <div className="bg-brand-black/30 p-2.5 rounded border border-brand-black-border animate-fadeIn">
+                    <label className="text-[10px] font-bold text-brand-gray-light uppercase block mb-2 flex items-center gap-1.5">
+                      <span className="bg-brand-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">3</span> 
+                      ¿Cuándo ha ocurrido?
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <div className="flex gap-2 w-full sm:w-auto flex-1">
+                        <div className="w-1/2 sm:w-28 shrink-0">
+                          <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Parte</label>
+                          <select
+                            value={timelinePeriod}
+                            onChange={(e) => setTimelinePeriod(e.target.value)}
+                            className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
+                          >
+                            <option value="1T">1ª Parte</option>
+                            <option value="2T">2ª Parte</option>
+                            <option value="1P">Prórroga 1</option>
+                            <option value="2P">Prórroga 2</option>
+                            <option value="PEN">Penaltis</option>
+                          </select>
+                        </div>
+                        <div className="w-1/2 sm:w-20 shrink-0">
+                          <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Minuto</label>
+                          <input
+                            type="text"
+                            placeholder="Ej: 45+2"
+                            value={timelineMinute}
+                            onChange={(e) => setTimelineMinute(e.target.value)}
+                            className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 text-center w-full border-brand-black-border"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="w-full sm:w-auto mt-2 sm:mt-0 flex items-end">
                         <button
                           type="button"
                           onClick={() => {
-                            if (window.confirm(`¿Deseas eliminar este evento (${typeText} en min. ${evt.minute})?`)) {
-                              handleRemoveMatchEvent(evt.playerId, evt.type, evt.minute, evt.indexInType);
-                              showToast('success', 'Incidencia eliminada', 'El evento ha sido removido.');
+                            if (!timelinePlayerId) {
+                              showToast('error', 'Campos requeridos', 'Debes seleccionar un futbolista.');
+                              return;
                             }
+                            
+                            // Validar tarjeta roja única
+                            if (timelineEventType === 'red_card') {
+                              const stats = playerStats[timelinePlayerId];
+                              if (stats && stats.red_card) {
+                                showToast('error', 'Incidencia inválida', 'Este jugador ya tiene una tarjeta roja registrada.');
+                                return;
+                              }
+                            }
+                            
+                            const finalMinute = `${timelinePeriod} ${timelineMinute}`;
+
+                            if (timelineEventType === 'substitution') {
+                              if (!timelinePlayerInId) {
+                                showToast('error', 'Campos requeridos', 'Debes seleccionar el jugador que entra.');
+                                return;
+                              }
+                              handleAddMatchEvent(timelinePlayerId, timelineEventType, finalMinute, timelinePlayerInId, timelinePlayerInPosition);
+                              // Reset forms
+                              setTimelinePlayerInId('');
+                              setTimelinePlayerInPosition('');
+                            } else {
+                              handleAddMatchEvent(timelinePlayerId, timelineEventType, finalMinute);
+                            }
+                            showToast('success', 'Incidencia añadida', 'El evento ha sido registrado en la cronología.');
+                            
+                            // Reset form to step 1 automatically to speed up next entry
+                            setTimelineEventType('');
+                            setTimelinePlayerId('');
                           }}
-                          className="p-1 hover:text-brand-red-600 text-brand-gray-muted rounded transition-colors"
-                          title="Eliminar incidencia"
+                          className="btn-primary py-2 px-4 text-xs font-bold w-full h-[34px] flex justify-center items-center"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          Guardar Incidencia
                         </button>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1207,29 +1403,35 @@ export const MatchReport: React.FC = () => {
             </div>
 
             {/* Listado en tabla */}
-            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1 no-scrollbar border border-brand-black-border p-2.5 rounded-xl bg-brand-black/10">
+            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2 border border-brand-black-border p-2 rounded-xl bg-brand-black/10">
               {calledUpPlayers.length === 0 ? (
-                <div className="text-center py-12 text-brand-gray-muted text-xs italic">
+                <div className="col-span-1 2xl:col-span-2 text-center py-12 text-brand-gray-muted text-xs italic">
                   No hay jugadores en la convocatoria. Haz clic en "Convocar Jugador" para agregarlos al acta.
                 </div>
               ) : (
-                ['Titulares (XI Inicial)', 'Suplentes (Banquillo)'].map(group => {
+                ['Titulares (XI Inicial)', 'Suplentes (Banquillo) 🪑'].map(group => {
                   const isStarterGroup = group.startsWith('Titulares');
                   const list = calledUpPlayers.filter(p => {
                     const stats = playerStats[p.id];
                     return stats && stats.is_starter === isStarterGroup;
                   });
 
-                  if (list.length === 0) return null;
-
                   return (
-                    <div key={group} className="space-y-2">
-                      <div className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider px-1">
-                        {group} ({list.length})
+                    <div key={group} className="space-y-2 bg-brand-black/30 p-2.5 rounded-xl border-2 border-brand-black-border relative">
+                      {/* Título de la columna */}
+                      <div className="flex items-center gap-2 border-b border-brand-black-border/50 pb-1.5">
+                        <div className="w-1.5 h-3.5 bg-brand-red-600 rounded-full"></div>
+                        <div className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider">
+                          {group} ({list.length})
+                        </div>
                       </div>
                       
-                      <div className="space-y-2">
-                        {list.map(player => {
+                      <div className="space-y-1">
+                        {list.length === 0 ? (
+                          <div className="text-[10px] text-brand-gray-muted text-center py-4 italic border border-dashed border-brand-black-border rounded-xl">
+                            Ningún jugador en esta lista.
+                          </div>
+                        ) : list.map(player => {
                           const stats = playerStats[player.id];
                           const isGK = player.position === 'Portero' || stats.position === 'GK';
                           const hasEvents = stats.goals > 0 || (stats.conceded_goals || 0) > 0 || (stats.own_goals || 0) > 0 || stats.assists > 0 || stats.yellow_cards > 0 || stats.red_card;
@@ -1238,42 +1440,43 @@ export const MatchReport: React.FC = () => {
                           return (
                             <div 
                               key={player.id}
-                              className={`p-3 rounded-xl border transition-all ${
+                              className={`p-1.5 rounded-lg border transition-all ${
                                 isExpanded 
-                                  ? 'bg-brand-black/50 border-brand-red-600/35' 
-                                  : 'bg-brand-black-card border-brand-black-border hover:border-brand-black-border/80'
+                                  ? 'bg-brand-black/80 border-brand-red-600/50 shadow-md' 
+                                  : 'bg-brand-black-card border-brand-black-border hover:border-brand-gray-dark hover:bg-brand-black-hover'
                               }`}
                             >
-                              {/* Row principal */}
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 text-left">
-                                <div className="flex items-center gap-3">
+                              {/* Row principal (Una sola línea) */}
+                              <div className="flex flex-row items-center justify-between gap-1 text-left">
+                                {/* Info del Jugador */}
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                   {/* Avatar */}
-                                  <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                                  <div className="w-6 h-6 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
                                     {player.photo_url ? (
                                       <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
                                     ) : (
-                                      <span className="text-xs font-black text-brand-gray-dark">{player.dorsal || '?'}</span>
+                                      <span className="text-[9px] font-black text-brand-gray-dark">{player.dorsal || '?'}</span>
                                     )}
                                   </div>
-                                  <div>
-                                    <div className="flex items-center gap-2">
+                                  <div className="truncate flex-1 min-w-0">
+                                    <div className="flex items-center gap-1">
                                       {player.dorsal && (
-                                        <span className="text-[9px] font-black text-brand-red-600 bg-brand-red-600/10 px-1 rounded">
+                                        <span className="text-[9px] font-mono font-black text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded shadow-sm shrink-0 leading-none">
                                           {player.dorsal}
                                         </span>
                                       )}
-                                      <span className="text-xs font-bold text-brand-gray-light">
+                                      <span className="text-[10px] font-bold text-brand-gray-light truncate" title={player.nickname || player.full_name}>
                                         {player.nickname || player.full_name}
                                       </span>
                                     </div>
-                                    <div className="text-[9px] text-brand-gray-muted mt-0.5 flex items-center gap-1.5">
+                                    <div className="text-[8px] text-brand-gray-muted mt-0.5 flex items-center gap-1 overflow-hidden">
                                       {stats.is_starter ? (
-                                        <span className="text-yellow-500 font-semibold">Titular ({stats.position})</span>
+                                        <span className="text-yellow-500 font-semibold truncate shrink-0">Titular ({stats.position})</span>
                                       ) : (
-                                        <span className="text-brand-gray-muted font-medium">Suplente</span>
+                                        <span className="text-brand-gray-muted font-medium truncate shrink-0">Suplente</span>
                                       )}
                                       {hasEvents && (
-                                        <span className="flex items-center gap-1 bg-brand-black-border/60 px-1 rounded text-brand-gray-light leading-none">
+                                        <span className="flex items-center gap-0.5 bg-brand-black-border/60 px-1 rounded text-brand-gray-light leading-none shrink-0">
                                           {Array.from({ length: stats.goals }).map((_, i) => <span key={i}>⚽</span>)}
                                           {(stats.conceded_goals || 0) > 0 && Array.from({ length: stats.conceded_goals }).map((_, i) => <span key={i}>🥅</span>)}
                                           {(stats.own_goals || 0) > 0 && Array.from({ length: stats.own_goals }).map((_, i) => <span key={i}>💥</span>)}
@@ -1286,29 +1489,29 @@ export const MatchReport: React.FC = () => {
                                   </div>
                                 </div>
 
-                                {/* Inputs rápidos */}
-                                <div className="grid grid-cols-6 gap-2 sm:gap-3 items-center shrink-0">
+                                {/* Inputs rápidos (alineados horizontalmente) */}
+                                <div className="flex items-center gap-0.5 shrink-0">
                                   {/* Minutos */}
-                                  <div className="text-center">
-                                    <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5">Minutos</span>
+                                  <div className="text-center w-[36px]">
+                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Min</span>
                                     <input
                                       type="number"
                                       min="0"
                                       max="120"
-                                      className="form-input text-xs py-0.5 px-1.5 text-center w-12 bg-brand-black-bg"
+                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0.5 text-center w-full bg-brand-black-bg"
                                       value={stats.minutes_played}
                                       onChange={(e) => handleStatChange(player.id, 'minutes_played', Math.max(0, parseInt(e.target.value) || 0))}
                                     />
                                   </div>
                                   
                                   {/* Goles */}
-                                  <div className="text-center">
-                                    <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5">Goles</span>
+                                  <div className="text-center w-[24px]">
+                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Gol</span>
                                     <input
                                       type="number"
                                       min="0"
                                       max="10"
-                                      className="form-input text-xs py-0.5 px-1.5 text-center w-10 bg-brand-black-bg"
+                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
                                       value={stats.goals}
                                       onChange={(e) => handleStatChange(player.id, 'goals', Math.max(0, parseInt(e.target.value) || 0))}
                                     />
@@ -1316,25 +1519,25 @@ export const MatchReport: React.FC = () => {
 
                                   {/* Asist / G. Enc */}
                                   {isGK ? (
-                                    <div className="text-center">
-                                      <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5" title="Goles Encajados">G. Enc</span>
+                                    <div className="text-center w-[24px]">
+                                      <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none" title="Goles Encajados">G.E</span>
                                       <input
                                         type="number"
                                         min="0"
                                         max="50"
-                                        className="form-input text-xs py-0.5 px-1.5 text-center w-10 bg-brand-black-bg"
+                                        className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
                                         value={stats.conceded_goals || 0}
                                         onChange={(e) => handleStatChange(player.id, 'conceded_goals', Math.max(0, parseInt(e.target.value) || 0))}
                                       />
                                     </div>
                                   ) : (
-                                    <div className="text-center">
-                                      <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5">Asist</span>
+                                    <div className="text-center w-[24px]">
+                                      <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Ast</span>
                                       <input
                                         type="number"
                                         min="0"
                                         max="10"
-                                        className="form-input text-xs py-0.5 px-1.5 text-center w-10 bg-brand-black-bg"
+                                        className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
                                         value={stats.assists}
                                         onChange={(e) => handleStatChange(player.id, 'assists', Math.max(0, parseInt(e.target.value) || 0))}
                                       />
@@ -1342,23 +1545,23 @@ export const MatchReport: React.FC = () => {
                                   )}
 
                                   {/* Gol en propia (P.P.) */}
-                                  <div className="text-center">
-                                    <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5" title="Goles en propia puerta">P.P.</span>
+                                  <div className="text-center w-[24px]">
+                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none" title="Goles en propia puerta">P.P</span>
                                     <input
                                       type="number"
                                       min="0"
                                       max="10"
-                                      className="form-input text-xs py-0.5 px-1.5 text-center w-10 bg-brand-black-bg"
+                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
                                       value={stats.own_goals || 0}
                                       onChange={(e) => handleStatChange(player.id, 'own_goals', Math.max(0, parseInt(e.target.value) || 0))}
                                     />
                                   </div>
 
                                   {/* Amarillas */}
-                                  <div className="text-center">
-                                    <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5">Amar.</span>
+                                  <div className="text-center w-[26px]">
+                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">TA</span>
                                     <select
-                                      className="form-input text-xs py-0.5 px-1 w-11 bg-brand-black-bg"
+                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0 w-full bg-brand-black-bg text-center appearance-none"
                                       value={stats.yellow_cards}
                                       onChange={(e) => handleStatChange(player.id, 'yellow_cards', parseInt(e.target.value) || 0)}
                                     >
@@ -1369,12 +1572,12 @@ export const MatchReport: React.FC = () => {
                                   </div>
 
                                   {/* Roja */}
-                                  <div className="text-center flex flex-col items-center">
-                                    <span className="text-[8px] font-bold text-brand-gray-muted uppercase block mb-0.5">Roja</span>
+                                  <div className="text-center w-[22px] flex flex-col items-center">
+                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">TR</span>
                                     <button
                                       type="button"
                                       onClick={() => handleStatChange(player.id, 'red_card', !stats.red_card)}
-                                      className={`text-[9px] font-bold w-9 py-0.5 rounded border transition-all ${
+                                      className={`text-[8px] font-bold w-full h-[20px] flex items-center justify-center rounded border transition-all ${
                                         stats.red_card
                                           ? 'bg-red-950/40 text-red-500 border-red-800'
                                           : 'bg-brand-black-bg text-brand-gray-muted border-brand-black-border hover:border-brand-gray-dark'
@@ -1385,32 +1588,23 @@ export const MatchReport: React.FC = () => {
                                   </div>
                                 </div>
 
-                                {/* Botones de fila */}
-                                <div className="flex items-center gap-1.5 justify-end">
+                                {/* Botón Expandir */}
+                                <div className="flex items-center shrink-0 border-l border-brand-black-border pl-1 ml-0.5">
                                   <button
                                     type="button"
                                     onClick={() => setExpandedPlayerId(isExpanded ? null : player.id)}
-                                    className="p-1 text-brand-gray-muted hover:text-brand-gray-light bg-brand-black-bg rounded border border-brand-black-border transition-all"
+                                    className={`p-0.5 rounded transition-all ${
+                                      isExpanded 
+                                        ? 'text-brand-red-600 bg-brand-red-600/10 hover:bg-brand-red-600/20' 
+                                        : 'text-brand-gray-muted hover:text-brand-gray-light bg-brand-black-bg border border-brand-black-border hover:border-brand-gray-dark'
+                                    }`}
                                     title={isExpanded ? 'Colapsar detalles' : 'Editar detalles del evento'}
                                   >
                                     {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                   </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`¿Deseas desconvocar a ${player.nickname || player.full_name}?`)) {
-                                        handleToggleCallUp(player.id);
-                                      }
-                                    }}
-                                    className="p-1 text-brand-gray-muted hover:text-brand-red-600 bg-brand-black-bg rounded border border-brand-black-border transition-all"
-                                    title="Desconvocar"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
                                 </div>
                               </div>
-
+                              
                               {/* Panel Expandido: Minutos de Eventos y Comentarios cualitativos */}
                               {isExpanded && (
                                 <div className="mt-4 border-t border-brand-black-border pt-4 space-y-4 animate-fadeIn">
@@ -1422,14 +1616,25 @@ export const MatchReport: React.FC = () => {
                                         {/* Minutos Goles */}
                                         {stats.event_minutes.goals?.map((min, gIdx) => (
                                           <div key={`g-${gIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-brand-gray-muted truncate">⚽ Gol {gIdx + 1} (Min):</span>
+                                            <span className="text-[10px] text-brand-gray-muted truncate">⚽ Gol {gIdx + 1}:</span>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max="120"
-                                              className="form-input text-xs w-16 py-1 px-1.5 text-center bg-brand-black"
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
                                               value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'goals', gIdx, Math.max(0, parseInt(e.target.value) || 0))}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'goals', gIdx, e.target.value)}
+                                            />
+                                          </div>
+                                        ))}
+
+                                        {/* Minutos Goles Penalti */}
+                                        {stats.event_minutes.penalty_goals?.map((min, pIdx) => (
+                                          <div key={`p-${pIdx}`} className="flex items-center gap-1.5">
+                                            <span className="text-[10px] text-brand-gray-muted truncate">⚽ Penalti {pIdx + 1}:</span>
+                                            <input
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
+                                              value={min || ''}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'penalty_goals', pIdx, e.target.value)}
                                             />
                                           </div>
                                         ))}
@@ -1437,14 +1642,25 @@ export const MatchReport: React.FC = () => {
                                         {/* Minutos Goles Encajados */}
                                         {isGK && stats.event_minutes.conceded_goals?.map((min, cIdx) => (
                                           <div key={`c-${cIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Encajado {cIdx + 1} (Min):</span>
+                                            <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Encajado {cIdx + 1}:</span>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max="120"
-                                              className="form-input text-xs w-16 py-1 px-1.5 text-center bg-brand-black"
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
                                               value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'conceded_goals', cIdx, Math.max(0, parseInt(e.target.value) || 0))}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'conceded_goals', cIdx, e.target.value)}
+                                            />
+                                          </div>
+                                        ))}
+
+                                        {/* Minutos Goles Encajados Penalti */}
+                                        {isGK && stats.event_minutes.conceded_penalty_goals?.map((min, cpIdx) => (
+                                          <div key={`cp-${cpIdx}`} className="flex items-center gap-1.5">
+                                            <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Pen. Encaj {cpIdx + 1}:</span>
+                                            <input
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
+                                              value={min || ''}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'conceded_penalty_goals', cpIdx, e.target.value)}
                                             />
                                           </div>
                                         ))}
@@ -1452,14 +1668,12 @@ export const MatchReport: React.FC = () => {
                                         {/* Minutos Goles en Propia */}
                                         {stats.event_minutes.own_goals?.map((min, oIdx) => (
                                           <div key={`o-${oIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-orange-400 font-semibold truncate">💥 Propia {oIdx + 1} (Min):</span>
+                                            <span className="text-[10px] text-orange-400 font-semibold truncate">💥 Propia {oIdx + 1}:</span>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max="120"
-                                              className="form-input text-xs w-16 py-1 px-1.5 text-center bg-brand-black"
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
                                               value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'own_goals', oIdx, Math.max(0, parseInt(e.target.value) || 0))}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'own_goals', oIdx, e.target.value)}
                                             />
                                           </div>
                                         ))}
@@ -1467,14 +1681,12 @@ export const MatchReport: React.FC = () => {
                                         {/* Minutos Asistencias */}
                                         {stats.event_minutes.assists?.map((min, aIdx) => (
                                           <div key={`a-${aIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-brand-gray-muted truncate">🥾 Asist {aIdx + 1} (Min):</span>
+                                            <span className="text-[10px] text-brand-gray-muted truncate">🥾 Asist {aIdx + 1}:</span>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max="120"
-                                              className="form-input text-xs w-16 py-1 px-1.5 text-center bg-brand-black"
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
                                               value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'assists', aIdx, Math.max(0, parseInt(e.target.value) || 0))}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'assists', aIdx, e.target.value)}
                                             />
                                           </div>
                                         ))}
@@ -1482,14 +1694,12 @@ export const MatchReport: React.FC = () => {
                                         {/* Minutos Amarillas */}
                                         {stats.event_minutes.yellow_cards?.map((min, yIdx) => (
                                           <div key={`y-${yIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-yellow-500 font-semibold truncate">🟨 Tarjeta {yIdx + 1} (Min):</span>
+                                            <span className="text-[10px] text-yellow-500 font-semibold truncate">🟨 Tarjeta {yIdx + 1}:</span>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max="120"
-                                              className="form-input text-xs w-16 py-1 px-1.5 text-center bg-brand-black"
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
                                               value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'yellow_cards', yIdx, Math.max(0, parseInt(e.target.value) || 0))}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'yellow_cards', yIdx, e.target.value)}
                                             />
                                           </div>
                                         ))}
@@ -1497,14 +1707,12 @@ export const MatchReport: React.FC = () => {
                                         {/* Minutos Roja */}
                                         {stats.red_card && (
                                           <div className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-red-500 font-semibold truncate">🟥 Tarjeta Roja (Min):</span>
+                                            <span className="text-[10px] text-red-500 font-semibold truncate">🟥 Roja:</span>
                                             <input
-                                              type="number"
-                                              min="1"
-                                              max="120"
-                                              className="form-input text-xs w-16 py-1 px-1.5 text-center bg-brand-black"
+                                              type="text"
+                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
                                               value={stats.event_minutes.red_card || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'red_card', 0, Math.max(0, parseInt(e.target.value) || 0))}
+                                              onChange={(e) => handleEventMinuteChange(player.id, 'red_card', 0, e.target.value)}
                                             />
                                           </div>
                                         )}
@@ -1515,6 +1723,17 @@ export const MatchReport: React.FC = () => {
                                       Sin incidencias cargadas (goles, goles encajados, propia puerta, tarjetas, asistencias) para especificar minutos de eventos.
                                     </div>
                                   )}
+
+                                  {/* Comentarios del Jugador */}
+                                  <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-2">
+                                    <span className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider block">Comentarios / Observaciones</span>
+                                    <textarea
+                                      className="form-input text-xs w-full p-2 bg-brand-black min-h-[60px]"
+                                      placeholder="Añade un comentario sobre la actuación del jugador..."
+                                      value={stats.comments || ''}
+                                      onChange={(e) => handleStatChange(player.id, 'comments', e.target.value)}
+                                    />
+                                  </div>
 
                                   {/* Aspectos Cualitativos del Jugador */}
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1546,6 +1765,116 @@ export const MatchReport: React.FC = () => {
                     </div>
                   );
                 })
+              )}
+            </div>
+          </div>
+
+          {/* Cronología de Eventos (Movida a la derecha) */}
+          <div className="dashboard-card p-5 space-y-4">
+            <div className="border-b border-brand-black-border pb-3 text-left">
+              <h3 className="text-sm font-bold text-brand-gray-light flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-brand-red-600" /> Línea de Tiempo de Eventos
+              </h3>
+              <p className="text-[10px] text-brand-gray-muted mt-0.5">Historial cronológico de todas las incidencias del partido</p>
+            </div>
+            
+            <div className="max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
+              {matchEvents.length === 0 ? (
+                <div className="text-center py-10 bg-brand-black/20 rounded-xl border border-dashed border-brand-black-border text-brand-gray-muted text-xs italic">
+                  No hay incidencias registradas en este partido.
+                </div>
+              ) : (
+                <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-4 py-2">
+                  {matchEvents.map(evt => {
+                    let icon = '⚽';
+                    let typeText = 'Gol';
+                    let colorClass = 'text-brand-gray-light';
+                    let bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                    
+                    if (evt.type === 'penalty_goals') {
+                      icon = '⚽ ▭';
+                      typeText = 'Gol de Penalti';
+                      colorClass = 'text-brand-gray-light';
+                      bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                    } else if (evt.type === 'assists') {
+                      icon = '🥾';
+                      typeText = 'Asistencia';
+                      colorClass = 'text-emerald-400';
+                      bgIconColor = 'bg-emerald-950 border-emerald-800 text-emerald-400';
+                    } else if (evt.type === 'yellow_cards') {
+                      icon = '🟨';
+                      typeText = 'T. Amarilla';
+                      colorClass = 'text-yellow-400';
+                      bgIconColor = 'bg-yellow-950 border-yellow-800 text-yellow-400';
+                    } else if (evt.type === 'red_card') {
+                      icon = '🟥';
+                      typeText = 'T. Roja';
+                      colorClass = 'text-red-500';
+                      bgIconColor = 'bg-red-950 border-red-800 text-red-500';
+                    } else if (evt.type === 'conceded_goals') {
+                      icon = '🥅';
+                      typeText = 'Gol en Contra';
+                      colorClass = 'text-cyan-400';
+                      bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                    } else if (evt.type === 'conceded_penalty_goals') {
+                      icon = '🥅 ▭';
+                      typeText = 'Gol Recibido Penalti';
+                      colorClass = 'text-cyan-400';
+                      bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                    } else if (evt.type === 'own_goals') {
+                      icon = '💥';
+                      typeText = 'Gol en Propia';
+                      colorClass = 'text-orange-400';
+                      bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                    } else if (evt.type === 'substitution') {
+                      icon = '🔄';
+                      typeText = `Cambio (Entra ${evt.extraInfo})`;
+                      colorClass = 'text-brand-gray-light';
+                      bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                    }
+
+                    return (
+                      <div key={evt.id} className="relative group">
+                        {/* Timeline node */}
+                        <div className={`absolute -left-[27px] w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] z-10 ${bgIconColor}`}>
+                          {icon}
+                        </div>
+                        
+                        {/* Event Card */}
+                        <div className="flex items-center justify-between p-3 bg-brand-black-card hover:bg-brand-black-hover rounded-xl border border-brand-black-border transition-all group-hover:border-brand-gray-dark shadow-sm ml-1">
+                          <div className="flex items-center gap-3 text-left">
+                            <div className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-brand-black/50 border border-brand-black-border shrink-0">
+                              <span className="text-[11px] font-black text-brand-red-600 leading-none">{evt.minute}'</span>
+                              <span className="text-[7px] font-bold text-brand-gray-muted uppercase leading-none mt-0.5">Min</span>
+                            </div>
+                            <div>
+                              <span className="font-bold text-xs text-brand-gray-light block leading-tight">
+                                {evt.playerName}
+                              </span>
+                              <span className={`text-[9px] font-bold uppercase mt-0.5 block ${colorClass}`}>
+                                {typeText}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`¿Deseas eliminar este evento (${typeText} en min. ${evt.minute})?`)) {
+                                handleRemoveMatchEvent(evt.playerId, evt.type, evt.minute, evt.indexInType);
+                                showToast('success', 'Incidencia eliminada', 'El evento ha sido removido.');
+                              }
+                            }}
+                            className="p-1.5 hover:text-brand-red-600 text-brand-gray-muted bg-brand-black/50 hover:bg-brand-red-600/10 rounded-lg border border-transparent hover:border-brand-red-600/30 transition-all opacity-0 group-hover:opacity-100"
+                            title="Eliminar incidencia"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>

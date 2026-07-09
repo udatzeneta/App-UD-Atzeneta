@@ -872,10 +872,12 @@ export const exportMatchReportToPDF = async (
       const em = s.event_minutes;
       return (
         (em.goals && em.goals.length > 0) ||
+        (em.penalty_goals && em.penalty_goals.length > 0) ||
         (em.assists && em.assists.length > 0) ||
         (em.yellow_cards && em.yellow_cards.length > 0) ||
         (em.red_card !== null && em.red_card !== undefined) ||
         (em.conceded_goals && em.conceded_goals.length > 0) ||
+        (em.conceded_penalty_goals && em.conceded_penalty_goals.length > 0) ||
         (em.own_goals && em.own_goals.length > 0)
       );
     }
@@ -921,26 +923,31 @@ export const exportMatchReportToPDF = async (
       doc.text(headerStr, 14, currY);
       currY += 4.5;
 
-      // Eventos específicos
       const events: string[] = [];
       if (s.event_minutes) {
         if (s.event_minutes.goals && s.event_minutes.goals.length > 0) {
-          events.push(`Goles: ${s.event_minutes.goals.map(m => m + "'").join(', ')}`);
+          events.push(`Goles: ${s.event_minutes.goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
+        }
+        if (s.event_minutes.penalty_goals && s.event_minutes.penalty_goals.length > 0) {
+          events.push(`Goles Penalti: ${s.event_minutes.penalty_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
         }
         if (s.event_minutes.conceded_goals && s.event_minutes.conceded_goals.length > 0) {
-          events.push(`Goles Encajados: ${s.event_minutes.conceded_goals.map(m => m + "'").join(', ')}`);
+          events.push(`Goles Encajados: ${s.event_minutes.conceded_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
+        }
+        if (s.event_minutes.conceded_penalty_goals && s.event_minutes.conceded_penalty_goals.length > 0) {
+          events.push(`Goles Enc. Penalti: ${s.event_minutes.conceded_penalty_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
         }
         if (s.event_minutes.own_goals && s.event_minutes.own_goals.length > 0) {
-          events.push(`Goles en Propia: ${s.event_minutes.own_goals.map(m => m + "'").join(', ')}`);
+          events.push(`Goles en Propia: ${s.event_minutes.own_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
         }
         if (s.event_minutes.assists && s.event_minutes.assists.length > 0) {
-          events.push(`Asistencias: ${s.event_minutes.assists.map(m => m + "'").join(', ')}`);
+          events.push(`Asistencias: ${s.event_minutes.assists.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
         }
         if (s.event_minutes.yellow_cards && s.event_minutes.yellow_cards.length > 0) {
-          events.push(`Tarjetas Amarillas: ${s.event_minutes.yellow_cards.map(m => m + "'").join(', ')}`);
+          events.push(`Tarjetas Amarillas: ${s.event_minutes.yellow_cards.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
         }
         if (s.event_minutes.red_card !== null && s.event_minutes.red_card !== undefined) {
-          events.push(`Tarjeta Roja: ${s.event_minutes.red_card}'`);
+          events.push(`Tarjeta Roja: ${s.event_minutes.red_card.toString().includes("'") ? s.event_minutes.red_card : s.event_minutes.red_card + "'"}`);
         }
       }
 

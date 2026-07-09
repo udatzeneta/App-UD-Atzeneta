@@ -119,12 +119,14 @@ export interface PlayerMatchStats {
   positive_aspects?: string | null;
   improve_aspects?: string | null;
   event_minutes?: {
-    goals?: number[];
-    assists?: number[];
-    yellow_cards?: number[];
-    red_card?: number | null;
-    conceded_goals?: number[];
-    own_goals?: number[];
+    goals?: string[];
+    assists?: string[];
+    yellow_cards?: string[];
+    red_card?: string | null;
+    conceded_goals?: string[];
+    own_goals?: string[];
+    penalty_goals?: string[];
+    conceded_penalty_goals?: string[];
   } | null;
   created_at?: string;
   updated_at?: string;
