@@ -146,7 +146,12 @@ export const Matches: React.FC = () => {
     setSelectedMatchForActions(match);
     try {
       const currentStats = await dataService.getPlayerMatchStats(match.id);
-      const calledUpIds = currentStats.filter(x => x.is_called_up).map(x => x.player_id);
+      let calledUpIds = currentStats.filter(x => x.is_called_up).map(x => x.player_id);
+      
+      if (calledUpIds.length === 0) {
+        calledUpIds = dbPlayers.filter(p => p.physical_status !== 'Baja').map(p => p.id);
+      }
+      
       setSelectedSquadPlayerIds(calledUpIds);
 
       // Cargar valores actuales del partido
@@ -1391,48 +1396,135 @@ export const Matches: React.FC = () => {
                   
                   {/* Maniquí */}
                   <div className="flex flex-col items-center justify-center bg-brand-black/30 rounded-lg p-2.5 border border-brand-black-border/40 mb-3">
-                    <svg width="110" height="185" viewBox="0 0 160 240" className="mx-auto drop-shadow-md">
-                      {/* Cabeza del Maniquí */}
-                      <circle cx="80" cy="25" r="12" fill="#4B5563" opacity="0.35" />
-                      <rect x="76" y="37" width="8" height="14" fill="#4B5563" opacity="0.35" />
+                    <svg width="130" height="220" viewBox="0 0 160 240" className="mx-auto drop-shadow-2xl">
+                      {/* Definición de filtros y gradientes 3D realistas */}
+                      <defs>
+                        <filter id="fabric-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="3" stdDeviation="4" floodOpacity="0.3" floodColor="#000" />
+                        </filter>
+                        
+                        {/* Gradiente de Plástico Brillante (Maniquí real) */}
+                        <linearGradient id="glossy-plastic" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#9ca3af" /> {/* Sombra izquierda */}
+                          <stop offset="15%" stopColor="#f3f4f6" /> {/* Brillo especular fuerte */}
+                          <stop offset="35%" stopColor="#d1d5db" />
+                          <stop offset="65%" stopColor="#e5e7eb" /> {/* Luz secundaria */}
+                          <stop offset="85%" stopColor="#9ca3af" />
+                          <stop offset="100%" stopColor="#4b5563" /> {/* Sombra profunda derecha */}
+                        </linearGradient>
 
-                      {/* Brazos del Maniquí */}
-                      <path d="M 35 75 L 20 120 L 28 123 L 42 80 Z" fill="#4B5563" opacity="0.35" />
-                      <path d="M 125 75 L 140 120 L 132 123 L 118 80 Z" fill="#4B5563" opacity="0.35" />
+                        {/* Sombreado de tela (brillos y sombras de la ropa) */}
+                        <linearGradient id="shirt-shading" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#000" stopOpacity="0.4" />
+                          <stop offset="15%" stopColor="#fff" stopOpacity="0.25" />
+                          <stop offset="40%" stopColor="#fff" stopOpacity="0.0" />
+                          <stop offset="70%" stopColor="#fff" stopOpacity="0.1" />
+                          <stop offset="90%" stopColor="#000" stopOpacity="0.2" />
+                          <stop offset="100%" stopColor="#000" stopOpacity="0.6" />
+                        </linearGradient>
 
-                      {/* Piernas del Maniquí (Piel expuesta) */}
-                      <rect x="55" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
-                      <rect x="95" y="160" width="10" height="15" fill="#4B5563" opacity="0.35" />
+                        <linearGradient id="leg-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#000" stopOpacity="0.4" />
+                          <stop offset="20%" stopColor="#fff" stopOpacity="0.2" />
+                          <stop offset="80%" stopColor="#000" stopOpacity="0.1" />
+                          <stop offset="100%" stopColor="#000" stopOpacity="0.5" />
+                        </linearGradient>
+                      </defs>
 
-                      {/* Camiseta (Mangas) */}
-                      <path d="M 50 50 L 30 75 L 42 82 L 55 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
-                      <path d="M 110 50 L 130 75 L 118 82 L 105 65 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* MANIQUÍ BASE (Plástico Brillante) */}
+                      <g fill="url(#glossy-plastic)">
+                        {/* Cabeza */}
+                        <ellipse cx="80" cy="22" rx="14" ry="18" />
+                        
+                        {/* Cuello */}
+                        <path d="M 74 38 Q 80 44 86 38 L 84 48 L 76 48 Z" />
+                        
+                        {/* Torso & Caderas Base */}
+                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 108 115, 110 135 C 100 145, 90 155, 80 155 C 70 155, 60 145, 50 135 C 52 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" />
 
-                      {/* Camiseta (Cuerpo) */}
-                      <path d="M 50 50 L 110 50 L 110 125 L 50 125 Z" fill={kitShirtColor} stroke="#1F2937" strokeWidth="1" />
+                        {/* Brazo Izquierdo */}
+                        <path d="M 46 48 C 30 65, 20 90, 18 125 C 16 135, 24 140, 28 132 C 34 115, 44 85, 50 75 Z" />
+                        
+                        {/* Brazo Derecho */}
+                        <path d="M 114 48 C 130 65, 140 90, 142 125 C 144 135, 136 140, 132 132 C 126 115, 116 85, 110 75 Z" />
+                        
+                        {/* Piernas (Muslos y Gemelos) */}
+                        <path d="M 50 135 C 45 160, 50 195, 52 230 C 62 230, 68 190, 68 150 C 68 145, 75 145, 80 155 Z" />
+                        <path d="M 110 135 C 115 160, 110 195, 108 230 C 98 230, 92 190, 92 150 C 92 145, 85 145, 80 155 Z" />
+                      </g>
 
-                      {/* Cuello de la Camiseta */}
-                      <path d="M 70 50 Q 80 62 90 50 Z" fill="#1F2937" stroke="#1F2937" strokeWidth="1" />
+                      {/* CAMISETA */}
+                      <g filter="url(#fabric-shadow)">
+                        {/* Manga Izquierda */}
+                        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill={kitShirtColor} />
+                        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Manga Derecha */}
+                        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill={kitShirtColor} />
+                        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Cuerpo Camiseta */}
+                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill={kitShirtColor} />
+                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Arrugas Camiseta */}
+                        <path d="M 60 130 C 65 100, 62 80, 58 60" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
+                        <path d="M 100 130 C 95 100, 98 80, 102 60" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
+                        <path d="M 80 132 L 80 70" stroke="#000" strokeWidth="1.5" strokeOpacity="0.08" fill="none" />
+                        <path d="M 54 95 Q 65 110 70 130" stroke="#000" strokeWidth="1.5" strokeOpacity="0.1" fill="none" />
+                        <path d="M 106 95 Q 95 110 90 130" stroke="#000" strokeWidth="1.5" strokeOpacity="0.1" fill="none" />
+                        
+                        {/* Cuello Pico */}
+                        <path d="M 70 47 Q 80 60 90 47 Q 80 49 70 47 Z" fill="url(#glossy-plastic)" />
+                        <path d="M 68 46 Q 80 62 92 46" stroke={kitShirtColor} strokeWidth="3" fill="none" filter="brightness(0.7)" />
+                      </g>
 
-                      {/* Escudo del Club en el pecho */}
+                      {/* ESCUDO */}
                       <image
                         href="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png"
-                        x="82"
-                        y="65"
-                        width="16"
-                        height="16"
+                        x="88"
+                        y="58"
+                        width="18"
+                        height="18"
+                        className="drop-shadow-sm"
                       />
 
-                      {/* Pantalón Corto */}
-                      <path d="M 50 125 L 110 125 L 112 160 L 83 160 L 80 145 L 77 160 L 48 160 Z" fill={kitShortsColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* PANTALÓN */}
+                      <g filter="url(#fabric-shadow)">
+                        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill={kitShortsColor} />
+                        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Arrugas Pantalón */}
+                        <path d="M 58 132 Q 60 150 54 167" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                        <path d="M 102 132 Q 100 150 106 167" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                        <path d="M 80 132 L 80 155" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
+                        <path d="M 68 132 Q 72 145 68 158" stroke="#000" strokeWidth="1" strokeOpacity="0.1" fill="none" />
+                        <path d="M 92 132 Q 88 145 92 158" stroke="#000" strokeWidth="1" strokeOpacity="0.1" fill="none" />
+                      </g>
 
-                      {/* Medias/Calzas */}
-                      <path d="M 54 175 L 66 175 L 66 225 L 54 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
-                      <path d="M 94 175 L 106 175 L 106 225 L 94 225 Z" fill={kitSocksColor} stroke="#1F2937" strokeWidth="1" />
+                      {/* MEDIAS / CALZAS (Textura ajustada) */}
+                      <g filter="url(#fabric-shadow)">
+                        {/* Izquierda */}
+                        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill={kitSocksColor} />
+                        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill="url(#leg-gradient)" />
+                        
+                        {/* Derecha */}
+                        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill={kitSocksColor} />
+                        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill="url(#leg-gradient)" />
+                        
+                        {/* Doblez superior y elásticos */}
+                        <path d="M 50 195 Q 58 198 66 195" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                        <path d="M 110 195 Q 102 198 94 195" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                      </g>
 
-                      {/* Botas */}
-                      <path d="M 54 225 L 46 228 L 54 234 L 68 234 L 66 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
-                      <path d="M 94 225 L 92 234 L 106 234 L 114 228 L 106 225 Z" fill="#111827" stroke="#1F2937" strokeWidth="1" />
+                      {/* BOTAS */}
+                      <g filter="url(#fabric-shadow)">
+                        <path d="M 50 230 C 42 232, 38 238, 44 242 L 60 242 C 63 242, 64 235, 62 230 Z" fill="#111827" />
+                        <path d="M 46 238 L 56 238" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" fill="none" />
+                        
+                        <path d="M 110 230 C 118 232, 122 238, 116 242 L 100 242 C 97 242, 96 235, 98 230 Z" fill="#111827" />
+                        <path d="M 114 238 L 104 238" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" fill="none" />
+                      </g>
                     </svg>
                   </div>
 
@@ -1591,18 +1683,18 @@ export const Matches: React.FC = () => {
 
           </div>
 
-          <div className="flex gap-2 pt-2 justify-end">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2 sm:justify-end">
             <button
               type="button"
               onClick={handleExportCallupPDF}
-              className="btn-secondary py-2 text-xs flex items-center gap-1"
+              className="btn-secondary py-2 text-xs flex items-center justify-center gap-1 w-full sm:w-auto"
             >
               <FileText className="w-3.5 h-3.5" /> Descargar PDF
             </button>
             <button
               type="button"
               onClick={() => setIsSquadModalOpen(false)}
-              className="btn-secondary py-2 text-xs"
+              className="btn-secondary py-2 text-xs justify-center w-full sm:w-auto"
             >
               Cancelar
             </button>
@@ -1610,14 +1702,14 @@ export const Matches: React.FC = () => {
               type="button"
               onClick={handleDeleteSquad}
               disabled={deleteSquadMutation.isPending}
-              className="btn-secondary py-2 text-xs text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10"
+              className="btn-secondary py-2 text-xs justify-center text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 w-full sm:w-auto"
             >
               {deleteSquadMutation.isPending ? 'Borrando...' : 'Borrar Convocatoria'}
             </button>
             <button
               type="submit"
               disabled={saveSquadMutation.isPending}
-              className="btn-primary py-2 text-xs font-semibold flex items-center gap-1"
+              className="btn-primary py-2 text-xs font-semibold flex items-center justify-center gap-1 w-full sm:w-auto"
             >
               {saveSquadMutation.isPending ? 'Guardando...' : 'Guardar Convocatoria'}
             </button>

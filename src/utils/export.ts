@@ -438,6 +438,120 @@ export const exportCalendarToPDF = async (
 };
 
 /**
+ * Convierte un SVG de maniquí en Base64 PNG
+ */
+const generateMannequinPng = async (
+  shirtColor: string,
+  shortsColor: string,
+  socksColor: string,
+  logoBase64: string
+): Promise<string> => {
+  return new Promise((resolve) => {
+    const logoHref = logoBase64 ? `href="${logoBase64}"` : '';
+
+    const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="260" height="440" viewBox="0 0 160 240">
+      <defs>
+        <filter id="fabric-shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.3" flood-color="#000" />
+        </filter>
+        <linearGradient id="glossy-plastic" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#9ca3af" />
+          <stop offset="15%" stop-color="#f3f4f6" />
+          <stop offset="35%" stop-color="#d1d5db" />
+          <stop offset="65%" stop-color="#e5e7eb" />
+          <stop offset="85%" stop-color="#9ca3af" />
+          <stop offset="100%" stop-color="#4b5563" />
+        </linearGradient>
+        <linearGradient id="shirt-shading" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#000" stop-opacity="0.4" />
+          <stop offset="15%" stop-color="#fff" stop-opacity="0.25" />
+          <stop offset="40%" stop-color="#fff" stop-opacity="0.0" />
+          <stop offset="70%" stop-color="#fff" stop-opacity="0.1" />
+          <stop offset="90%" stop-color="#000" stop-opacity="0.2" />
+          <stop offset="100%" stop-color="#000" stop-opacity="0.6" />
+        </linearGradient>
+      </defs>
+
+      <g fill="url(#glossy-plastic)">
+        <ellipse cx="80" cy="22" rx="14" ry="18" />
+        <path d="M 74 38 Q 80 44 86 38 L 84 48 L 76 48 Z" />
+        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 108 115, 110 135 C 100 145, 90 155, 80 155 C 70 155, 60 145, 50 135 C 52 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" />
+        <path d="M 46 48 C 30 65, 20 90, 18 125 C 16 135, 24 140, 28 132 C 34 115, 44 85, 50 75 Z" />
+        <path d="M 114 48 C 130 65, 140 90, 142 125 C 144 135, 136 140, 132 132 C 126 115, 116 85, 110 75 Z" />
+        <path d="M 50 135 C 45 160, 50 195, 52 230 C 62 230, 68 190, 68 150 C 68 145, 75 145, 80 155 Z" />
+        <path d="M 110 135 C 115 160, 110 195, 108 230 C 98 230, 92 190, 92 150 C 92 145, 85 145, 80 155 Z" />
+      </g>
+
+      <g filter="url(#fabric-shadow)">
+        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill="${shirtColor}" />
+        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill="url(#shirt-shading)" />
+        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill="${shirtColor}" />
+        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill="url(#shirt-shading)" />
+        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill="${shirtColor}" />
+        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill="url(#shirt-shading)" />
+        <path d="M 60 130 C 65 100, 62 80, 58 60" stroke="#000" stroke-width="2" stroke-opacity="0.15" fill="none" />
+        <path d="M 100 130 C 95 100, 98 80, 102 60" stroke="#000" stroke-width="2" stroke-opacity="0.15" fill="none" />
+        <path d="M 80 132 L 80 70" stroke="#000" stroke-width="1.5" stroke-opacity="0.08" fill="none" />
+        <path d="M 54 95 Q 65 110 70 130" stroke="#000" stroke-width="1.5" stroke-opacity="0.1" fill="none" />
+        <path d="M 106 95 Q 95 110 90 130" stroke="#000" stroke-width="1.5" stroke-opacity="0.1" fill="none" />
+        <path d="M 70 47 Q 80 60 90 47 Q 80 49 70 47 Z" fill="url(#glossy-plastic)" />
+        <path d="M 68 46 Q 80 62 92 46" stroke="${shirtColor}" stroke-width="3" fill="none" />
+      </g>
+
+      ${logoHref ? `<image ${logoHref} x="88" y="58" width="18" height="18" />` : ''}
+
+      <g filter="url(#fabric-shadow)">
+        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill="${shortsColor}" />
+        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill="url(#shirt-shading)" />
+        <path d="M 58 132 Q 60 150 54 167" stroke="#000" stroke-width="2" stroke-opacity="0.2" fill="none" />
+        <path d="M 102 132 Q 100 150 106 167" stroke="#000" stroke-width="2" stroke-opacity="0.2" fill="none" />
+        <path d="M 80 132 L 80 155" stroke="#000" stroke-width="2" stroke-opacity="0.15" fill="none" />
+        <path d="M 68 132 Q 72 145 68 158" stroke="#000" stroke-width="1" stroke-opacity="0.1" fill="none" />
+        <path d="M 92 132 Q 88 145 92 158" stroke="#000" stroke-width="1" stroke-opacity="0.1" fill="none" />
+      </g>
+
+      <g filter="url(#fabric-shadow)">
+        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill="${socksColor}" />
+        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill="url(#leg-gradient)" />
+        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill="${socksColor}" />
+        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill="url(#leg-gradient)" />
+        <path d="M 50 195 Q 58 198 66 195" stroke="#000" stroke-width="2" stroke-opacity="0.2" fill="none" />
+        <path d="M 110 195 Q 102 198 94 195" stroke="#000" stroke-width="2" stroke-opacity="0.2" fill="none" />
+      </g>
+
+      <g filter="url(#fabric-shadow)">
+        <path d="M 50 230 C 42 232, 38 238, 44 242 L 60 242 C 63 242, 64 235, 62 230 Z" fill="#111827" />
+        <path d="M 46 238 L 56 238" stroke="#fff" stroke-width="1" stroke-opacity="0.4" fill="none" />
+        <path d="M 110 230 C 118 232, 122 238, 116 242 L 100 242 C 97 242, 96 235, 98 230 Z" fill="#111827" />
+        <path d="M 114 238 L 104 238" stroke="#fff" stroke-width="1" stroke-opacity="0.4" fill="none" />
+      </g>
+    </svg>`;
+
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 260;
+      canvas.height = 440;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } else {
+        resolve('');
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      resolve('');
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+};
+
+/**
  * Exporta una convocatoria a PDF, incluyendo los equipos, jornada, fecha, hora, lugar y los jugadores convocados.
  */
 export const exportCallupToPDF = async (
@@ -455,13 +569,15 @@ export const exportCallupToPDF = async (
   doc.rect(0, 8, pageWidth, 4, 'F');
 
   // Intentar cargar el escudo
+  let logoBase64 = '';
   try {
     const logoResponse = await fetch(CLUB_LOGO_URL);
     const logoBlob = await logoResponse.blob();
     const logoReader = new FileReader();
     await new Promise<void>((resolve, reject) => {
       logoReader.onload = () => {
-        doc.addImage(logoReader.result as string, 'PNG', 14, 14, 16, 18, undefined, 'FAST');
+        logoBase64 = logoReader.result as string;
+        doc.addImage(logoBase64, 'PNG', 14, 14, 16, 18, undefined, 'FAST');
         resolve();
       };
       logoReader.onerror = reject;
@@ -485,12 +601,14 @@ export const exportCallupToPDF = async (
   doc.setTextColor(110, 110, 110);
   doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')}`, 36, 29);
 
+  const infoBoxW = pageWidth - 84;
+
   // 2. Información General del Partido
   doc.setFillColor(245, 245, 245);
-  doc.rect(14, 35, pageWidth - 28, 20, 'F');
+  doc.rect(14, 35, infoBoxW, 20, 'F');
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.15);
-  doc.rect(14, 35, pageWidth - 28, 20, 'D');
+  doc.rect(14, 35, infoBoxW, 20, 'D');
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
@@ -512,14 +630,14 @@ export const exportCallupToPDF = async (
   
   if (match.matchday) {
     doc.setFont('helvetica', 'bold');
-    doc.text(`Jornada: ${match.matchday}`, pageWidth - 45, 42);
+    doc.text(`J. ${match.matchday}`, 14 + infoBoxW - 5, 42, { align: 'right' });
   }
 
   // Info específica de convocatoria (Lugar y Hora de reunión)
   doc.setFillColor(254, 242, 230); // Naranja muy claro
-  doc.rect(14, 58, pageWidth - 28, 12, 'F');
+  doc.rect(14, 58, infoBoxW, 12, 'F');
   doc.setDrawColor(230, 210, 200);
-  doc.rect(14, 58, pageWidth - 28, 12, 'D');
+  doc.rect(14, 58, infoBoxW, 12, 'D');
   
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(193, 18, 31);
@@ -529,53 +647,41 @@ export const exportCallupToPDF = async (
   doc.setTextColor(30, 30, 30);
   doc.text(`${match.callup_time || '--:--'} hs  |  Lugar: ${match.callup_location || 'No especificado'}`, 45, 65);
 
-  // --- DIBUJAR MANIQUÍ (EQUIPACIÓN) ---
-  const hexToRgb = (hex: string): [number, number, number] => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? [
-      parseInt(result[1], 16),
-      parseInt(result[2], 16),
-      parseInt(result[3], 16)
-    ] : [0, 0, 0];
-  };
+  // --- EQUIPACIÓN OFICIAL (Formato Cuadrado Moderno) ---
+  const kitBoxX = 14 + infoBoxW + 6;
+  const kitBoxY = 35;
+  const kitBoxW = 50;
+  const kitBoxH = 35; // Altura que iguala las dos cajas de la izquierda
 
-  const drawMannequin = (d: any, x: number, y: number, w: number, h: number, shirtHex: string, shortsHex: string, socksHex: string) => {
-    const sw = w / 160;
-    const sh = h / 250;
+  // Fondo del cuadro
+  doc.setFillColor(24, 24, 27); // Zinc 900
+  doc.rect(kitBoxX, kitBoxY, kitBoxW, kitBoxH, 'F');
+  // Borde
+  doc.setDrawColor(63, 63, 70); // Zinc 700
+  doc.setLineWidth(0.3);
+  doc.rect(kitBoxX, kitBoxY, kitBoxW, kitBoxH, 'D');
 
-    const drawPoly = (pts: number[][], color: [number, number, number]) => {
-      d.setFillColor(...color);
-      d.setDrawColor(30, 41, 55);
-      d.setLineWidth(0.3);
-      
-      const vectors = [];
-      for (let i = 1; i < pts.length; i++) {
-        vectors.push([
-          (pts[i][0] - pts[i-1][0]) * sw,
-          (pts[i][1] - pts[i-1][1]) * sh
-        ]);
-      }
-      d.lines(vectors, x + pts[0][0] * sw, y + pts[0][1] * sh, [1, 1], 'FD', true);
-    };
-
-    const shirt = hexToRgb(shirtHex);
-    const shorts = hexToRgb(shortsHex);
-    const socks = hexToRgb(socksHex);
-
-    drawPoly([[50,50], [30,75], [42,82], [55,65]], shirt);
-    drawPoly([[110,50], [130,75], [118,82], [105,65]], shirt);
-    drawPoly([[50,50], [110,50], [110,125], [50,125]], shirt);
-    drawPoly([[50,125], [110,125], [112,160], [83,160], [80,145], [77,160], [48,160]], shorts);
-    drawPoly([[54,175], [66,175], [66,225], [54,225]], socks);
-    drawPoly([[94,175], [106,175], [106,225], [94,225]], socks);
-  };
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(161, 161, 170); // Zinc 400
+  doc.text('EQUIPACIÓN OFICIAL', kitBoxX + kitBoxW / 2, kitBoxY + 6, { align: 'center' });
 
   const shirtColor = match.kit_shirt_color || '#C1121F';
   const shortsColor = match.kit_shorts_color || '#000000';
   const socksColor = match.kit_socks_color || '#000000';
 
-  // Dibujar el maniquí más grande a la derecha de la cita
-  drawMannequin(doc, pageWidth - 32, 53, 14, 22, shirtColor, shortsColor, socksColor);
+  const mannequinPng = await generateMannequinPng(shirtColor, shortsColor, socksColor, logoBase64);
+  if (mannequinPng) {
+    const imgW = 16;
+    const imgH = 26;
+    const imgX = kitBoxX + (kitBoxW - imgW) / 2;
+    const imgY = kitBoxY + 8;
+    doc.addImage(mannequinPng, 'PNG', imgX, imgY, imgW, imgH, undefined, 'FAST');
+  } else {
+    // Fallback si falla la generación
+    doc.setTextColor(255, 255, 255);
+    doc.text('No disponible', kitBoxX + kitBoxW / 2, kitBoxY + 20, { align: 'center' });
+  }
   // ------------------------------------
 
   // Pre-cargar fotos

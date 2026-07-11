@@ -103,6 +103,25 @@ export interface Match {
   } | null;
   team_positive_aspects?: string | null;
   team_improve_aspects?: string | null;
+  team_ratings?: {
+    with_ball: {
+      salida_balon?: number;
+      posesion?: number;
+      finalizacion?: number;
+      juego_directo?: number;
+      ocupacion_area?: number;
+    };
+    without_ball: {
+      presion_alta?: number;
+      bloque_medio?: number;
+      bloque_bajo?: number;
+      defensa_area?: number;
+    };
+    set_pieces: {
+      ofensiva?: number;
+      defensiva?: number;
+    };
+  } | null;
   created_at?: string;
 }
 

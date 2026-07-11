@@ -88,6 +88,27 @@ const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>) => {
   return next;
 };
 
+const StarRating = ({ label, value, onChange, disabled }: { label: string, value: number, onChange: (v: number) => void, disabled: boolean }) => (
+  <div className="flex items-center justify-between text-[11px] py-1 border-t border-brand-black-border/50 mt-1 pt-2">
+    <span className="text-brand-gray-light font-medium">{label}</span>
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => !disabled && onChange(star)}
+          disabled={disabled}
+          className={`w-3.5 h-3.5 focus:outline-none ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:scale-125 transition-transform'}`}
+        >
+          <svg viewBox="0 0 24 24" fill={star <= value ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" className={star <= value ? 'text-yellow-400' : 'text-brand-gray-muted'}>
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
 export const MatchReport: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
@@ -100,7 +121,18 @@ export const MatchReport: React.FC = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [teamPositiveAspects, setTeamPositiveAspects] = useState('');
+  const [teamImproveAspects, setTeamImproveAspects] = useState('');
+  const [teamRatings, setTeamRatings] = useState({
+    with_ball: { salida_balon: 0, posesion: 0, finalizacion: 0, juego_directo: 0, ocupacion_area: 0 },
+    without_ball: { presion_alta: 0, bloque_medio: 0, bloque_bajo: 0, defensa_area: 0 },
+    set_pieces: { ofensiva: 0, defensiva: 0 }
+  });
   const isFirstRender = useRef(true);
+  // Bloquea el auto-guardado mientras se está borrando el acta, para que el
+  // debounce no vuelva a escribir el estado local en la BBDD tras el reset.
+  const isDeletingRef = useRef(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -144,7 +176,7 @@ export const MatchReport: React.FC = () => {
     if (isEditing) {
       setHasUnsavedChanges(true);
     }
-  }, [playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, isEditing]);
+  }, [playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, teamRatings, teamPositiveAspects, teamImproveAspects, isEditing]);
 
   // Prevenir navegación si hay cambios sin guardar
   useEffect(() => {
@@ -178,11 +210,12 @@ export const MatchReport: React.FC = () => {
   useEffect(() => {
     if (hasUnsavedChanges && isEditing) {
       const timer = setTimeout(() => {
+        if (isDeletingRef.current) return;
         saveMutation.mutate();
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [hasUnsavedChanges, playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, isEditing]);
+  }, [hasUnsavedChanges, playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, teamRatings, teamPositiveAspects, teamImproveAspects, isEditing]);
 
   // 1. Cargar Partido
   const { data: matchesList = [], isLoading: isLoadingMatch } = useQuery({
@@ -243,6 +276,15 @@ export const MatchReport: React.FC = () => {
       setTacticalSetPieces(matchData.tactical_set_pieces || '');
       setTacticalGeneral(matchData.tactical_general || '');
       setOpponentEvents(matchData.opponent_events || { goals: [], yellow_cards: [] });
+      setTeamPositiveAspects(matchData.team_positive_aspects || '');
+      setTeamImproveAspects(matchData.team_improve_aspects || '');
+      if (matchData.team_ratings) {
+        setTeamRatings(prev => ({
+          with_ball: { ...prev.with_ball, ...(matchData.team_ratings!.with_ball || {}) },
+          without_ball: { ...prev.without_ball, ...(matchData.team_ratings!.without_ball || {}) },
+          set_pieces: { ...prev.set_pieces, ...(matchData.team_ratings!.set_pieces || {}) }
+        }));
+      }
     }
   }, [matchData]);
 
@@ -284,7 +326,7 @@ export const MatchReport: React.FC = () => {
         };
       });
 
-      setPlayerStats(statsMap);
+      setPlayerStats(recalculateAllMinutes(statsMap));
 
       // Reconstruir el XI Inicial (lineup) asociando los jugadores marcados como titulares
       // a sus posiciones en la formación actual
@@ -336,7 +378,7 @@ export const MatchReport: React.FC = () => {
 
       setLineup(builtLineup);
       if (needsUpdate) {
-        setPlayerStats(updatedStats);
+        setPlayerStats(recalculateAllMinutes(updatedStats));
         setHasUnsavedChanges(true);
       }
     }
@@ -485,7 +527,7 @@ export const MatchReport: React.FC = () => {
       }
 
       next[playerId] = updated;
-      return next;
+      return recalculateAllMinutes(next);
     });
   };
 
@@ -506,7 +548,7 @@ export const MatchReport: React.FC = () => {
       }
 
       next[playerId] = { ...player, event_minutes: eventMin };
-      return next;
+      return recalculateAllMinutes(next);
     });
   };
 
@@ -593,7 +635,7 @@ export const MatchReport: React.FC = () => {
         };
       }
 
-      return next;
+      return recalculateAllMinutes(next);
     });
   };
 
@@ -716,7 +758,7 @@ export const MatchReport: React.FC = () => {
         }
       }
 
-      return next;
+      return recalculateAllMinutes(next);
     });
   };
 
@@ -863,6 +905,8 @@ export const MatchReport: React.FC = () => {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!matchId) return;
+      // Si se está borrando el acta, no reescribir el estado local en la BBDD.
+      if (isDeletingRef.current) return;
 
       // 1. Guardar metadatos del partido
       const updatedMatch = {
@@ -874,7 +918,10 @@ export const MatchReport: React.FC = () => {
         tactical_without_ball: tacticalWithoutBall.trim(),
         tactical_set_pieces: tacticalSetPieces.trim(),
         tactical_general: tacticalGeneral.trim(),
-        opponent_events: opponentEvents
+        opponent_events: opponentEvents,
+        team_positive_aspects: teamPositiveAspects || null,
+        team_improve_aspects: teamImproveAspects || null,
+        team_ratings: teamRatings
       };
       await dataService.updateMatch(matchId, updatedMatch);
 
@@ -923,20 +970,41 @@ export const MatchReport: React.FC = () => {
       await dataService.deleteMatchReport(matchId);
     },
     onSuccess: () => {
+      // Restablecer el estado local a cero para que el auto-guardado no reescriba
+      // los datos y la UI refleje el acta vacía inmediatamente.
+      setScoreUs(0);
+      setScoreThem(0);
+      setTacticalWithBall('');
+      setTacticalWithoutBall('');
+      setTacticalSetPieces('');
+      setTacticalGeneral('');
+      setOpponentEvents({ goals: [], yellow_cards: [] });
+      setLineup({});
+      setPlayerStats({});
+      setHasUnsavedChanges(false);
+
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['playerMatchStats', matchId] });
       showToast('success', 'Acta Borrada', 'Se han restablecido los datos del acta del partido.');
       navigate('/matches');
     },
     onError: (err: any) => {
+      isDeletingRef.current = false;
       showToast('error', 'Error al Borrar', err.message || 'No se pudo borrar el acta.');
     }
   });
 
   const handleDeleteReport = () => {
-    if (window.confirm('¿Estás seguro de que deseas borrar todos los datos del acta (resultado, alineación, estadísticas)? Esta acción no se puede deshacer.')) {
-      deleteReportMutation.mutate();
-    }
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteReport = () => {
+    // Bloquear el auto-guardado ANTES de mutar y cancelar cualquier cambio
+    // pendiente, para que el debounce no restaure los datos borrados.
+    isDeletingRef.current = true;
+    setHasUnsavedChanges(false);
+    setShowDeleteConfirm(false);
+    deleteReportMutation.mutate();
   };
 
   // Exportar el acta completa a PDF
@@ -2150,6 +2218,14 @@ export const MatchReport: React.FC = () => {
             onChange={(e) => setTacticalWithBall(e.target.value)}
             disabled={!isEditing}
           />
+          <div className="mt-4 bg-brand-black/50 p-3 rounded-lg border border-brand-black-border">
+            <h4 className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider mb-2">Valoración</h4>
+            <StarRating label="Salida de balón" value={teamRatings.with_ball.salida_balon} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, with_ball: {...teamRatings.with_ball, salida_balon: v}})} />
+            <StarRating label="Posesión" value={teamRatings.with_ball.posesion} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, with_ball: {...teamRatings.with_ball, posesion: v}})} />
+            <StarRating label="Finalización" value={teamRatings.with_ball.finalizacion} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, with_ball: {...teamRatings.with_ball, finalizacion: v}})} />
+            <StarRating label="Juego Directo" value={teamRatings.with_ball.juego_directo} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, with_ball: {...teamRatings.with_ball, juego_directo: v}})} />
+            <StarRating label="Ocupación Área" value={teamRatings.with_ball.ocupacion_area} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, with_ball: {...teamRatings.with_ball, ocupacion_area: v}})} />
+          </div>
         </div>
 
         {/* Momento sin Balón */}
@@ -2164,6 +2240,13 @@ export const MatchReport: React.FC = () => {
             onChange={(e) => setTacticalWithoutBall(e.target.value)}
             disabled={!isEditing}
           />
+          <div className="mt-4 bg-brand-black/50 p-3 rounded-lg border border-brand-black-border">
+            <h4 className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider mb-2">Valoración</h4>
+            <StarRating label="Presión Alta" value={teamRatings.without_ball.presion_alta} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, without_ball: {...teamRatings.without_ball, presion_alta: v}})} />
+            <StarRating label="Bloque Medio" value={teamRatings.without_ball.bloque_medio} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, without_ball: {...teamRatings.without_ball, bloque_medio: v}})} />
+            <StarRating label="Bloque Bajo" value={teamRatings.without_ball.bloque_bajo} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, without_ball: {...teamRatings.without_ball, bloque_bajo: v}})} />
+            <StarRating label="Defensa Área" value={teamRatings.without_ball.defensa_area} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, without_ball: {...teamRatings.without_ball, defensa_area: v}})} />
+          </div>
         </div>
 
         {/* ABP (Acciones a Balón Parado) */}
@@ -2173,11 +2256,16 @@ export const MatchReport: React.FC = () => {
           </div>
           <textarea
             className="form-input text-xs h-32 bg-brand-black-bg disabled:opacity-75"
-            placeholder="Ej: Peligro en corners a favor, debilidad en faltas laterales..."
+            placeholder="Ej: Jugadas ensayadas, defensa en zona..."
             value={tacticalSetPieces}
             onChange={(e) => setTacticalSetPieces(e.target.value)}
             disabled={!isEditing}
           />
+          <div className="mt-4 bg-brand-black/50 p-3 rounded-lg border border-brand-black-border">
+            <h4 className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider mb-2">Valoración</h4>
+            <StarRating label="Ofensiva" value={teamRatings.set_pieces.ofensiva} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, set_pieces: {...teamRatings.set_pieces, ofensiva: v}})} />
+            <StarRating label="Defensiva" value={teamRatings.set_pieces.defensiva} disabled={!isEditing} onChange={(v: number) => setTeamRatings({...teamRatings, set_pieces: {...teamRatings.set_pieces, defensiva: v}})} />
+          </div>
         </div>
 
         {/* Aspectos Generales */}
@@ -2205,6 +2293,38 @@ export const MatchReport: React.FC = () => {
           onSave={handleSaveWizardEvents}
         />
       )}
+
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="Borrar acta del partido"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-brand-gray-muted leading-relaxed">
+            ¿Seguro que deseas borrar todos los datos del acta (resultado, alineación,
+            estadísticas de los jugadores y eventos)? Todo quedará restablecido a cero.
+            <span className="block mt-2 font-semibold text-brand-red-500">Esta acción no se puede deshacer.</span>
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="btn-secondary py-2 px-4 text-xs font-bold"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmDeleteReport}
+              disabled={deleteReportMutation.isPending}
+              className="btn-primary py-2 px-4 text-xs font-bold bg-brand-red-600 hover:bg-brand-red-700 border-brand-red-600"
+            >
+              {deleteReportMutation.isPending ? 'Borrando…' : 'Sí, borrar todo'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

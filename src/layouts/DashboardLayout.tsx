@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { isMockMode } from '../lib/supabase';
 import {
-  LayoutDashboard, Calendar, Trophy, Dumbbell, ShieldAlert,
+  LayoutDashboard, Calendar, Trophy, Dumbbell, ShieldAlert, Shield,
   Award, Search, BarChart3, Settings, Menu, X, LogOut, ChevronRight,
   ClipboardCheck, Users, ClipboardList
 } from 'lucide-react';
@@ -30,6 +30,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
     { name: 'Dashboard', path: '/dashboard', pageKey: 'dashboard', icon: LayoutDashboard },
     { name: 'Calendario', path: '/calendar', pageKey: 'calendar', icon: Calendar },
     { name: 'Partidos', path: '/matches', pageKey: 'matches', icon: Trophy },
+    { name: 'Equipo', path: '/team', pageKey: 'team', icon: Shield },
     { name: 'Jugadores', path: '/players', pageKey: 'players', icon: Users },
     { name: 'Entrenamientos', path: '/trainings', pageKey: 'trainings', icon: Dumbbell },
     { name: 'Editor Sesión', path: '/training-editor', pageKey: 'training_editor', icon: ClipboardList },

@@ -6,7 +6,7 @@ import {
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
-const MOCK_DATA_VERSION = '10';
+const MOCK_DATA_VERSION = '11';
 
 // IDs fijos para los perfiles Mock
 export const MOCK_USER_IDS = {
@@ -28,7 +28,7 @@ const DEFAULT_ROLES: Role[] = [
 ];
 
 // 2. Páginas y acciones para permisos
-const PAGES = ['dashboard', 'calendar', 'trainings', 'matches', 'fines', 'points', 'scouting', 'opponent_analysis', 'settings', 'permissions', 'attendance', 'players'];
+const PAGES = ['dashboard', 'calendar', 'trainings', 'matches', 'team', 'fines', 'points', 'scouting', 'opponent_analysis', 'settings', 'permissions', 'attendance', 'players'];
 const ACTIONS: ('ver' | 'crear' | 'editar' | 'eliminar' | 'exportar')[] = ['ver', 'crear', 'editar', 'eliminar', 'exportar'];
 
 const generatePermissions = (): Permission[] => {
@@ -62,8 +62,8 @@ const generateDefaultRolePermissions = (perms: Permission[]): { role_id: number;
       mappings.push({ role_id: 2, permission_id: p.id });
     }
 
-    // Jugador (Rol 3) solo lectura de dashboard, calendar, trainings, matches, fines, points, attendance
-    if (p.action === 'ver' && ['dashboard', 'calendar', 'trainings', 'matches', 'fines', 'points', 'attendance'].includes(p.page)) {
+    // Jugador (Rol 3) solo lectura de dashboard, calendar, trainings, matches, team, fines, points, attendance
+    if (p.action === 'ver' && ['dashboard', 'calendar', 'trainings', 'matches', 'team', 'fines', 'points', 'attendance'].includes(p.page)) {
       mappings.push({ role_id: 3, permission_id: p.id });
     }
 

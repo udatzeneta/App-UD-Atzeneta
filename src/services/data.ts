@@ -426,8 +426,14 @@ export const dataService = {
           score_them: null, 
           status: 'Programado',
           tactical_system: undefined,
+          tactical_with_ball: undefined,
+          tactical_without_ball: undefined,
+          tactical_set_pieces: undefined,
+          tactical_general: undefined,
+          opponent_events: { goals: [], yellow_cards: [] },
           team_positive_aspects: undefined,
-          team_improve_aspects: undefined
+          team_improve_aspects: undefined,
+          team_ratings: undefined
         };
         MockDatabase.setMatches(list);
       }
@@ -436,23 +442,9 @@ export const dataService = {
       injuries = injuries.filter(i => i.match_id !== matchId);
       MockDatabase.setPlayerInjuries(injuries);
 
-      const stats = MockDatabase.getPlayerMatchStats();
-      stats.forEach((s: import('../types').PlayerMatchStats) => {
-        if (s.match_id === matchId) {
-          s.is_starter = false;
-          s.position = undefined;
-          s.minutes_played = 0;
-          s.goals = 0;
-          s.conceded_goals = 0;
-          s.own_goals = 0;
-          s.assists = 0;
-          s.yellow_cards = 0;
-          s.red_card = false;
-          s.positive_aspects = undefined;
-          s.improve_aspects = undefined;
-          s.event_minutes = {};
-        }
-      });
+      // Borramos por completo todas las estadísticas y convocatoria de este partido
+      let stats = MockDatabase.getPlayerMatchStats();
+      stats = stats.filter((s: import('../types').PlayerMatchStats) => s.match_id !== matchId);
       MockDatabase.setPlayerMatchStats(stats);
     } else {
       await supabase.from('matches').update({
@@ -460,29 +452,24 @@ export const dataService = {
         score_them: null,
         status: 'Programado',
         tactical_system: null,
+        tactical_with_ball: null,
+        tactical_without_ball: null,
+        tactical_set_pieces: null,
+        tactical_general: null,
+        opponent_events: { goals: [], yellow_cards: [] },
         team_positive_aspects: null,
-        team_improve_aspects: null
+        team_improve_aspects: null,
+        team_ratings: null
       }).eq('id', matchId);
 
-      const { error } = await supabase.from('player_match_stats').update({
-        is_starter: false,
-        position: null,
-        minutes_played: 0,
-        goals: 0,
-        conceded_goals: 0,
-        own_goals: 0,
-        assists: 0,
-        yellow_cards: 0,
-        red_card: false,
-        positive_aspects: null,
-        improve_aspects: null,
-        event_minutes: {}
-      }).eq('match_id', matchId);
+      // Borramos por completo los stats de los jugadores para este partido
+      const { error } = await supabase.from('player_match_stats').delete().eq('match_id', matchId);
       if (error) throw error;
 
-      // Eliminar lesiones del partido
+      // Eliminar lesiones del partido (no crítico: si la columna match_id aún no existe
+      // o falla, no debe abortar el borrado del acta ni impedir la navegación posterior)
       const { error: injuryError } = await supabase.from('player_injuries').delete().eq('match_id', matchId);
-      if (injuryError) throw injuryError;
+      if (injuryError) console.warn('No se pudieron borrar las lesiones del partido:', injuryError.message);
     }
   },
 

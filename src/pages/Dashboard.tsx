@@ -4,7 +4,7 @@ import { dataService } from '../services/data';
 import { authService } from '../services/auth';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText } from 'lucide-react';
+import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText, AlertTriangle, Activity } from 'lucide-react';
 import { Fine, Training, Match, Profile } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -46,7 +46,13 @@ export const Dashboard: React.FC = () => {
   const { data: matches = [], isLoading: loadingMatches } = useQuery({
     queryKey: ['matches'],
     queryFn: () => dataService.getMatches(),
-    enabled: canManageMatches
+    enabled: canManageMatches || canManageFines || canManageTrainings
+  });
+
+  const { data: matchStats = [] } = useQuery({
+    queryKey: ['player_match_stats'],
+    queryFn: () => dataService.getAllPlayerMatchStats(),
+    enabled: canManageMatches || canManageFines || canManageTrainings
   });
 
   const sortedMatches = React.useMemo(() => {
@@ -81,6 +87,76 @@ export const Dashboard: React.FC = () => {
     }));
 
   const players = [...combinedPlayers, ...combinedTrainers].sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  // ==========================================
+  // ALERTS STATE & LOGIC
+  // ==========================================
+  const alerts = React.useMemo(() => {
+    const newAlerts: { id: string, player: typeof combinedPlayers[0], type: 'injury' | 'warning' | 'sanction' | 'red_card', message: string, color: string }[] = [];
+
+    // Filter liga matches
+    const ligaMatchesIds = new Set(matches.filter(m => m.competition === 'Liga').map(m => m.id));
+    const lastPlayedMatch = matches.filter(m => m.status === 'Jugado').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+    dbPlayers.forEach(p => {
+      const playerInfo = combinedPlayers.find(cp => cp.id === p.id);
+      if (!playerInfo) return;
+
+      // 1. Injuries
+      if (p.physical_status === 'Lesionado') {
+        newAlerts.push({
+          id: `${p.id}-injury`,
+          player: playerInfo,
+          type: 'injury',
+          message: 'Baja por lesión deportiva',
+          color: 'text-red-500 border-red-500/30 bg-red-500/10'
+        });
+      }
+
+      // Card calculation
+      const pStats = matchStats.filter(s => s.player_id === p.id);
+      
+      // 2. Red card in last match
+      if (lastPlayedMatch) {
+        const lastMatchStat = pStats.find(s => s.match_id === lastPlayedMatch.id);
+        if (lastMatchStat && lastMatchStat.red_card) {
+          newAlerts.push({
+            id: `${p.id}-red`,
+            player: playerInfo,
+            type: 'red_card',
+            message: 'Expulsado (Últ. Partido)',
+            color: 'text-red-600 border-red-600/30 bg-red-600/10'
+          });
+        }
+      }
+
+      // 3. Yellow cards in Liga
+      const ligaStats = pStats.filter(s => ligaMatchesIds.has(s.match_id));
+      const ligaYellows = ligaStats.reduce((sum, s) => sum + (s.yellow_cards || 0), 0);
+
+      if (ligaYellows > 0) {
+        if (ligaYellows % 5 === 0) {
+          newAlerts.push({
+            id: `${p.id}-sanction`,
+            player: playerInfo,
+            type: 'sanction',
+            message: `Sanción: ${ligaYellows} amarillas`,
+            color: 'text-red-500 border-red-500/30 bg-red-500/10'
+          });
+        } else if ((ligaYellows + 1) % 5 === 0) {
+          newAlerts.push({
+            id: `${p.id}-warning`,
+            player: playerInfo,
+            type: 'warning',
+            message: `Apercibido: ${ligaYellows} amarillas`,
+            color: 'text-amber-500 border-amber-500/30 bg-amber-500/10'
+          });
+        }
+      }
+    });
+
+    return newAlerts;
+  }, [dbPlayers, combinedPlayers, matchStats, matches]);
 
   // ==========================================
   // FINES / PAYMENTS STATE & LOGIC
@@ -238,15 +314,35 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="text-center sm:text-left mb-8">
-        <h2 className="text-3xl font-extrabold text-brand-gray-light tracking-tight">
-          Panel de Acciones Rápidas
-        </h2>
-        <p className="text-sm text-brand-gray-muted mt-2">
-          Selecciona una de las opciones para registrar información de forma rápida.
-        </p>
-      </div>
+
+
+      {/* Alerts Center */}
+      {alerts.length > 0 && !activeForm && (
+        <div className="mb-8 bg-brand-black-card border border-brand-black-border rounded-2xl p-6 relative overflow-hidden animate-fade-in shadow-premium">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-[60px] pointer-events-none" />
+          <div className="flex items-center gap-3 mb-6 relative z-10">
+            <AlertTriangle className="w-6 h-6 text-amber-500" />
+            <h3 className="text-xl font-bold text-brand-gray-light">Centro de Alertas</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 relative z-10">
+            {alerts.map(alert => (
+              <div key={alert.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:-translate-y-1 hover:shadow-lg ${alert.color}`}>
+                <img src={alert.player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-12 h-12 rounded-full object-cover border-2 border-current/20" />
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold truncate text-brand-gray-light">{alert.player.full_name}</h4>
+                  <p className="text-[10px] uppercase font-bold tracking-wider mt-0.5 truncate flex items-center gap-1 opacity-90">
+                    {alert.type === 'injury' ? <Activity className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                    {alert.message}
+                  </p>
+                </div>
+                {alert.player.dorsal !== undefined && alert.player.dorsal !== null && (
+                  <span className="text-xl font-black opacity-30 px-2 shrink-0">{alert.player.dorsal}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Options Grid */}
       {!activeForm && (
