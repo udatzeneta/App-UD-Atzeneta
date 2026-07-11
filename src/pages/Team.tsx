@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 interface DemarcationData {
   [key: string]: {
-    player: Profile;
+    player: Player;
     minutes: number;
     stats: PlayerMatchStats[];
   }[];
