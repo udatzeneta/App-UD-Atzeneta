@@ -1305,7 +1305,7 @@ export const Matches: React.FC = () => {
               className="flex flex-col items-center justify-center p-5 bg-brand-black/50 border border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover rounded-xl group transition-all"
             >
               <Clock className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
-              <span className="text-sm font-bold text-brand-gray-light">Pasar Datos</span>
+              <span className="text-sm font-bold text-brand-gray-light">Acta</span>
               <span className="text-xs text-brand-gray-muted mt-1 text-center">
                 Introduce las estadísticas de rendimiento de los jugadores.
               </span>

@@ -93,6 +93,14 @@ export interface Match {
   kit_shorts_color?: string | null;
   kit_socks_color?: string | null;
   tactical_system?: string | null;
+  tactical_with_ball?: string | null;
+  tactical_without_ball?: string | null;
+  tactical_set_pieces?: string | null;
+  tactical_general?: string | null;
+  opponent_events?: {
+    goals: { minute: string; dorsal: string }[];
+    yellow_cards: { minute: string; dorsal: string }[];
+  } | null;
   team_positive_aspects?: string | null;
   team_improve_aspects?: string | null;
   created_at?: string;
@@ -127,6 +135,7 @@ export interface PlayerMatchStats {
     own_goals?: string[];
     penalty_goals?: string[];
     conceded_penalty_goals?: string[];
+    injuries?: string[];
   } | null;
   created_at?: string;
   updated_at?: string;
@@ -332,6 +341,7 @@ export interface PlayerInjury {
   estimated_return?: string;
   actual_return?: string;
   origin?: string;
+  match_id?: string;
   follow_up_notes?: string;
   competitive_leave?: boolean;
   created_at?: string;

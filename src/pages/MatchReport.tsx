@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
 import { useToast } from '../context/ToastContext';
@@ -10,11 +10,14 @@ import logos from '../assets/logos.json';
 import type { Team } from '../types';
 import {
   ArrowLeft, Trophy, Target, Shield, Calendar, Clock,
-  PlusCircle, Check, X, ChevronDown, ChevronUp, AlertCircle,
-  FileText, Save, Users, Zap
+  PlusCircle, Check, X, ChevronDown, ChevronUp, AlertCircle, Plus,
+  FileText, Save, Users, Zap, Edit2
 } from 'lucide-react';
 
 import { FORMATIONS_SLOTS } from '../utils/formations';
+import { Modal } from '../components/Modal';
+import { BodyMap, ZONE_LABELS } from '../components/BodyMap';
+import { MatchEventWizard, WizardEventPayload } from '../components/MatchEventWizard';
 
 // Formaciones tácticas y coordenadas en porcentaje (x: 0-100, y: 0-100) para campo vertical
 
@@ -45,24 +48,77 @@ interface LocalPlayerStats {
     own_goals: string[];
     penalty_goals: string[];
     conceded_penalty_goals: string[];
+    injuries: string[];
   };
 }
+
+const parseAbsoluteMinute = (minuteStr: string): number => {
+  let minuteNum = 90;
+  const parts = minuteStr.trim().split(' ');
+  if (parts.length > 1) {
+    const period = parts[0].toUpperCase();
+    const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
+    if (period === '1T') minuteNum = min;
+    else if (period === '2T') minuteNum = min + 45;
+    else if (period === '1P') minuteNum = min + 90;
+    else if (period === '2P') minuteNum = min + 105;
+    else minuteNum = min;
+  } else {
+    minuteNum = parseInt(minuteStr.split('+')[0].replace(/\D/g, '')) || 90;
+  }
+  return minuteNum;
+};
+
+const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>) => {
+  const next = { ...stats };
+  Object.values(next).forEach(p => {
+    let entryMinute = 0;
+    if (!p.is_starter) {
+      const prev = Object.values(next).find(x => x.substituted_for === p.player_id);
+      entryMinute = prev && prev.substituted_minute ? prev.substituted_minute : 90;
+    }
+    let exitMinute = 90;
+    if (p.red_card && p.event_minutes.red_card) {
+      exitMinute = parseAbsoluteMinute(p.event_minutes.red_card);
+    } else if (p.substituted_for && p.substituted_minute) {
+      exitMinute = p.substituted_minute;
+    }
+    next[p.player_id].minutes_played = Math.max(0, exitMinute - entryMinute);
+  });
+  return next;
+};
 
 export const MatchReport: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = usePermissions();
 
   const canEdit = hasPermission('matches', 'editar');
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('edit') === 'true' && canEdit) {
+      setIsEditing(true);
+    }
+  }, [location.search, canEdit]);
+
+
   // Estados Locales del Partido
   const [scoreUs, setScoreUs] = useState<number>(0);
   const [scoreThem, setScoreThem] = useState<number>(0);
   const [tacticalSystem, setTacticalSystem] = useState<string>('4-3-3');
-  const [teamPositive, setTeamPositive] = useState<string>('');
-  const [teamImprove, setTeamImprove] = useState<string>('');
+  const [tacticalWithBall, setTacticalWithBall] = useState<string>('');
+  const [tacticalWithoutBall, setTacticalWithoutBall] = useState<string>('');
+  const [tacticalSetPieces, setTacticalSetPieces] = useState<string>('');
+  const [tacticalGeneral, setTacticalGeneral] = useState<string>('');
+  const [opponentEvents, setOpponentEvents] = useState<{ goals: { minute: string, dorsal: string }[], yellow_cards: { minute: string, dorsal: string }[] }>({ goals: [], yellow_cards: [] });
 
   // Alineación (mapea slot de la formación a ID de jugador)
   const [lineup, setLineup] = useState<Record<number, string>>({});
@@ -76,13 +132,57 @@ export const MatchReport: React.FC = () => {
   const [showAddPlayerDropdown, setShowAddPlayerDropdown] = useState(false);
   const [playerSearchQuery, setPlayerSearchQuery] = useState('');
 
-  // Formulario rápido para añadir evento en cronología
-  const [timelinePlayerId, setTimelinePlayerId] = useState<string>('');
-  const [timelineEventType, setTimelineEventType] = useState<'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | ''>('');
-  const [timelinePeriod, setTimelinePeriod] = useState<string>('1T');
-  const [timelineMinute, setTimelineMinute] = useState<string>('1');
-  const [timelinePlayerInId, setTimelinePlayerInId] = useState<string>('');
-  const [timelinePlayerInPosition, setTimelinePlayerInPosition] = useState<string>('');
+  // Asistente de eventos
+  const [isEventWizardOpen, setIsEventWizardOpen] = useState(false);
+
+  // Marcar que hay cambios sin guardar
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (isEditing) {
+      setHasUnsavedChanges(true);
+    }
+  }, [playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, isEditing]);
+
+  // Prevenir navegación si hay cambios sin guardar
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      const target = (e.target as Element).closest('a');
+      if (target && target.href && target.origin === window.location.origin) {
+        if (!window.confirm('Tienes cambios guardándose en el acta. ¿Seguro que quieres salir?')) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('click', handleClick, { capture: true });
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('click', handleClick, { capture: true });
+    };
+  }, [hasUnsavedChanges]);
+
+  // Auto-guardado con debounce de 1.5s
+  useEffect(() => {
+    if (hasUnsavedChanges && isEditing) {
+      const timer = setTimeout(() => {
+        saveMutation.mutate();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [hasUnsavedChanges, playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, isEditing]);
 
   // 1. Cargar Partido
   const { data: matchesList = [], isLoading: isLoadingMatch } = useQuery({
@@ -138,8 +238,11 @@ export const MatchReport: React.FC = () => {
       setScoreUs(matchData.score_us !== null ? matchData.score_us : 0);
       setScoreThem(matchData.score_them !== null ? matchData.score_them : 0);
       setTacticalSystem(matchData.tactical_system || '4-3-3');
-      setTeamPositive(matchData.team_positive_aspects || '');
-      setTeamImprove(matchData.team_improve_aspects || '');
+      setTacticalWithBall(matchData.tactical_with_ball || '');
+      setTacticalWithoutBall(matchData.tactical_without_ball || '');
+      setTacticalSetPieces(matchData.tactical_set_pieces || '');
+      setTacticalGeneral(matchData.tactical_general || '');
+      setOpponentEvents(matchData.opponent_events || { goals: [], yellow_cards: [] });
     }
   }, [matchData]);
 
@@ -155,7 +258,7 @@ export const MatchReport: React.FC = () => {
           is_called_up: init ? init.is_called_up : false,
           is_starter: init ? !!init.is_starter : false,
           position: init ? init.position || '' : '',
-          minutes_played: init ? init.minutes_played || 0 : 0,
+          minutes_played: init ? (init.minutes_played || (init.is_starter ? 90 : 0)) : 0,
           goals: init ? init.goals || 0 : 0,
           conceded_goals: init ? init.conceded_goals || 0 : 0,
           own_goals: init ? init.own_goals || 0 : 0,
@@ -176,6 +279,7 @@ export const MatchReport: React.FC = () => {
             own_goals: init?.event_minutes?.own_goals || [],
             penalty_goals: init?.event_minutes?.penalty_goals || [],
             conceded_penalty_goals: init?.event_minutes?.conceded_penalty_goals || [],
+            injuries: init?.event_minutes?.injuries || [],
           }
         };
       });
@@ -186,29 +290,55 @@ export const MatchReport: React.FC = () => {
       // a sus posiciones en la formación actual
       const slots = FORMATIONS_SLOTS[tacticalSystem] || FORMATIONS_SLOTS['4-3-3'];
       const builtLineup: Record<number, string> = {};
+      let needsUpdate = false;
+      const updatedStats = { ...statsMap };
 
       const starterStats = initialStats.filter(s => s.is_starter && s.is_called_up);
       starterStats.forEach(stat => {
-        // Encontrar un slot compatible libre
+        // Encontrar un slot compatible libre (por rol exacto o por la etiqueta antigua/abreviatura)
         const slotIdx = slots.findIndex((slot, idx) => 
-          slot.role === stat.position && !builtLineup[idx]
+          (slot.role === stat.position || slot.label === stat.position) && !builtLineup[idx]
         );
+        
         if (slotIdx !== -1) {
           builtLineup[slotIdx] = stat.player_id;
+          // Actualizar al nuevo nombre específico si venía con el antiguo
+          if (updatedStats[stat.player_id] && updatedStats[stat.player_id].position !== slots[slotIdx].role) {
+            updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: slots[slotIdx].role };
+            needsUpdate = true;
+          }
         } else {
           // Si no coincide el rol exacto, poner en el primer slot vacío
           const firstEmpty = slots.findIndex((_, idx) => !builtLineup[idx]);
           if (firstEmpty !== -1) {
             builtLineup[firstEmpty] = stat.player_id;
             // Corregir posición local para que coincida con el slot
-            if (statsMap[stat.player_id]) {
-              statsMap[stat.player_id].position = slots[firstEmpty].role;
+            if (updatedStats[stat.player_id]) {
+              updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: slots[firstEmpty].role };
+              needsUpdate = true;
             }
           }
         }
       });
 
+      // Auto-sanar posiciones de los suplentes basados en a quién sustituyeron
+      const subStats = initialStats.filter(s => !s.is_starter && s.is_called_up && s.substituted_for);
+      subStats.forEach(stat => {
+        const playerOutId = stat.substituted_for;
+        if (playerOutId && updatedStats[playerOutId] && updatedStats[playerOutId].position) {
+           const outPos = updatedStats[playerOutId].position;
+           if (updatedStats[stat.player_id] && updatedStats[stat.player_id].position !== outPos) {
+              updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: outPos };
+              needsUpdate = true;
+           }
+        }
+      });
+
       setLineup(builtLineup);
+      if (needsUpdate) {
+        setPlayerStats(updatedStats);
+        setHasUnsavedChanges(true);
+      }
     }
   }, [dbPlayers, initialStats, tacticalSystem]);
 
@@ -258,12 +388,10 @@ export const MatchReport: React.FC = () => {
         next[playerId] = {
           ...next[playerId],
           is_starter: true,
-          position: currentSlots[slotIdx].role,
-          // Si jugaba de titular y tenía 0 minutos, inicializamos con un valor normal (ej. 90)
-          minutes_played: next[playerId].minutes_played || 90
+          position: currentSlots[slotIdx].role
         };
       }
-      return next;
+      return recalculateAllMinutes(next);
     });
 
     setActiveSlotForSelection(null);
@@ -286,12 +414,10 @@ export const MatchReport: React.FC = () => {
         next[playerId] = {
           ...next[playerId],
           is_starter: false,
-          position: '',
-          // Opcional: reducir los minutos
-          minutes_played: 0
+          position: ''
         };
       }
-      return next;
+      return recalculateAllMinutes(next);
     });
   };
 
@@ -385,7 +511,30 @@ export const MatchReport: React.FC = () => {
   };
 
   // Añadir un evento específico desde la cronología
-  const handleAddMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals', minuteStr: string, playerInId?: string, positionIn?: string) => {
+  const handleAddMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury', minuteStr: string, playerInId?: string, positionIn?: string, opponentDorsal?: string) => {
+    if (type === 'opponent_goal') {
+      setOpponentEvents(prev => ({
+        ...prev,
+        goals: [...prev.goals, { minute: minuteStr, dorsal: opponentDorsal || '?' }]
+      }));
+      return;
+    }
+    
+    if (type === 'opponent_yellow_card') {
+      setOpponentEvents(prev => ({
+        ...prev,
+        yellow_cards: [...prev.yellow_cards, { minute: minuteStr, dorsal: opponentDorsal || '?' }]
+      }));
+      return;
+    }
+
+    if (type === 'injury') {
+      // Lesiones se guardan al hacer saveMatch o podemos simplemente mostrar un toast
+      // Para mostrarlo en la cronología, podemos añadirlo temporalmente si tuviéramos un estado local para lesiones,
+      // pero como se va a guardar directo a BBDD en saveMutation, lo ideal es guardarlo de forma independiente o en el payload.
+      // Por ahora vamos a mostrar un aviso, el usuario debería guardarlo desde otro modal o lo guardaremos en el save.
+    }
+
     setPlayerStats(prev => {
       const next = { ...prev };
       const player = next[playerId];
@@ -393,19 +542,7 @@ export const MatchReport: React.FC = () => {
 
       if (type === 'substitution') {
         // Obtenemos el minuto global para los minutos jugados y el campograma
-        let minuteNum = 90;
-        const parts = minuteStr.trim().split(' ');
-        if (parts.length > 1) {
-          const period = parts[0].toUpperCase();
-          const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
-          if (period === '1T') minuteNum = min;
-          else if (period === '2T') minuteNum = min + 45;
-          else if (period === '1P') minuteNum = min + 90;
-          else if (period === '2P') minuteNum = min + 105;
-          else minuteNum = min;
-        } else {
-          minuteNum = parseInt(minuteStr.split('+')[0].replace(/\D/g, '')) || 90;
-        }
+        const minuteNum = parseAbsoluteMinute(minuteStr);
         
         if (playerInId) {
           const playerIn = next[playerInId];
@@ -413,17 +550,15 @@ export const MatchReport: React.FC = () => {
             next[playerId] = {
               ...player,
               substituted_for: playerInId,
-              substituted_minute: minuteNum,
-              minutes_played: minuteNum
+              substituted_minute: minuteNum
             };
             next[playerInId] = {
               ...playerIn,
-              position: positionIn || playerIn.position || '',
-              minutes_played: Math.max(0, 90 - minuteNum)
+              position: positionIn || playerIn.position || ''
             };
           }
         }
-        return next;
+        return recalculateAllMinutes(next);
       }
 
       const eventMin = { ...player.event_minutes };
@@ -433,6 +568,13 @@ export const MatchReport: React.FC = () => {
         next[playerId] = {
           ...player,
           red_card: true,
+          event_minutes: eventMin
+        };
+      } else if (type === 'injury') {
+        const arr = [...(eventMin.injuries || []), minuteStr];
+        eventMin.injuries = arr;
+        next[playerId] = {
+          ...player,
           event_minutes: eventMin
         };
       } else {
@@ -455,8 +597,76 @@ export const MatchReport: React.FC = () => {
     });
   };
 
+  const handleSaveWizardEvents = async (events: WizardEventPayload[]) => {
+    let injuryAdded = false;
+    let successCount = 0;
+
+    for (const evt of events) {
+      if (evt.type === 'injury' && evt.injuryData && evt.playerId) {
+        try {
+          await dataService.createPlayerInjury({
+            player_id: evt.playerId,
+            injury_date: new Date().toISOString().split('T')[0],
+            body_zone: evt.injuryData.zone !== 'No especificada' ? evt.injuryData.zone : 'abdomen',
+            body_side: evt.injuryData.side,
+            diagnosis: `Lesión registrada en partido`,
+            origin: `Jornada ${matchData?.matchday || '?'}, vs ${matchData?.rival || '?'}, Min. ${evt.minuteStr}`,
+            match_id: matchData?.id,
+            severity: evt.injuryData.severity as 'Leve' | 'Moderada' | 'Grave',
+            status: 'Activa',
+            competitive_leave: evt.injuryData.severity !== 'Leve'
+          });
+          handleAddMatchEvent(evt.playerId, 'injury', evt.minuteStr);
+          injuryAdded = true;
+          successCount++;
+        } catch (e) {
+          console.error(e);
+          showToast('error', 'Error', 'No se pudo guardar la lesión de un jugador.');
+        }
+      } else {
+        handleAddMatchEvent(
+          evt.playerId || '', 
+          evt.type, 
+          evt.minuteStr, 
+          evt.playerInId, 
+          evt.positionIn, 
+          evt.opponentDorsal
+        );
+        successCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      if (injuryAdded && events.length === 1) {
+        showToast('success', 'Lesión registrada', 'La lesión se ha guardado en el historial.');
+      } else if (events.length > 1) {
+        showToast('success', 'Incidencias añadidas', `Se han registrado ${successCount} eventos.`);
+      } else {
+        showToast('success', 'Incidencia añadida', 'El evento ha sido registrado.');
+      }
+    }
+  };
+
   // Quitar un evento específico desde la cronología
-  const handleRemoveMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals', minuteStr: string, indexInType?: number) => {
+  const handleRemoveMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury', minuteStr: string, indexInType?: number) => {
+    if (type === 'opponent_goal') {
+      setOpponentEvents(prev => {
+        const goals = [...prev.goals];
+        if (indexInType !== undefined) goals.splice(indexInType, 1);
+        return { ...prev, goals };
+      });
+      return;
+    }
+    
+    if (type === 'opponent_yellow_card') {
+      setOpponentEvents(prev => {
+        const ycs = [...prev.yellow_cards];
+        if (indexInType !== undefined) ycs.splice(indexInType, 1);
+        return { ...prev, yellow_cards: ycs };
+      });
+      return;
+    }
+
     setPlayerStats(prev => {
       const next = { ...prev };
       const player = next[playerId];
@@ -467,17 +677,15 @@ export const MatchReport: React.FC = () => {
         next[playerId] = {
           ...player,
           substituted_for: undefined,
-          substituted_minute: undefined,
-          minutes_played: 90
+          substituted_minute: undefined
         };
         if (playerInId && next[playerInId]) {
           next[playerInId] = {
             ...next[playerInId],
-            minutes_played: 0,
             position: ''
           };
         }
-        return next;
+        return recalculateAllMinutes(next);
       }
 
       const eventMin = { ...player.event_minutes };
@@ -513,17 +721,25 @@ export const MatchReport: React.FC = () => {
   };
 
   // Consolidar todos los eventos de forma ordenada para la línea de tiempo
-  // Consolidar todos los eventos de forma ordenada para la línea de tiempo
   const matchEvents = useMemo(() => {
     const eventsList: {
       id: string;
       playerId: string;
       playerName: string;
-      type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals';
+      type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury';
       minute: string;
       indexInType: number;
       extraInfo?: string;
     }[] = [];
+
+    // Añadir eventos del rival
+    opponentEvents.goals?.forEach((g, idx) => {
+      eventsList.push({ id: `opp-goal-${idx}-${g.minute}`, playerId: '', playerName: `Rival #${g.dorsal}`, type: 'opponent_goal', minute: g.minute, indexInType: idx });
+    });
+    
+    opponentEvents.yellow_cards?.forEach((yc, idx) => {
+      eventsList.push({ id: `opp-yc-${idx}-${yc.minute}`, playerId: '', playerName: `Rival #${yc.dorsal}`, type: 'opponent_yellow_card', minute: yc.minute, indexInType: idx });
+    });
 
     Object.values(playerStats).forEach(stat => {
       const playerObj = dbPlayers.find(p => p.id === stat.player_id);
@@ -555,6 +771,10 @@ export const MatchReport: React.FC = () => {
 
       stat.event_minutes.yellow_cards?.forEach((min, idx) => {
         eventsList.push({ id: `${stat.player_id}-yellow_cards-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'yellow_cards', minute: min, indexInType: idx });
+      });
+
+      stat.event_minutes.injuries?.forEach((min, idx) => {
+        eventsList.push({ id: `${stat.player_id}-injury-${idx}-${min}`, playerId: stat.player_id, playerName, type: 'injury', minute: min, indexInType: idx });
       });
 
       if (stat.red_card && stat.event_minutes.red_card !== null && stat.event_minutes.red_card !== undefined) {
@@ -650,8 +870,11 @@ export const MatchReport: React.FC = () => {
         score_them: matchStatus === 'Jugado' ? scoreThem : null,
         status: matchStatus,
         tactical_system: tacticalSystem,
-        team_positive_aspects: teamPositive.trim(),
-        team_improve_aspects: teamImprove.trim()
+        tactical_with_ball: tacticalWithBall.trim(),
+        tactical_without_ball: tacticalWithoutBall.trim(),
+        tactical_set_pieces: tacticalSetPieces.trim(),
+        tactical_general: tacticalGeneral.trim(),
+        opponent_events: opponentEvents
       };
       await dataService.updateMatch(matchId, updatedMatch);
 
@@ -682,7 +905,7 @@ export const MatchReport: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['playerMatchStats', matchId] });
-      showToast('success', 'Acta Guardada', 'Las estadísticas y la táctica se guardaron correctamente.');
+      setHasUnsavedChanges(false);
     },
     onError: (err: any) => {
       showToast('error', 'Error al Guardar', err.message || 'No se pudieron registrar los datos.');
@@ -722,6 +945,21 @@ export const MatchReport: React.FC = () => {
     try {
       showToast('info', 'Generando PDF', 'Espere un momento mientras se crea el informe...');
       
+      // Capturar el campograma como imagen
+      let campogramaImage: string | null = null;
+      const campogramaEl = document.getElementById('campograma-capture');
+      if (campogramaEl) {
+        const html2canvas = (await import('html2canvas')).default;
+        // Ocultar elementos de UI que no queremos en el PDF (si los hubiera)
+        const canvas = await html2canvas(campogramaEl, {
+          backgroundColor: null, // Mantener transparencia si aplica
+          scale: 2, // Mejor resolución
+          logging: false,
+          useCORS: true
+        });
+        campogramaImage = canvas.toDataURL('image/png');
+      }
+
       const startersList = dbPlayers.filter(p => {
         const stats = playerStats[p.id];
         return stats?.is_called_up && stats?.is_starter;
@@ -764,11 +1002,14 @@ export const MatchReport: React.FC = () => {
         score_them: scoreThem,
         status: matchStatus,
         tactical_system: tacticalSystem,
-        team_positive_aspects: teamPositive,
-        team_improve_aspects: teamImprove
+        tactical_with_ball: tacticalWithBall,
+        tactical_without_ball: tacticalWithoutBall,
+        tactical_set_pieces: tacticalSetPieces,
+        tactical_general: tacticalGeneral,
+        opponent_events: opponentEvents
       };
 
-      await exportMatchReportToPDF(currentMatch, orderedCalledUp, statsList);
+      await exportMatchReportToPDF(currentMatch, orderedCalledUp, statsList, matchEvents, campogramaImage);
       showToast('success', 'PDF Descargado', 'El acta del partido se ha descargado correctamente.');
     } catch (e) {
       console.error(e);
@@ -805,11 +1046,14 @@ export const MatchReport: React.FC = () => {
     <div className="space-y-6">
       {/* Cabecera del Acta */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-brand-black-border pb-5">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate('/matches')}
-            className="p-2 hover:bg-brand-black-hover border border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light rounded-lg transition-all"
-            title="Volver a partidos"
+            type="button"
+            onClick={() => {
+              if (hasUnsavedChanges && !window.confirm('Tienes cambios guardándose en el acta. ¿Seguro que quieres salir?')) return;
+              navigate('/matches');
+            }}
+            className="w-8 h-8 rounded-full bg-brand-black-card border border-brand-black-border flex items-center justify-center text-brand-gray-light hover:text-white hover:border-brand-gray-muted transition-colors hover:shadow-glow-sm"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -831,22 +1075,55 @@ export const MatchReport: React.FC = () => {
             <FileText className="w-4 h-4" /> Descargar Acta PDF
           </button>
 
-          <button
-            type="button"
-            onClick={handleDeleteReport}
-            disabled={deleteReportMutation.isPending}
-            className="btn-secondary py-2.5 text-xs text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 font-bold"
-          >
-            {deleteReportMutation.isPending ? 'Borrando...' : 'Borrar Acta'}
-          </button>
+          {canEdit && !isEditing && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="btn-primary py-2.5 text-xs font-bold bg-brand-gray-dark border border-brand-gray-muted text-white hover:bg-brand-gray-light"
+            >
+              <Edit2 className="w-4 h-4" /> Editar Acta
+            </button>
+          )}
 
-          <button
-            onClick={handleSaveAll}
-            disabled={saveMutation.isPending}
-            className="btn-primary py-2.5 text-xs font-bold"
-          >
-            <Save className="w-4 h-4" /> {saveMutation.isPending ? 'Guardando...' : 'Guardar Acta de Partido'}
-          </button>
+          {canEdit && isEditing && (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-end w-32 mr-2">
+                {saveMutation.isPending ? (
+                  <span className="text-[11px] text-brand-gray-light animate-pulse flex items-center gap-1.5 font-bold">
+                    <div className="w-3 h-3 rounded-full border-2 border-brand-gray-muted border-t-transparent animate-spin" /> Guardando...
+                  </span>
+                ) : hasUnsavedChanges ? (
+                  <span className="text-[11px] text-amber-500 animate-pulse flex items-center gap-1.5 font-bold">
+                    <Clock className="w-3 h-3" /> Auto-guardando
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-emerald-500 flex items-center gap-1.5 font-bold">
+                    <Check className="w-3 h-3" /> Guardado
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDeleteReport}
+                disabled={deleteReportMutation.isPending}
+                className="btn-secondary py-2 px-3 text-xs text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 font-bold"
+              >
+                Borrar
+              </button>
+
+              <button
+                onClick={() => {
+                  if (hasUnsavedChanges) {
+                    saveMutation.mutate();
+                  }
+                  setIsEditing(false);
+                }}
+                className="btn-primary py-2 px-4 text-xs font-bold bg-brand-gray-dark border border-brand-gray-muted text-white hover:bg-brand-gray-light"
+              >
+                Terminar Edición
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -871,6 +1148,7 @@ export const MatchReport: React.FC = () => {
                   <select
                     value={tacticalSystem}
                     onChange={(e) => setTacticalSystem(e.target.value)}
+                    disabled={!isEditing}
                     className="form-input bg-brand-black-bg text-xs py-1.5"
                   >
                     {Object.keys(FORMATIONS_SLOTS).map(sys => (
@@ -938,13 +1216,26 @@ export const MatchReport: React.FC = () => {
                 <h3 className="text-sm font-bold text-brand-gray-light">XI Inicial - Campograma</h3>
                 <p className="text-[10px] text-brand-gray-muted mt-0.5">Posiciona a los 11 jugadores en el sistema {tacticalSystem}</p>
               </div>
-              <span className="text-[10px] font-mono font-black text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded border border-brand-red-600/20">
-                {Object.keys(lineup).length}/11 Titulares
-              </span>
+              <div className="flex items-center gap-3">
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEventWizardOpen(true)}
+                    className="bg-yellow-500 hover:bg-yellow-400 text-brand-black text-[10px] font-extrabold px-3 py-1 rounded-md flex items-center gap-1.5 transition-all shadow-glow-yellow animate-pulse"
+                    title="Registrar Nueva Incidencia"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> INCIDENCIA
+                  </button>
+                )}
+                <span className="text-[10px] font-mono font-black text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded border border-brand-red-600/20">
+                  {Object.keys(lineup).length}/11 Titulares
+                </span>
+              </div>
             </div>
 
             {/* Representación gráfica del Campo de Fútbol */}
-            <div className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-2xl overflow-hidden shadow-2xl select-none">
+            <div id="campograma-capture" className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-2xl overflow-hidden shadow-2xl select-none">
+
               {/* Franjas del césped */}
               <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5">
                 {Array.from({ length: 10 }).map((_, i) => (
@@ -995,39 +1286,26 @@ export const MatchReport: React.FC = () => {
                       top: `${slot.y}%`,
                       transform: 'translate(-50%, -50%)',
                     }}
-                    className="absolute z-10 flex flex-col items-center select-none"
+                    className={`absolute flex flex-col items-center select-none ${activeSlotForSelection === idx ? 'z-50' : 'z-10'}`}
                   >
                     {playerChain.length > 0 ? (
                       // Slot Ocupado
                       <div className="relative flex flex-col items-center">
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePlayerFromLineup(idx)}
-                          className="absolute -top-1.5 -right-1.5 bg-brand-red-600 hover:bg-brand-red-700 text-white rounded-full p-0.5 shadow-md border border-emerald-950 transition-all z-20"
-                          title="Quitar de alineación"
-                        >
-                          <X className="w-2.5 h-2.5" />
-                        </button>
-                        
-                        <div className="flex flex-row items-end gap-1.5 bg-black/30 p-1 rounded-2xl backdrop-blur-sm">
-                          {playerChain.map((chainItem, chainIdx) => {
+
+                        <div className="relative flex flex-col items-center group bg-black/30 p-1 rounded-2xl backdrop-blur-sm">
+                          {(() => {
+                            const chainItem = playerChain[0];
                             const pObj = dbPlayers.find(p => p.id === chainItem.id);
                             if (!pObj) return null;
-                            const isStarter = chainIdx === 0;
                             const activeStats = chainItem.stats;
                             
                             return (
-                              <div key={chainItem.id} className="relative flex flex-col items-center group">
-                                {chainItem.minute && (
-                                  <span className="absolute -top-4 bg-brand-black-card text-white border border-brand-red-600/30 text-[8.5px] font-black px-1 rounded whitespace-nowrap z-40 shadow-sm">
-                                    {chainItem.minute}'
-                                  </span>
-                                )}
-
+                              <div key={chainItem.id} className="relative flex flex-col items-center">
                                 <button
                                   type="button"
-                                  onClick={() => setActiveSlotForSelection(activeSlotForSelection === idx ? null : idx)}
-                                  className={`relative ${isStarter ? 'w-11 h-11' : 'w-9 h-9 opacity-95'} rounded-full bg-brand-black-card border-2 ${isStarter ? 'border-yellow-500' : 'border-brand-gray-light'} shadow-premium flex items-center justify-center hover:scale-105 active:scale-95 transition-all`}
+                                  onClick={() => isEditing && setActiveSlotForSelection(activeSlotForSelection === idx ? null : idx)}
+                                  disabled={!isEditing}
+                                  className={`relative w-11 h-11 rounded-full bg-brand-black-card border-2 border-yellow-500 shadow-premium flex items-center justify-center ${isEditing ? 'hover:scale-105 active:scale-95 cursor-pointer' : 'cursor-default'} transition-all`}
                                 >
                                   <div className="w-full h-full rounded-full overflow-hidden">
                                     {pObj.photo_url ? (
@@ -1064,13 +1342,66 @@ export const MatchReport: React.FC = () => {
                                   )}
                                 </button>
                                 
-                                <span className={`mt-0.5 bg-brand-black-card/90 text-brand-gray-light font-bold px-1 py-0.5 rounded shadow border border-brand-black-border max-w-[55px] truncate text-center leading-none ${isStarter ? 'text-[9px]' : 'text-[7.5px]'}`}>
+                                <span className={`mt-0.5 bg-brand-black-card/90 text-brand-gray-light font-bold px-1 py-0.5 rounded shadow border border-brand-black-border text-center leading-none text-[9px] whitespace-nowrap overflow-visible`}>
                                   {pObj.nickname || pObj.full_name.split(' ')[0]}
                                 </span>
                               </div>
                             );
-                          })}
+                          })()}
                         </div>
+
+                        {/* Suplentes (flotando debajo) */}
+                        {playerChain.length > 1 && (
+                          <div className="absolute top-full mt-1.5 left-1/2 -translate-x-1/2 flex flex-row items-start gap-1.5 bg-black/50 p-1 rounded-xl backdrop-blur-md z-30 pointer-events-none shadow-md border border-brand-black-border/50">
+                            {playerChain.slice(1).map((chainItem) => {
+                              const pObj = dbPlayers.find(p => p.id === chainItem.id);
+                              if (!pObj) return null;
+                              const activeStats = chainItem.stats;
+                              
+                              return (
+                                <div key={chainItem.id} className="relative flex flex-col items-center group pointer-events-auto mt-2">
+                                  {chainItem.minute && (
+                                    <span className="absolute -top-3.5 bg-brand-black-card text-white border border-brand-red-600/50 text-[7.5px] font-black px-1 rounded whitespace-nowrap z-40 shadow-sm">
+                                      {chainItem.minute}'
+                                    </span>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => isEditing && setActiveSlotForSelection(activeSlotForSelection === idx ? null : idx)}
+                                    disabled={!isEditing}
+                                    className={`relative w-5 h-5 opacity-90 rounded-full bg-brand-black-card border-2 border-brand-gray-light shadow-premium flex items-center justify-center ${isEditing ? 'hover:scale-105 active:scale-95 cursor-pointer' : 'cursor-default'} transition-all`}
+                                  >
+                                    <div className="w-full h-full rounded-full overflow-hidden">
+                                      {pObj.photo_url ? (
+                                        <img src={pObj.photo_url} alt={pObj.full_name} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-brand-black-card text-[10px] font-black text-brand-gray-light">
+                                          {pObj.dorsal || '?'}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Badges de Eventos sobre el suplente */}
+                                    {activeStats && (
+                                      <>
+                                        {activeStats.goals > 0 && (
+                                          <span className="absolute -top-2 -left-2 bg-brand-black/90 text-[7px] rounded-full px-0.5 shadow border border-brand-black-border z-30">
+                                            ⚽{activeStats.goals > 1 ? `x${activeStats.goals}` : ''}
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </button>
+                                  
+                                  <span className={`mt-0.5 bg-brand-black-card/90 text-brand-gray-light font-bold px-1 py-0.5 rounded shadow border border-brand-black-border text-center leading-none text-[6px] whitespace-nowrap overflow-visible`}>
+                                    {pObj.nickname || pObj.full_name.split(' ')[0]}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       // Slot Vacío
@@ -1083,7 +1414,7 @@ export const MatchReport: React.FC = () => {
                             : 'bg-emerald-900/35 border-emerald-100/35 text-emerald-100/60 hover:bg-emerald-900/50 hover:border-emerald-100/50'
                         }`}
                       >
-                        <span className="text-[8px] font-black leading-none">{slot.role}</span>
+                        <span className="text-[8px] font-black leading-none">{slot.label}</span>
                         <span className="text-[10px] font-bold leading-none mt-0.5">+</span>
                       </button>
                     )}
@@ -1091,7 +1422,7 @@ export const MatchReport: React.FC = () => {
                     {/* Popover desplegable para asignar jugador en el slot activo */}
                     {activeSlotForSelection === idx && (
                       <div 
-                        className={`absolute bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium max-h-[170px] overflow-y-auto z-30 w-44 no-scrollbar
+                        className={`absolute bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium max-h-[350px] overflow-y-auto z-30 w-44 no-scrollbar
                           ${slot.y > 60 ? 'bottom-11' : 'top-11'} 
                           ${slot.x < 30 ? 'left-0' : slot.x > 70 ? 'right-0' : 'left-1/2 -translate-x-1/2'}
                         `}
@@ -1130,218 +1461,7 @@ export const MatchReport: React.FC = () => {
             </div>
           </div>
 
-          {/* Cronología / Registro de Eventos del Partido */}
-          <div className="dashboard-card p-5 space-y-4">
-            <div className="border-b border-brand-black-border pb-3 text-left">
-              <h3 className="text-sm font-bold text-brand-gray-light">Cronología de Incidencias</h3>
-              <p className="text-[10px] text-brand-gray-muted mt-0.5">Registra eventos en vivo o edita la línea de tiempo del partido</p>
-            </div>
 
-            {/* Formulario rápido para añadir incidencias */}
-            <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-3">
-              <span className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider block text-left">Registrar Nueva Incidencia</span>
-              
-              <div className="space-y-4 text-left mt-3">
-                {/* Paso 1: Evento */}
-                <div className="bg-brand-black/30 p-2.5 rounded border border-brand-black-border">
-                  <label className="text-[10px] font-bold text-brand-gray-light uppercase block mb-1.5 flex items-center gap-1.5">
-                    <span className="bg-brand-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">1</span> 
-                    ¿Qué ha pasado?
-                  </label>
-                  <select
-                    value={timelineEventType}
-                    onChange={(e) => {
-                      setTimelineEventType(e.target.value as any);
-                      // Reset player selection when changing event type to avoid mismatches
-                      setTimelinePlayerId('');
-                      setTimelinePlayerInId('');
-                      setTimelinePlayerInPosition('');
-                    }}
-                    className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
-                  >
-                    <option value="">-- Selecciona el tipo de incidencia --</option>
-                    <option value="goals">⚽ Gol</option>
-                    <option value="penalty_goals">⚽ Gol de Penalti</option>
-                    <option value="assists">🥾 Asistencia</option>
-                    <option value="conceded_goals">🥅 Gol en Contra</option>
-                    <option value="conceded_penalty_goals">🥅 Gol Recibido Penalti</option>
-                    <option value="own_goals">💥 Gol en Propia</option>
-                    <option value="yellow_cards">🟨 Tarjeta Amarilla</option>
-                    <option value="red_card">🟥 Tarjeta Roja</option>
-                    <option value="substitution">🔄 Cambio</option>
-                  </select>
-                </div>
-
-                {/* Paso 2: Futbolista(s) */}
-                {timelineEventType !== '' && (
-                  <div className="bg-brand-black/30 p-2.5 rounded border border-brand-black-border animate-fadeIn space-y-3">
-                    <label className="text-[10px] font-bold text-brand-gray-light uppercase block mb-1.5 flex items-center gap-1.5">
-                      <span className="bg-brand-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">2</span> 
-                      ¿Quién {timelineEventType === 'substitution' ? 'está implicado en el cambio' : 'es el protagonista'}?
-                    </label>
-                    
-                    <div className="space-y-2.5">
-                      <div>
-                        <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">
-                          {timelineEventType === 'substitution' ? 'SALE DEL CAMPO' : 'Futbolista'}
-                        </label>
-                        <select
-                          value={timelinePlayerId}
-                          onChange={(e) => {
-                            const pId = e.target.value;
-                            setTimelinePlayerId(pId);
-                            const playerObj = dbPlayers.find(p => p.id === pId);
-                            const stats = playerStats[pId];
-                            const isGK = playerObj?.position === 'Portero' || stats?.position === 'GK';
-                            if (!isGK && timelineEventType === 'conceded_goals') {
-                              setTimelineEventType('goals');
-                            }
-                          }}
-                          className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
-                        >
-                          <option value="">-- Seleccionar --</option>
-                          {calledUpPlayers.map(p => {
-                            const stats = playerStats[p.id];
-                            const isGK = p.position === 'Portero' || stats?.position === 'GK';
-                            // Para cambios, lo ideal es que salga un titular o alguien ya en campo, pero permitimos todos de la convocatoria
-                            return (
-                              <option key={p.id} value={p.id}>
-                                {p.dorsal ? `(${p.dorsal}) ` : ''}{p.nickname || p.full_name} {isGK ? ' (POR)' : ''}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-
-                      {timelineEventType === 'substitution' && (
-                        <div className="grid grid-cols-2 gap-2 animate-fadeIn border-t border-brand-black-border pt-2.5">
-                          <div>
-                            <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1 text-cyan-400">ENTRA</label>
-                            <select
-                              value={timelinePlayerInId}
-                              onChange={(e) => setTimelinePlayerInId(e.target.value)}
-                              className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
-                            >
-                              <option value="">-- Suplente --</option>
-                              {calledUpPlayers.filter(p => !playerStats[p.id]?.is_starter).map(p => (
-                                <option key={p.id} value={p.id}>{p.nickname || p.full_name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Posición</label>
-                            <select
-                              value={timelinePlayerInPosition}
-                              onChange={(e) => setTimelinePlayerInPosition(e.target.value)}
-                              className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
-                            >
-                              <option value="">Selecciona...</option>
-                              <option value="Portero">Portero</option>
-                              <option value="Lateral Derecho">Lateral Derecho</option>
-                              <option value="Central Derecho">Central Derecho</option>
-                              <option value="Central">Central</option>
-                              <option value="Central Izquierdo">Central Izquierdo</option>
-                              <option value="Lateral Izquierdo">Lateral Izquierdo</option>
-                              <option value="Pivote">Pivote</option>
-                              <option value="Interior Derecho">Interior Derecho</option>
-                              <option value="Interior">Interior</option>
-                              <option value="Interior Izquierdo">Interior Izquierdo</option>
-                              <option value="Mediapunta">Mediapunta</option>
-                              <option value="Extremo Derecho">Extremo Derecho</option>
-                              <option value="Extremo Izquierdo">Extremo Izquierdo</option>
-                              <option value="Delantero Centro">Delantero Centro</option>
-                            </select>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Paso 3: Momento y Añadir */}
-                {timelineEventType !== '' && timelinePlayerId !== '' && (timelineEventType !== 'substitution' || (timelinePlayerInId !== '' && timelinePlayerInPosition !== '')) && (
-                  <div className="bg-brand-black/30 p-2.5 rounded border border-brand-black-border animate-fadeIn">
-                    <label className="text-[10px] font-bold text-brand-gray-light uppercase block mb-2 flex items-center gap-1.5">
-                      <span className="bg-brand-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px]">3</span> 
-                      ¿Cuándo ha ocurrido?
-                    </label>
-                    <div className="flex flex-col sm:flex-row gap-2.5">
-                      <div className="flex gap-2 w-full sm:w-auto flex-1">
-                        <div className="w-1/2 sm:w-28 shrink-0">
-                          <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Parte</label>
-                          <select
-                            value={timelinePeriod}
-                            onChange={(e) => setTimelinePeriod(e.target.value)}
-                            className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 w-full border-brand-black-border"
-                          >
-                            <option value="1T">1ª Parte</option>
-                            <option value="2T">2ª Parte</option>
-                            <option value="1P">Prórroga 1</option>
-                            <option value="2P">Prórroga 2</option>
-                            <option value="PEN">Penaltis</option>
-                          </select>
-                        </div>
-                        <div className="w-1/2 sm:w-20 shrink-0">
-                          <label className="text-[9px] font-bold text-brand-gray-muted uppercase block mb-1">Minuto</label>
-                          <input
-                            type="text"
-                            placeholder="Ej: 45+2"
-                            value={timelineMinute}
-                            onChange={(e) => setTimelineMinute(e.target.value)}
-                            className="form-input bg-brand-black-bg text-xs py-1.5 px-2.5 text-center w-full border-brand-black-border"
-                          />
-                        </div>
-                      </div>
-                      
-                      <div className="w-full sm:w-auto mt-2 sm:mt-0 flex items-end">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!timelinePlayerId) {
-                              showToast('error', 'Campos requeridos', 'Debes seleccionar un futbolista.');
-                              return;
-                            }
-                            
-                            // Validar tarjeta roja única
-                            if (timelineEventType === 'red_card') {
-                              const stats = playerStats[timelinePlayerId];
-                              if (stats && stats.red_card) {
-                                showToast('error', 'Incidencia inválida', 'Este jugador ya tiene una tarjeta roja registrada.');
-                                return;
-                              }
-                            }
-                            
-                            const finalMinute = `${timelinePeriod} ${timelineMinute}`;
-
-                            if (timelineEventType === 'substitution') {
-                              if (!timelinePlayerInId) {
-                                showToast('error', 'Campos requeridos', 'Debes seleccionar el jugador que entra.');
-                                return;
-                              }
-                              handleAddMatchEvent(timelinePlayerId, timelineEventType, finalMinute, timelinePlayerInId, timelinePlayerInPosition);
-                              // Reset forms
-                              setTimelinePlayerInId('');
-                              setTimelinePlayerInPosition('');
-                            } else {
-                              handleAddMatchEvent(timelinePlayerId, timelineEventType, finalMinute);
-                            }
-                            showToast('success', 'Incidencia añadida', 'El evento ha sido registrado en la cronología.');
-                            
-                            // Reset form to step 1 automatically to speed up next entry
-                            setTimelineEventType('');
-                            setTimelinePlayerId('');
-                          }}
-                          className="btn-primary py-2 px-4 text-xs font-bold w-full h-[34px] flex justify-center items-center"
-                        >
-                          Guardar Incidencia
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* LADO DERECHO: Tabla de Estadísticas de Jugadores */}
@@ -1778,102 +1898,230 @@ export const MatchReport: React.FC = () => {
               <p className="text-[10px] text-brand-gray-muted mt-0.5">Historial cronológico de todas las incidencias del partido</p>
             </div>
             
-            <div className="max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
+            <div className="max-h-[400px] overflow-y-auto pr-1 no-scrollbar">
               {matchEvents.length === 0 ? (
                 <div className="text-center py-10 bg-brand-black/20 rounded-xl border border-dashed border-brand-black-border text-brand-gray-muted text-xs italic">
                   No hay incidencias registradas en este partido.
                 </div>
               ) : (
-                <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-4 py-2">
-                  {matchEvents.map(evt => {
-                    let icon = '⚽';
-                    let typeText = 'Gol';
-                    let colorClass = 'text-brand-gray-light';
-                    let bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
-                    
-                    if (evt.type === 'penalty_goals') {
-                      icon = '⚽ ▭';
-                      typeText = 'Gol de Penalti';
-                      colorClass = 'text-brand-gray-light';
-                      bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
-                    } else if (evt.type === 'assists') {
-                      icon = '🥾';
-                      typeText = 'Asistencia';
-                      colorClass = 'text-emerald-400';
-                      bgIconColor = 'bg-emerald-950 border-emerald-800 text-emerald-400';
-                    } else if (evt.type === 'yellow_cards') {
-                      icon = '🟨';
-                      typeText = 'T. Amarilla';
-                      colorClass = 'text-yellow-400';
-                      bgIconColor = 'bg-yellow-950 border-yellow-800 text-yellow-400';
-                    } else if (evt.type === 'red_card') {
-                      icon = '🟥';
-                      typeText = 'T. Roja';
-                      colorClass = 'text-red-500';
-                      bgIconColor = 'bg-red-950 border-red-800 text-red-500';
-                    } else if (evt.type === 'conceded_goals') {
-                      icon = '🥅';
-                      typeText = 'Gol en Contra';
-                      colorClass = 'text-cyan-400';
-                      bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
-                    } else if (evt.type === 'conceded_penalty_goals') {
-                      icon = '🥅 ▭';
-                      typeText = 'Gol Recibido Penalti';
-                      colorClass = 'text-cyan-400';
-                      bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
-                    } else if (evt.type === 'own_goals') {
-                      icon = '💥';
-                      typeText = 'Gol en Propia';
-                      colorClass = 'text-orange-400';
-                      bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
-                    } else if (evt.type === 'substitution') {
-                      icon = '🔄';
-                      typeText = `Cambio (Entra ${evt.extraInfo})`;
-                      colorClass = 'text-brand-gray-light';
-                      bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
-                    }
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Columna 1ª Parte */}
+                  <div>
+                    <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">1ª Parte</h4>
+                    {matchEvents.filter(e => parseAbsoluteMinute(e.minute) <= 45).length === 0 ? (
+                      <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
+                    ) : (
+                      <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
+                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) <= 45).map(evt => {
+                          let icon = '⚽';
+                          let typeText = 'Gol';
+                          let colorClass = 'text-brand-gray-light';
+                          let bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                          
+                          if (evt.type === 'penalty_goals') {
+                            icon = '⚽ ▭';
+                            typeText = 'Gol de Penalti';
+                            colorClass = 'text-brand-gray-light';
+                            bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                          } else if (evt.type === 'assists') {
+                            icon = '🥾';
+                            typeText = 'Asistencia';
+                            colorClass = 'text-emerald-400';
+                            bgIconColor = 'bg-emerald-950 border-emerald-800 text-emerald-400';
+                          } else if (evt.type === 'yellow_cards') {
+                            icon = '🟨';
+                            typeText = 'T. Amarilla';
+                            colorClass = 'text-yellow-400';
+                            bgIconColor = 'bg-yellow-950 border-yellow-800 text-yellow-400';
+                          } else if (evt.type === 'red_card') {
+                            icon = '🟥';
+                            typeText = 'T. Roja';
+                            colorClass = 'text-red-500';
+                            bgIconColor = 'bg-red-950 border-red-800 text-red-500';
+                          } else if (evt.type === 'conceded_goals') {
+                            icon = '🥅';
+                            typeText = 'Gol en Contra';
+                            colorClass = 'text-cyan-400';
+                            bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                          } else if (evt.type === 'conceded_penalty_goals') {
+                            icon = '🥅 ▭';
+                            typeText = 'Gol Recibido Penalti';
+                            colorClass = 'text-cyan-400';
+                            bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                          } else if (evt.type === 'own_goals') {
+                            icon = '💥';
+                            typeText = 'Gol en Propia';
+                            colorClass = 'text-orange-400';
+                            bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                          } else if (evt.type === 'substitution') {
+                            icon = '🔄';
+                            typeText = `Cambio (Entra ${evt.extraInfo})`;
+                            colorClass = 'text-brand-gray-light';
+                            bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                          } else if (evt.type === 'opponent_goal') {
+                            icon = '🥅';
+                            typeText = 'Gol del Rival';
+                            colorClass = 'text-brand-red-500';
+                            bgIconColor = 'bg-brand-red-600/10 border-brand-red-600/30 text-brand-red-500';
+                          } else if (evt.type === 'opponent_yellow_card') {
+                            icon = '🟨';
+                            typeText = 'Amarilla del Rival';
+                            colorClass = 'text-yellow-500';
+                            bgIconColor = 'bg-yellow-950/30 border-yellow-800/30 text-yellow-500';
+                          } else if (evt.type === 'injury') {
+                            icon = '🚑';
+                            typeText = 'Lesión';
+                            colorClass = 'text-amber-500';
+                            bgIconColor = 'bg-amber-950 border-amber-800 text-amber-500';
+                          }
 
-                    return (
-                      <div key={evt.id} className="relative group">
-                        {/* Timeline node */}
-                        <div className={`absolute -left-[27px] w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] z-10 ${bgIconColor}`}>
-                          {icon}
-                        </div>
-                        
-                        {/* Event Card */}
-                        <div className="flex items-center justify-between p-3 bg-brand-black-card hover:bg-brand-black-hover rounded-xl border border-brand-black-border transition-all group-hover:border-brand-gray-dark shadow-sm ml-1">
-                          <div className="flex items-center gap-3 text-left">
-                            <div className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-brand-black/50 border border-brand-black-border shrink-0">
-                              <span className="text-[11px] font-black text-brand-red-600 leading-none">{evt.minute}'</span>
-                              <span className="text-[7px] font-bold text-brand-gray-muted uppercase leading-none mt-0.5">Min</span>
+                          return (
+                            <div key={evt.id} className="relative group">
+                              <div className={`absolute -left-[27px] w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] z-10 ${bgIconColor}`}>
+                                {icon}
+                              </div>
+                              <div className="flex items-center justify-between py-2 px-3 bg-brand-black-card hover:bg-brand-black-hover rounded-xl border border-brand-black-border transition-all group-hover:border-brand-gray-dark shadow-sm ml-1">
+                                <div className="flex items-center gap-3 text-left">
+                                  <div className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-brand-black/50 border border-brand-black-border shrink-0">
+                                    <span className="text-[11px] font-black text-brand-red-600 leading-none">{evt.minute}'</span>
+                                    <span className="text-[7px] font-bold text-brand-gray-muted uppercase leading-none mt-0.5">Min</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-xs text-brand-gray-light block leading-tight">{evt.playerName}</span>
+                                    <span className={`text-[9px] font-bold uppercase mt-0.5 block ${colorClass}`}>{typeText}</span>
+                                  </div>
+                                </div>
+                                {isEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`¿Deseas eliminar este evento (${typeText} en min. ${evt.minute})?`)) {
+                                        handleRemoveMatchEvent(evt.playerId, evt.type, evt.minute, evt.indexInType);
+                                        showToast('success', 'Incidencia eliminada', 'El evento ha sido removido.');
+                                      }
+                                    }}
+                                    className="p-1.5 hover:text-brand-red-600 text-brand-gray-muted bg-brand-black/50 hover:bg-brand-red-600/10 rounded-lg border border-transparent hover:border-brand-red-600/30 transition-all opacity-0 group-hover:opacity-100"
+                                    title="Eliminar incidencia"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <span className="font-bold text-xs text-brand-gray-light block leading-tight">
-                                {evt.playerName}
-                              </span>
-                              <span className={`text-[9px] font-bold uppercase mt-0.5 block ${colorClass}`}>
-                                {typeText}
-                              </span>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm(`¿Deseas eliminar este evento (${typeText} en min. ${evt.minute})?`)) {
-                                handleRemoveMatchEvent(evt.playerId, evt.type, evt.minute, evt.indexInType);
-                                showToast('success', 'Incidencia eliminada', 'El evento ha sido removido.');
-                              }
-                            }}
-                            className="p-1.5 hover:text-brand-red-600 text-brand-gray-muted bg-brand-black/50 hover:bg-brand-red-600/10 rounded-lg border border-transparent hover:border-brand-red-600/30 transition-all opacity-0 group-hover:opacity-100"
-                            title="Eliminar incidencia"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
+
+                  {/* Columna 2ª Parte */}
+                  <div>
+                    <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">2ª Parte</h4>
+                    {matchEvents.filter(e => parseAbsoluteMinute(e.minute) > 45).length === 0 ? (
+                      <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
+                    ) : (
+                      <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
+                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) > 45).map(evt => {
+                          let icon = '⚽';
+                          let typeText = 'Gol';
+                          let colorClass = 'text-brand-gray-light';
+                          let bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                          
+                          if (evt.type === 'penalty_goals') {
+                            icon = '⚽ ▭';
+                            typeText = 'Gol de Penalti';
+                            colorClass = 'text-brand-gray-light';
+                            bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                          } else if (evt.type === 'assists') {
+                            icon = '🥾';
+                            typeText = 'Asistencia';
+                            colorClass = 'text-emerald-400';
+                            bgIconColor = 'bg-emerald-950 border-emerald-800 text-emerald-400';
+                          } else if (evt.type === 'yellow_cards') {
+                            icon = '🟨';
+                            typeText = 'T. Amarilla';
+                            colorClass = 'text-yellow-400';
+                            bgIconColor = 'bg-yellow-950 border-yellow-800 text-yellow-400';
+                          } else if (evt.type === 'red_card') {
+                            icon = '🟥';
+                            typeText = 'T. Roja';
+                            colorClass = 'text-red-500';
+                            bgIconColor = 'bg-red-950 border-red-800 text-red-500';
+                          } else if (evt.type === 'conceded_goals') {
+                            icon = '🥅';
+                            typeText = 'Gol en Contra';
+                            colorClass = 'text-cyan-400';
+                            bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                          } else if (evt.type === 'conceded_penalty_goals') {
+                            icon = '🥅 ▭';
+                            typeText = 'Gol Recibido Penalti';
+                            colorClass = 'text-cyan-400';
+                            bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                          } else if (evt.type === 'own_goals') {
+                            icon = '💥';
+                            typeText = 'Gol en Propia';
+                            colorClass = 'text-orange-400';
+                            bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                          } else if (evt.type === 'substitution') {
+                            icon = '🔄';
+                            typeText = `Cambio (Entra ${evt.extraInfo})`;
+                            colorClass = 'text-brand-gray-light';
+                            bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                          } else if (evt.type === 'opponent_goal') {
+                            icon = '🥅';
+                            typeText = 'Gol del Rival';
+                            colorClass = 'text-brand-red-500';
+                            bgIconColor = 'bg-brand-red-600/10 border-brand-red-600/30 text-brand-red-500';
+                          } else if (evt.type === 'opponent_yellow_card') {
+                            icon = '🟨';
+                            typeText = 'Amarilla del Rival';
+                            colorClass = 'text-yellow-500';
+                            bgIconColor = 'bg-yellow-950/30 border-yellow-800/30 text-yellow-500';
+                          } else if (evt.type === 'injury') {
+                            icon = '🚑';
+                            typeText = 'Lesión';
+                            colorClass = 'text-amber-500';
+                            bgIconColor = 'bg-amber-950 border-amber-800 text-amber-500';
+                          }
+
+                          return (
+                            <div key={evt.id} className="relative group">
+                              <div className={`absolute -left-[27px] w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] z-10 ${bgIconColor}`}>
+                                {icon}
+                              </div>
+                              <div className="flex items-center justify-between py-2 px-3 bg-brand-black-card hover:bg-brand-black-hover rounded-xl border border-brand-black-border transition-all group-hover:border-brand-gray-dark shadow-sm ml-1">
+                                <div className="flex items-center gap-3 text-left">
+                                  <div className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-brand-black/50 border border-brand-black-border shrink-0">
+                                    <span className="text-[11px] font-black text-brand-red-600 leading-none">{evt.minute}'</span>
+                                    <span className="text-[7px] font-bold text-brand-gray-muted uppercase leading-none mt-0.5">Min</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-xs text-brand-gray-light block leading-tight">{evt.playerName}</span>
+                                    <span className={`text-[9px] font-bold uppercase mt-0.5 block ${colorClass}`}>{typeText}</span>
+                                  </div>
+                                </div>
+                                {isEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`¿Deseas eliminar este evento (${typeText} en min. ${evt.minute})?`)) {
+                                        handleRemoveMatchEvent(evt.playerId, evt.type, evt.minute, evt.indexInType);
+                                        showToast('success', 'Incidencia eliminada', 'El evento ha sido removido.');
+                                      }
+                                    }}
+                                    className="p-1.5 hover:text-brand-red-600 text-brand-gray-muted bg-brand-black/50 hover:bg-brand-red-600/10 rounded-lg border border-transparent hover:border-brand-red-600/30 transition-all opacity-0 group-hover:opacity-100"
+                                    title="Eliminar incidencia"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1881,43 +2129,82 @@ export const MatchReport: React.FC = () => {
         </div>
       </div>
 
-      {/* ASPECTOS COLECTIVOS DEL EQUIPO (BOTTON SECTION) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-brand-black-card border border-brand-black-border p-5 rounded-2xl">
-        <div className="md:col-span-2 border-b border-brand-black-border pb-2.5 mb-2">
+      {/* ANÁLISIS TÁCTICO DEL EQUIPO (BOTTON SECTION) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-brand-black-card border border-brand-black-border p-5 rounded-2xl">
+        <div className="md:col-span-2 lg:col-span-4 border-b border-brand-black-border pb-2.5 mb-2">
           <h3 className="text-sm font-bold text-brand-gray-light flex items-center gap-1.5">
-            <Zap className="w-4.5 h-4.5 text-brand-red-600 animate-pulse" /> Informe Técnico del Equipo (Colectivo)
+            <Zap className="w-4.5 h-4.5 text-brand-red-600 animate-pulse" /> Análisis Táctico
           </h3>
-          <p className="text-[10px] text-brand-gray-muted mt-0.5">Analiza el rendimiento global de la U.D. Atzeneta en este partido</p>
+          <p className="text-[10px] text-brand-gray-muted mt-0.5">Analiza el rendimiento táctico de la U.D. Atzeneta en este partido</p>
         </div>
 
-        {/* Aspectos Positivos */}
+        {/* Momento con Balón */}
         <div className="bg-emerald-950/10 border border-emerald-900/30 p-4 rounded-xl space-y-2">
           <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">
-            <Check className="w-4 h-4 bg-emerald-950 rounded-full border border-emerald-900/40 p-0.5 shrink-0" />
-            Aspectos Positivos del Equipo
+            Momento con Balón
           </div>
           <textarea
-            className="form-input text-xs h-28 bg-brand-black-bg"
-            placeholder="Ej: Buena presión coordinada tras pérdida, efectividad a balón parado, circulación fluida en bloque medio..."
-            value={teamPositive}
-            onChange={(e) => setTeamPositive(e.target.value)}
+            className="form-input text-xs h-32 bg-brand-black-bg disabled:opacity-75"
+            placeholder="Ej: Salida de balón fluida, creación de espacios..."
+            value={tacticalWithBall}
+            onChange={(e) => setTacticalWithBall(e.target.value)}
+            disabled={!isEditing}
           />
         </div>
 
-        {/* Aspectos a Mejorar */}
+        {/* Momento sin Balón */}
         <div className="bg-orange-950/10 border border-orange-900/30 p-4 rounded-xl space-y-2">
           <div className="flex items-center gap-1.5 text-orange-400 font-bold text-xs uppercase tracking-wider">
-            <AlertCircle className="w-4 h-4 bg-orange-950 rounded-full border border-orange-900/40 p-0.5 shrink-0" />
-            Aspectos a Mejorar del Equipo
+            Momento sin Balón
           </div>
           <textarea
-            className="form-input text-xs h-28 bg-brand-black-bg"
-            placeholder="Ej: Desajustes defensivos en transición, poca vigilancia en saques de esquina rivales, lentitud en los cambios de juego..."
-            value={teamImprove}
-            onChange={(e) => setTeamImprove(e.target.value)}
+            className="form-input text-xs h-32 bg-brand-black-bg disabled:opacity-75"
+            placeholder="Ej: Presión alta efectiva, repliegue tardío..."
+            value={tacticalWithoutBall}
+            onChange={(e) => setTacticalWithoutBall(e.target.value)}
+            disabled={!isEditing}
+          />
+        </div>
+
+        {/* ABP (Acciones a Balón Parado) */}
+        <div className="bg-brand-red-600/10 border border-brand-red-600/30 p-4 rounded-xl space-y-2">
+          <div className="flex items-center gap-1.5 text-brand-red-500 font-bold text-xs uppercase tracking-wider">
+            ABP
+          </div>
+          <textarea
+            className="form-input text-xs h-32 bg-brand-black-bg disabled:opacity-75"
+            placeholder="Ej: Peligro en corners a favor, debilidad en faltas laterales..."
+            value={tacticalSetPieces}
+            onChange={(e) => setTacticalSetPieces(e.target.value)}
+            disabled={!isEditing}
+          />
+        </div>
+
+        {/* Aspectos Generales */}
+        <div className="bg-blue-950/10 border border-blue-900/30 p-4 rounded-xl space-y-2">
+          <div className="flex items-center gap-1.5 text-blue-400 font-bold text-xs uppercase tracking-wider">
+            Aspectos Generales
+          </div>
+          <textarea
+            className="form-input text-xs h-32 bg-brand-black-bg disabled:opacity-75"
+            placeholder="Ej: Actitud, intensidad, lectura de partido..."
+            value={tacticalGeneral}
+            onChange={(e) => setTacticalGeneral(e.target.value)}
+            disabled={!isEditing}
           />
         </div>
       </div>
+
+      {/* Modal Asistente de Eventos */}
+      {isEventWizardOpen && (
+        <MatchEventWizard
+          isOpen={isEventWizardOpen}
+          onClose={() => setIsEventWizardOpen(false)}
+          calledUpPlayers={calledUpPlayers}
+          playerStats={playerStats}
+          onSave={handleSaveWizardEvents}
+        />
+      )}
     </div>
   );
 };

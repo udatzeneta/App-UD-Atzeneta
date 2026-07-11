@@ -4,11 +4,11 @@ import { dataService } from '../services/data';
 import { authService } from '../services/auth';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award } from 'lucide-react';
+import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText } from 'lucide-react';
 import { Fine, Training, Match, Profile } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 
-type FormType = 'fines' | 'attendance' | 'matches' | null;
+type FormType = 'fines' | 'attendance' | 'matches_convocatoria' | 'matches_acta' | null;
 
 export const Dashboard: React.FC = () => {
   const { user, hasPermission } = useAuth();
@@ -48,6 +48,15 @@ export const Dashboard: React.FC = () => {
     queryFn: () => dataService.getMatches(),
     enabled: canManageMatches
   });
+
+  const sortedMatches = React.useMemo(() => {
+    const now = new Date().getTime();
+    return [...matches].sort((a, b) => {
+      const diffA = Math.abs(new Date(a.date).getTime() - now);
+      const diffB = Math.abs(new Date(b.date).getTime() - now);
+      return diffA - diffB;
+    });
+  }, [matches]);
 
   // 1. Extraer Jugadores de la tabla `players`
   const combinedPlayers = dbPlayers.map(p => ({
@@ -241,7 +250,7 @@ export const Dashboard: React.FC = () => {
 
       {/* Main Options Grid */}
       {!activeForm && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           
           {canManageFines && (
             <div 
@@ -289,18 +298,38 @@ export const Dashboard: React.FC = () => {
           {canManageMatches && (
             <div 
               onClick={() => {
-                setActiveForm('matches');
+                setActiveForm('matches_convocatoria');
                 setMSelectedMatchId('');
               }}
               className="bg-brand-black-card border border-brand-black-border hover:border-amber-500/50 rounded-2xl p-6 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-premium group flex flex-col items-center text-center gap-4"
             >
               <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 group-hover:scale-110 transition-transform">
-                <Trophy className="w-8 h-8" />
+                <Users className="w-8 h-8" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-brand-gray-light">Gestión de Partido</h3>
+                <h3 className="text-xl font-bold text-brand-gray-light">Pasar Convocatoria</h3>
                 <p className="text-xs text-brand-gray-muted mt-2 leading-relaxed">
-                  Haz la convocatoria o pasa los datos y estadísticas del partido.
+                  Selecciona los jugadores citados y los descartes.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {canManageMatches && (
+            <div 
+              onClick={() => {
+                setActiveForm('matches_acta');
+                setMSelectedMatchId('');
+              }}
+              className="bg-brand-black-card border border-brand-black-border hover:border-blue-500/50 rounded-2xl p-6 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-premium group flex flex-col items-center text-center gap-4"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                <FileText className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-brand-gray-light">Pasar Acta</h3>
+                <p className="text-xs text-brand-gray-muted mt-2 leading-relaxed">
+                  Introduce goles, asistencias, incidencias y minutos jugados.
                 </p>
               </div>
             </div>
@@ -603,7 +632,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* FORM: MATCHES */}
-      {activeForm === 'matches' && (
+      {(activeForm === 'matches_convocatoria' || activeForm === 'matches_acta') && (
         <div className="bg-brand-black-card border border-brand-black-border rounded-2xl overflow-hidden animate-fade-in shadow-premium relative">
           <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-[50px] pointer-events-none" />
           
@@ -612,72 +641,50 @@ export const Dashboard: React.FC = () => {
               <button onClick={() => setActiveForm(null)} className="p-2 hover:bg-brand-black border border-transparent hover:border-brand-black-border rounded-lg transition-colors text-brand-gray-muted">
                 <X className="w-5 h-5" />
               </button>
-              <Trophy className="w-6 h-6 text-amber-500" />
-              <h3 className="text-lg font-bold text-brand-gray-light">Gestión de Partido</h3>
+              {activeForm === 'matches_convocatoria' ? (
+                <Users className="w-6 h-6 text-amber-500" />
+              ) : (
+                <FileText className="w-6 h-6 text-blue-500" />
+              )}
+              <h3 className="text-lg font-bold text-brand-gray-light">
+                {activeForm === 'matches_convocatoria' ? 'Pasar Convocatoria' : 'Pasar Acta'}
+              </h3>
             </div>
           </div>
 
           <div className="p-6">
-            {!mSelectedMatchId ? (
-              <div className="max-w-xl mx-auto py-8">
-                <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-4 text-center">
-                  1. Seleccionar Partido
-                </h4>
-                <div className="space-y-3">
-                  {matches.slice(0, 5).map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => setMSelectedMatchId(m.id)}
-                      className="w-full bg-brand-black/40 border border-brand-black-border hover:border-amber-500/40 p-4 rounded-xl flex items-center justify-between group transition-all"
-                    >
-                      <div className="flex flex-col text-left">
-                        <span className="text-sm font-bold text-brand-gray-light">vs {m.rival}</span>
-                        <span className="text-xs text-brand-gray-muted mt-1">{m.date} • {m.is_local ? 'Local' : 'Visitante'}</span>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-brand-gray-dark group-hover:text-amber-500 transition-colors" />
-                    </button>
-                  ))}
-                  {matches.length === 0 && (
-                    <p className="text-center text-brand-gray-muted text-sm py-4">No hay partidos recientes.</p>
-                  )}
-                </div>
-                <div className="text-center mt-6">
-                  <Link to="/matches" className="text-xs text-amber-500 hover:underline">Ver todos los partidos</Link>
-                </div>
-              </div>
-            ) : (
-              <div className="max-w-xl mx-auto py-8 animate-fade-in text-center">
-                <div className="mb-8">
-                  <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-2">Partido Seleccionado</h4>
-                  <p className="text-xl font-bold text-brand-gray-light">vs {matches.find(m => m.id === mSelectedMatchId)?.rival}</p>
-                  <button onClick={() => setMSelectedMatchId('')} className="text-xs text-brand-gray-dark hover:text-brand-gray-light underline mt-2">Cambiar partido</button>
-                </div>
-                
-                <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-6">
-                  2. ¿Qué quieres hacer?
-                </h4>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="max-w-xl mx-auto py-8">
+              <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-4 text-center">
+                1. Seleccionar Partido
+              </h4>
+              <div className="space-y-3">
+                {sortedMatches.slice(0, 5).map(m => (
                   <button
-                    onClick={() => handleMatchAction('convocatoria')}
-                    className="bg-brand-black/40 border border-brand-black-border hover:border-amber-500/50 p-6 rounded-xl group transition-all"
+                    key={m.id}
+                    onClick={() => {
+                      if (activeForm === 'matches_convocatoria') {
+                        navigate(`/matches?action=convocatoria&matchId=${m.id}`);
+                      } else {
+                        navigate(`/matches/${m.id}/report?edit=true`);
+                      }
+                    }}
+                    className="w-full bg-brand-black/40 border border-brand-black-border hover:border-amber-500/40 p-4 rounded-xl flex items-center justify-between group transition-all"
                   >
-                    <Users className="w-8 h-8 text-amber-500 mx-auto mb-3 group-hover:scale-110 transition-transform" />
-                    <h5 className="font-bold text-brand-gray-light">Hacer Convocatoria</h5>
-                    <p className="text-xs text-brand-gray-muted mt-2">Selecciona los jugadores citados y los descartes.</p>
+                    <div className="flex flex-col text-left">
+                      <span className="text-sm font-bold text-brand-gray-light">vs {m.rival}</span>
+                      <span className="text-xs text-brand-gray-muted mt-1">{m.date} • {m.is_local ? 'Local' : 'Visitante'}</span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-brand-gray-dark group-hover:text-amber-500 transition-colors" />
                   </button>
-                  
-                  <button
-                    onClick={() => handleMatchAction('datos')}
-                    className="bg-brand-black/40 border border-brand-black-border hover:border-amber-500/50 p-6 rounded-xl group transition-all"
-                  >
-                    <Award className="w-8 h-8 text-amber-500 mx-auto mb-3 group-hover:scale-110 transition-transform" />
-                    <h5 className="font-bold text-brand-gray-light">Pasar Datos y Estadísticas</h5>
-                    <p className="text-xs text-brand-gray-muted mt-2">Introduce goles, asistencias y minutos jugados.</p>
-                  </button>
-                </div>
+                ))}
+                {matches.length === 0 && (
+                  <p className="text-center text-brand-gray-muted text-sm py-4">No hay partidos recientes.</p>
+                )}
               </div>
-            )}
+              <div className="text-center mt-6">
+                <Link to="/matches" className="text-xs text-amber-500 hover:underline">Ver todos los partidos</Link>
+              </div>
+            </div>
           </div>
         </div>
       )}

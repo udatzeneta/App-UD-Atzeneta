@@ -279,6 +279,25 @@ export const dataService = {
     }
   },
 
+  async getAllPlayerMatchStats(): Promise<PlayerMatchStats[]> {
+    if (isMockMode) {
+      await delay(200);
+      try {
+        const data = localStorage.getItem('ud_atzeneta_player_match_stats');
+        return data ? JSON.parse(data) as PlayerMatchStats[] : [];
+      } catch (e) {
+        console.error("Error parseando player_match_stats:", e);
+        return [];
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('player_match_stats')
+        .select('*');
+      if (error) throw error;
+      return data as PlayerMatchStats[];
+    }
+  },
+
   async savePlayerMatchStats(matchId: string, items: Omit<PlayerMatchStats, 'id' | 'created_at' | 'updated_at'>[]): Promise<PlayerMatchStats[]> {
     if (isMockMode) {
       await delay(300);
@@ -412,6 +431,11 @@ export const dataService = {
         };
         MockDatabase.setMatches(list);
       }
+      // Eliminar lesiones del partido simuladas
+      let injuries = MockDatabase.getPlayerInjuries();
+      injuries = injuries.filter(i => i.match_id !== matchId);
+      MockDatabase.setPlayerInjuries(injuries);
+
       const stats = MockDatabase.getPlayerMatchStats();
       stats.forEach((s: import('../types').PlayerMatchStats) => {
         if (s.match_id === matchId) {
@@ -455,6 +479,10 @@ export const dataService = {
         event_minutes: {}
       }).eq('match_id', matchId);
       if (error) throw error;
+
+      // Eliminar lesiones del partido
+      const { error: injuryError } = await supabase.from('player_injuries').delete().eq('match_id', matchId);
+      if (injuryError) throw injuryError;
     }
   },
 
@@ -464,12 +492,20 @@ export const dataService = {
       let list = MockDatabase.getMatches();
       list = list.filter(x => x.id !== id);
       MockDatabase.setMatches(list);
+
+      let injuries = MockDatabase.getPlayerInjuries();
+      injuries = injuries.filter(x => x.match_id !== id);
+      MockDatabase.setPlayerInjuries(injuries);
     } else {
       const { error } = await supabase
         .from('matches')
         .delete()
         .eq('id', id);
       if (error) throw error;
+
+      // Eliminar lesiones del partido manualmente por si no hay CASCADE
+      const { error: injuryError } = await supabase.from('player_injuries').delete().eq('match_id', id);
+      if (injuryError) throw injuryError;
     }
   },
 
@@ -1227,6 +1263,32 @@ export const dataService = {
         .delete()
         .eq('id', id);
       if (error) throw error;
+    }
+  },
+
+  /**
+   * Sube una foto de perfil (ya recortada) al bucket público 'player-photos'
+   * de Supabase Storage y devuelve la URL pública. En modo Mock, convierte
+   * el blob a Data URL para poder previsualizarlo sin backend real.
+   */
+  async uploadPlayerPhoto(blob: Blob, folder = 'players'): Promise<string> {
+    if (isMockMode) {
+      await delay(400);
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('No se pudo procesar la imagen en modo demo.'));
+        reader.readAsDataURL(blob);
+      });
+    } else {
+      const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from('player-photos')
+        .upload(fileName, blob, { contentType: 'image/png', upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('player-photos').getPublicUrl(fileName);
+      return data.publicUrl;
     }
   },
 

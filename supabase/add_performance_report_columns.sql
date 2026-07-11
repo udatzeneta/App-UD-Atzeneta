@@ -12,6 +12,9 @@ ALTER TABLE public.matches
 ALTER TABLE public.player_match_stats
   ADD COLUMN IF NOT EXISTS positive_aspects TEXT,
   ADD COLUMN IF NOT EXISTS improve_aspects TEXT,
+  ADD COLUMN IF NOT EXISTS comments TEXT,
+  ADD COLUMN IF NOT EXISTS substituted_for UUID REFERENCES public.players(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS substituted_minute INTEGER,
   ADD COLUMN IF NOT EXISTS event_minutes JSONB DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS conceded_goals INTEGER DEFAULT 0,
   ADD COLUMN IF NOT EXISTS own_goals INTEGER DEFAULT 0;

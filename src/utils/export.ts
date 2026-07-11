@@ -448,16 +448,20 @@ export const exportCallupToPDF = async (
   const autoTable = (await import('jspdf-autotable')).default;
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.width;
 
-  // Escudo
+  // 1. Cabecera Decorativa
+  doc.setFillColor(...BRAND_RED);
+  doc.rect(0, 8, pageWidth, 4, 'F');
+
+  // Intentar cargar el escudo
   try {
     const logoResponse = await fetch(CLUB_LOGO_URL);
     const logoBlob = await logoResponse.blob();
     const logoReader = new FileReader();
     await new Promise<void>((resolve, reject) => {
       logoReader.onload = () => {
-        // x=14, y=12 (más abajo), w=18 (más estrecho), h=20
-        doc.addImage(logoReader.result as string, 'PNG', 14, 12, 18, 20, undefined, 'FAST');
+        doc.addImage(logoReader.result as string, 'PNG', 14, 14, 16, 18, undefined, 'FAST');
         resolve();
       };
       logoReader.onerror = reject;
@@ -467,33 +471,63 @@ export const exportCallupToPDF = async (
     console.warn('No se pudo cargar el logo del club para el PDF:', e);
   }
 
-  doc.setFillColor(...BRAND_RED);
-  doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
-
-  doc.setFontSize(16);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BRAND_RED);
-  doc.text('CONVOCATORIA OFICIAL', 40, 18);
-
-  doc.setFontSize(12);
-  doc.setTextColor(50);
-  const title = match.is_local ? `UD Atzeneta vs ${match.rival}` : `${match.rival} vs UD Atzeneta`;
-  doc.text(title, 40, 25);
-
-  if (match.matchday) {
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Jornada ${match.matchday}`, 40, 31);
-  }
+  doc.text('CONVOCATORIA OFICIAL', 36, 20);
 
   doc.setFontSize(10);
-  doc.setTextColor(30);
-  doc.text(`Fecha del Partido: ${match.date} ${match.time ? '| ' + match.time + ' hs' : ''}`, 14, 45);
-  if (match.location) doc.text(`Lugar del Partido: ${match.location}`, 14, 51);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text('UD Atzeneta · Portal de Gestión Interna', 36, 25);
+
+  doc.setFontSize(9);
+  doc.setTextColor(110, 110, 110);
+  doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')}`, 36, 29);
+
+  // 2. Información General del Partido
+  doc.setFillColor(245, 245, 245);
+  doc.rect(14, 35, pageWidth - 28, 20, 'F');
+  doc.setDrawColor(220, 220, 220);
+  doc.setLineWidth(0.15);
+  doc.rect(14, 35, pageWidth - 28, 20, 'D');
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 30, 30);
+  const localStr = match.is_local ? 'Local' : 'Visitante';
+  const matchupText = match.is_local 
+    ? `UD Atzeneta vs ${match.rival}`
+    : `${match.rival} vs UD Atzeneta`;
+  
+  doc.text(matchupText, 18, 42);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(80, 80, 80);
+  doc.text(`Fecha: ${match.date} ${match.time ? '| Hora Partido: ' + match.time + 'h' : ''} | ${match.competition} (${localStr})`, 18, 48);
+  if (match.location) {
+    doc.text(`Lugar: ${match.location}`, 18, 52);
+  }
+  
+  if (match.matchday) {
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Jornada: ${match.matchday}`, pageWidth - 45, 42);
+  }
+
+  // Info específica de convocatoria (Lugar y Hora de reunión)
+  doc.setFillColor(254, 242, 230); // Naranja muy claro
+  doc.rect(14, 58, pageWidth - 28, 12, 'F');
+  doc.setDrawColor(230, 210, 200);
+  doc.rect(14, 58, pageWidth - 28, 12, 'D');
   
   doc.setFont('helvetica', 'bold');
-  doc.text(`Hora de Convocatoria: ${match.callup_time || '--:--'} hs`, 14, 60);
-  doc.text(`Lugar de Reunión: ${match.callup_location || 'No especificado'}`, 14, 66);
-  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(193, 18, 31);
+  doc.text(`Cita Jugadores:`, 18, 65);
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 30, 30);
+  doc.text(`${match.callup_time || '--:--'} hs  |  Lugar: ${match.callup_location || 'No especificado'}`, 45, 65);
 
   // --- DIBUJAR MANIQUÍ (EQUIPACIÓN) ---
   const hexToRgb = (hex: string): [number, number, number] => {
@@ -521,7 +555,6 @@ export const exportCallupToPDF = async (
           (pts[i][1] - pts[i-1][1]) * sh
         ]);
       }
-      // vectors, x, y, scale, style, closed
       d.lines(vectors, x + pts[0][0] * sw, y + pts[0][1] * sh, [1, 1], 'FD', true);
     };
 
@@ -529,17 +562,11 @@ export const exportCallupToPDF = async (
     const shorts = hexToRgb(shortsHex);
     const socks = hexToRgb(socksHex);
 
-    // Manga izquierda
     drawPoly([[50,50], [30,75], [42,82], [55,65]], shirt);
-    // Manga derecha
     drawPoly([[110,50], [130,75], [118,82], [105,65]], shirt);
-    // Cuerpo
     drawPoly([[50,50], [110,50], [110,125], [50,125]], shirt);
-    // Pantalón
     drawPoly([[50,125], [110,125], [112,160], [83,160], [80,145], [77,160], [48,160]], shorts);
-    // Calcetín 1
     drawPoly([[54,175], [66,175], [66,225], [54,225]], socks);
-    // Calcetín 2
     drawPoly([[94,175], [106,175], [106,225], [94,225]], socks);
   };
 
@@ -547,10 +574,11 @@ export const exportCallupToPDF = async (
   const shortsColor = match.kit_shorts_color || '#000000';
   const socksColor = match.kit_socks_color || '#000000';
 
-  drawMannequin(doc, doc.internal.pageSize.width - 30, 16, 16, 25, shirtColor, shortsColor, socksColor);
+  // Dibujar el maniquí más grande a la derecha de la cita
+  drawMannequin(doc, pageWidth - 32, 53, 14, 22, shirtColor, shortsColor, socksColor);
   // ------------------------------------
 
-  // Pre-cargar fotos de los jugadores
+  // Pre-cargar fotos
   const playerPhotos = await Promise.all(
     players.map(async (p) => {
       if (!p.photo_url) return null;
@@ -569,38 +597,62 @@ export const exportCallupToPDF = async (
     })
   );
 
+  // Función para convertir a Title Case
+  const toTitleCase = (str: string) => {
+    if (!str) return '';
+    return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
   // Tabla de jugadores
-  const headers = ['Foto', 'Dorsal', 'Nombre'];
+  const headers = ['Foto', 'Dorsal', 'Nombre del Jugador', 'Firma / Observaciones'];
   const rows = players.map(p => [
-    '', // Espacio para la foto
+    '', // Foto
     p.dorsal?.toString() || '-',
-    p.full_name
+    toTitleCase(p.full_name),
+    '' // Espacio para firmar
   ]);
+
+  // Cálculo dinámico para que quepa en 1 página
+  const startY = 75;
+  const bottomMargin = 10;
+  const headerHeight = 8;
+  const availableHeight = doc.internal.pageSize.height - startY - bottomMargin - headerHeight; 
+  
+  // Altura máxima por fila
+  let rowHeight = Math.floor(availableHeight / Math.max(players.length, 1));
+  if (rowHeight > 14) rowHeight = 14; 
+  if (rowHeight < 6) rowHeight = 6; 
+
+  const imageSize = rowHeight - 1.5;
 
   autoTable(doc, {
     head: [headers],
     body: rows,
-    startY: 75,
-    styles: { fontSize: 10, cellPadding: 3, minCellHeight: 15, valign: 'middle' },
+    startY: startY,
+    margin: { bottom: bottomMargin },
+    styles: { fontSize: rowHeight < 9 ? 8 : 10, cellPadding: 1, minCellHeight: rowHeight, valign: 'middle' },
     columnStyles: {
-      0: { cellWidth: 20, halign: 'center' },
-      1: { cellWidth: 20, halign: 'center' },
-      2: { halign: 'left' }
+      0: { cellWidth: 15, halign: 'center' },
+      1: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
+      2: { halign: 'left' },
+      3: { cellWidth: 60 } // Espacio firma
     },
     headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold', minCellHeight: 8 },
-    alternateRowStyles: { fillColor: [245, 245, 245] },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
     theme: 'grid',
-    tableLineColor: BRAND_BLACK,
+    tableLineColor: [200, 200, 200],
     tableLineWidth: 0.1,
     didDrawCell: (data: any) => {
       if (data.column.index === 0 && data.cell.section === 'body') {
         const photoData = playerPhotos[data.row.index];
         if (photoData) {
-          // Extraemos el tipo de la data URI si es posible, por defecto PNG
-          const match = photoData.match(/^data:image\/(png|jpeg|jpg);/);
-          const format = match ? match[1].toUpperCase() : 'PNG';
+          const matchRegex = photoData.match(/^data:image\/(png|jpeg|jpg);/);
+          const format = matchRegex ? matchRegex[1].toUpperCase() : 'PNG';
           
-          doc.addImage(photoData, format, data.cell.x + 4, data.cell.y + 1.5, 12, 12, undefined, 'FAST');
+          const imgX = data.cell.x + (data.cell.width - imageSize) / 2;
+          const imgY = data.cell.y + (rowHeight - imageSize) / 2;
+          
+          doc.addImage(photoData, format, imgX, imgY, imageSize, imageSize, undefined, 'FAST');
         }
       }
     }
@@ -615,16 +667,21 @@ export const exportCallupToPDF = async (
 export const exportMatchReportToPDF = async (
   match: import('../types').Match,
   players: import('../types').Player[],
-  stats: import('../types').PlayerMatchStats[]
+  stats: import('../types').PlayerMatchStats[],
+  matchEvents: any[] = [],
+  campogramaImage: string | null = null
 ): Promise<void> => {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  // Horizontal A4
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.width; // 297
+  const pageHeight = doc.internal.pageSize.height; // 210
 
   // 1. Cabecera Decorativa
   doc.setFillColor(...BRAND_RED);
-  doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
+  doc.rect(0, 8, pageWidth, 4, 'F');
 
   // Intentar cargar el escudo
   try {
@@ -646,7 +703,7 @@ export const exportMatchReportToPDF = async (
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BRAND_RED);
-  doc.text('INFORME DE RENDIMIENTO DE PARTIDO', 36, 20);
+  doc.text('ACTA DE PARTIDO', 36, 20);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
@@ -659,10 +716,10 @@ export const exportMatchReportToPDF = async (
 
   // 2. Información General del Partido
   doc.setFillColor(245, 245, 245);
-  doc.rect(14, 34, 182, 18, 'F');
+  doc.rect(120, 14, pageWidth - 134, 18, 'F');
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.15);
-  doc.rect(14, 34, 182, 18, 'D');
+  doc.rect(120, 14, pageWidth - 134, 18, 'D');
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
@@ -672,126 +729,68 @@ export const exportMatchReportToPDF = async (
     ? `UD Atzeneta ${match.score_us !== null ? match.score_us : '-'} - ${match.score_them !== null ? match.score_them : '-'} ${match.rival}`
     : `${match.rival} ${match.score_them !== null ? match.score_them : '-'} - ${match.score_us !== null ? match.score_us : '-'} UD Atzeneta`;
   
-  doc.text(matchupText, 18, 41);
+  doc.text(matchupText, 124, 21);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(80, 80, 80);
-  doc.text(`Fecha: ${match.date} ${match.time ? '| Hora: ' + match.time : ''} | Competición: ${match.competition} (${localStr})`, 18, 47);
+  doc.text(`Fecha: ${match.date} ${match.time ? '| Hora: ' + match.time : ''} | Competición: ${match.competition} (${localStr})`, 124, 27);
   if (match.matchday) {
     doc.setFont('helvetica', 'bold');
-    doc.text(`Jornada: ${match.matchday}`, 150, 41);
+    doc.text(`Jornada: ${match.matchday}`, pageWidth - 45, 21);
   }
-  doc.text(`Sistema: ${match.tactical_system || '4-3-3'}`, 150, 47);
+  doc.text(`Sistema: ${match.tactical_system || '4-3-3'}`, pageWidth - 45, 27);
 
-  // 3. Campo de Fútbol e XI Inicial (Lado Izquierdo, y = 57, w = 90, h = 120)
-  const pitchX = 14;
-  const pitchY = 56;
-  const pitchW = 86;
-  const pitchH = 118;
+  // Layout:
+  // Left side: Campograma (x=14, w=90)
+  // Middle: Tables (Titulares y Suplentes) (x=110, w=100)
+  // Right side: Timeline (x=215, w=70)
 
-  // Fondo Verde del Campo
-  doc.setFillColor(34, 110, 68); // Verde césped
-  doc.rect(pitchX, pitchY, pitchW, pitchH, 'F');
-  doc.setDrawColor(255, 255, 255, 0.4); // Blanco semi-transparente
-  doc.setLineWidth(0.35);
-  doc.rect(pitchX, pitchY, pitchW, pitchH, 'D');
+  // 3. Campograma
+  const campX = 14;
+  const campY = 38;
+  const campW = 85;
+  const campH = campW * 1.5; // aspect-[2/3]
 
-  // Líneas del Campo
-  doc.line(pitchX, pitchY + pitchH / 2, pitchX + pitchW, pitchY + pitchH / 2); // Línea central
-  doc.circle(pitchX + pitchW / 2, pitchY + pitchH / 2, pitchW * 0.15, 'D'); // Círculo central
-  doc.circle(pitchX + pitchW / 2, pitchY + pitchH / 2, 0.8, 'FD'); // Punto central
+  if (campogramaImage) {
+    // Fill background so it's not fully transparent if html2canvas missed it
+    doc.setFillColor(6, 78, 59); // emerald-900 approx
+    doc.rect(campX, campY, campW, campH, 'F');
+    // Add image
+    doc.addImage(campogramaImage, 'PNG', campX, campY, campW, campH, undefined, 'FAST');
+    // Add border
+    doc.setDrawColor(15, 23, 42); // slate-900
+    doc.setLineWidth(0.5);
+    doc.rect(campX, campY, campW, campH, 'D');
+  } else {
+    // Fallback if image failed
+    doc.setFillColor(200, 200, 200);
+    doc.rect(campX, campY, campW, campH, 'F');
+    doc.setTextColor(100);
+    doc.text('Imagen del campo no disponible', campX + 15, campY + campH/2);
+  }
 
-  // Área Grande Arriba
-  doc.rect(pitchX + pitchW * 0.2, pitchY, pitchW * 0.6, pitchH * 0.15, 'D');
-  // Área Pequeña Arriba
-  doc.rect(pitchX + pitchW * 0.35, pitchY, pitchW * 0.3, pitchH * 0.05, 'D');
-  // Semiarco Arriba
-  doc.ellipse(pitchX + pitchW / 2, pitchY + pitchH * 0.15, pitchW * 0.1, pitchH * 0.05, 'D');
-  doc.setFillColor(34, 110, 68);
-  doc.rect(pitchX + pitchW * 0.2, pitchY, pitchW * 0.6, pitchH * 0.15 - 0.1, 'F'); // Limpiar fondo del semiarco
-  doc.rect(pitchX + pitchW * 0.2, pitchY, pitchW * 0.6, pitchH * 0.15, 'D'); // Redibujar bordes
-  doc.rect(pitchX + pitchW * 0.35, pitchY, pitchW * 0.3, pitchH * 0.05, 'D');
-  doc.circle(pitchX + pitchW / 2, pitchY + pitchH * 0.1, 0.5, 'FD'); // Punto penal
+  // 4. Tablas de Jugadores (Centro)
+  const tableX = 105;
+  const tableW = 100;
+  
+  const getSortScore = (pos: string | undefined | null) => {
+    if (!pos) return 99;
+    const p = pos.toLowerCase();
+    if (p.includes('portero')) return 1;
+    if (p.includes('lateral') || p.includes('central') || p.includes('defensa') || p.includes('carrilero')) return 2;
+    if (p.includes('pivote') || p.includes('medio') || p.includes('interior') || p.includes('mediocentro') || p.includes('mediapunta')) return 3;
+    if (p.includes('delantero') || p.includes('extremo') || p.includes('punta')) return 4;
+    return 5;
+  };
 
-  // Área Grande Abajo
-  doc.rect(pitchX + pitchW * 0.2, pitchY + pitchH - pitchH * 0.15, pitchW * 0.6, pitchH * 0.15, 'D');
-  // Área Pequeña Abajo
-  doc.rect(pitchX + pitchW * 0.35, pitchY + pitchH - pitchH * 0.05, pitchW * 0.3, pitchH * 0.05, 'D');
-  // Semiarco Abajo
-  doc.ellipse(pitchX + pitchW / 2, pitchY + pitchH - pitchH * 0.15, pitchW * 0.1, pitchH * 0.05, 'D');
-  doc.rect(pitchX + pitchW * 0.2, pitchY + pitchH - pitchH * 0.15 + 0.1, pitchW * 0.6, pitchH * 0.15 - 0.1, 'F'); // Limpiar fondo
-  doc.rect(pitchX + pitchW * 0.2, pitchY + pitchH - pitchH * 0.15, pitchW * 0.6, pitchH * 0.15, 'D'); // Redibujar
-  doc.rect(pitchX + pitchW * 0.35, pitchY + pitchH - pitchH * 0.05, pitchW * 0.3, pitchH * 0.05, 'D');
-  doc.circle(pitchX + pitchW / 2, pitchY + pitchH - pitchH * 0.1, 0.5, 'FD'); // Punto penal
+  const starters = stats.filter(s => s.is_called_up && s.is_starter).sort((a, b) => getSortScore(a.position) - getSortScore(b.position));
+  const subs = stats.filter(s => s.is_called_up && !s.is_starter);
 
-  // Coordenadas Tácticas
-  const system = match.tactical_system || '4-3-3';
-  const slots = FORMATIONS_SLOTS[system] || FORMATIONS_SLOTS['4-3-3'];
-
-  doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'bold');
-
-  const placedPlayerIds = new Set<string>();
-
-  slots.forEach((slot: { role: string; x: number; y: number }) => {
-    // Buscar jugador inicial en esta demarcación
-    const playerStat = stats.find(s => 
-      s.is_called_up && 
-      s.is_starter && 
-      s.position === slot.role && 
-      !placedPlayerIds.has(s.player_id)
-    );
-    if (playerStat) placedPlayerIds.add(playerStat.player_id);
-
-    const playerObj = playerStat ? players.find(p => p.id === playerStat.player_id) : null;
-
-    const px = pitchX + (slot.x / 100) * pitchW;
-    const py = pitchY + (slot.y / 100) * pitchH;
-
-    if (playerObj) {
-      // Dibujar Círculo de Camiseta
-      doc.setFillColor(193, 18, 31); // Rojo
-      doc.setDrawColor(255, 255, 255);
-      doc.setLineWidth(0.4);
-      doc.circle(px, py, 3.8, 'FD');
-
-      // Dorsal
-      doc.setTextColor(255, 255, 255);
-      doc.text(playerObj.dorsal?.toString() || '?', px, py + 1.1, { align: 'center' });
-
-      // Nombre
-      doc.setFillColor(15, 15, 15, 0.8);
-      doc.rect(px - 9, py + 4.5, 18, 3.5, 'F');
-      doc.setDrawColor(50, 50, 50);
-      doc.setLineWidth(0.1);
-      doc.rect(px - 9, py + 4.5, 18, 3.5, 'D');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(6);
-      const nameStr = playerObj.nickname || playerObj.full_name.split(' ')[0];
-      doc.text(nameStr.substring(0, 11), px, py + 7, { align: 'center' });
-      doc.setFontSize(7.5);
-    } else {
-      // Slot vacío
-      doc.setFillColor(100, 100, 100, 0.4);
-      doc.setDrawColor(255, 255, 255, 0.6);
-      doc.circle(px, py, 3.2, 'FD');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(6.5);
-      doc.text(slot.role, px, py + 0.9, { align: 'center' });
-      doc.setFontSize(7.5);
-    }
-  });
-
-  // 4. Tabla de Estadísticas de Jugadores (Lado Derecho, x = 105, y = 56, w = 91)
-  // Cabecera compacta: Dorsal, Jugador, Min, G, A, Tarjetas
-  const headers = ['Nº', 'Jugador', 'Rol', 'Min', 'G', 'A', 'TA', 'TR'];
-  const tableRows = stats.map(s => {
+  const getRowData = (s: any) => {
     const p = players.find(x => x.id === s.player_id);
     const name = p ? (p.nickname || p.full_name.split(' ')[0]) : 'Jugador';
-    const roleStr = s.is_starter ? (s.position || 'Tit') : 'Sup';
+    const roleStr = s.position || '-';
     return [
       p?.dorsal?.toString() || '-',
       name,
@@ -802,188 +801,194 @@ export const exportMatchReportToPDF = async (
       s.yellow_cards?.toString() || '0',
       s.red_card ? 'S' : '-'
     ];
-  });
+  };
 
+  const headers = ['Nº', 'Jugador', 'Posición', 'Min', 'G', 'A', 'TA', 'TR'];
+  
+  // Titulares
   autoTable(doc, {
     head: [headers],
-    body: tableRows,
-    startY: pitchY - 1,
-    margin: { left: 105, right: 14 },
-    styles: { fontSize: 7.5, cellPadding: 1.8, halign: 'center' },
+    body: starters.map(getRowData),
+    startY: 38,
+    margin: { left: tableX },
+    tableWidth: tableW,
+    styles: { fontSize: 7, cellPadding: 1.5, halign: 'center' },
     columnStyles: {
-      0: { cellWidth: 8 },
-      1: { halign: 'left', cellWidth: 24 },
-      2: { cellWidth: 12 },
-      3: { cellWidth: 10 },
-      4: { cellWidth: 8 },
-      5: { cellWidth: 8 },
-      6: { cellWidth: 8 },
-      7: { cellWidth: 8 }
+      0: { cellWidth: 7 },
+      1: { halign: 'left', cellWidth: 26 },
+      2: { cellWidth: 23 },
+      3: { cellWidth: 8 },
+      4: { cellWidth: 7 },
+      5: { cellWidth: 7 },
+      6: { cellWidth: 7 },
+      7: { cellWidth: 7 }
     },
     headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 248, 248] },
     theme: 'grid',
     tableLineColor: [220, 220, 220],
-    tableLineWidth: 0.1
+    tableLineWidth: 0.1,
+    showHead: 'firstPage'
   });
 
-  // 5. Cajas Cualitativas del Equipo (Colectivo) en la parte inferior (y = 178)
-  const aspectY = 180;
-  const aspectH = 22;
-  const aspectW = 86;
+  const finalYTitulares = (doc as any).lastAutoTable.finalY || 38;
 
-  // Caja Aspectos Positivos
-  doc.setFillColor(235, 247, 240); // Verde suave
-  doc.rect(14, aspectY, aspectW, aspectH, 'F');
-  doc.setFillColor(...BRAND_RED);
-  doc.rect(14, aspectY, aspectW, 4.5, 'F'); // Cabecera roja
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(255, 255, 255);
-  doc.text('ASPECTOS POSITIVOS (EQUIPO)', 18, aspectY + 3.2);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(40, 40, 40);
-  const posLines = doc.splitTextToSize(match.team_positive_aspects || 'Sin registrar.', aspectW - 8);
-  doc.text(posLines, 18, aspectY + 8);
-
-  // Caja Aspectos a Mejorar
-  doc.setFillColor(254, 242, 230); // Naranja suave
-  doc.rect(110, aspectY, aspectW, aspectH, 'F');
-  doc.setFillColor(15, 15, 15); // Cabecera negra
-  doc.rect(110, aspectY, aspectW, 4.5, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(255, 255, 255);
-  doc.text('ASPECTOS A MEJORAR (EQUIPO)', 114, aspectY + 3.2);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(40, 40, 40);
-  const impLines = doc.splitTextToSize(match.team_improve_aspects || 'Sin registrar.', aspectW - 8);
-  doc.text(impLines, 114, aspectY + 8);
-
-  // 6. VALORACIONES INDIVIDUALES (Página 2)
-  const playersWithAspects = stats.filter(s => {
-    if (!s.is_called_up) return false;
-    if (s.positive_aspects || s.improve_aspects) return true;
-    if (s.event_minutes) {
-      const em = s.event_minutes;
-      return (
-        (em.goals && em.goals.length > 0) ||
-        (em.penalty_goals && em.penalty_goals.length > 0) ||
-        (em.assists && em.assists.length > 0) ||
-        (em.yellow_cards && em.yellow_cards.length > 0) ||
-        (em.red_card !== null && em.red_card !== undefined) ||
-        (em.conceded_goals && em.conceded_goals.length > 0) ||
-        (em.conceded_penalty_goals && em.conceded_penalty_goals.length > 0) ||
-        (em.own_goals && em.own_goals.length > 0)
-      );
-    }
-    return false;
-  });
-
-  if (playersWithAspects.length > 0) {
-    doc.addPage();
-    
-    // Cabecera Página 2
-    doc.setFillColor(...BRAND_RED);
-    doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
-
-    doc.setFontSize(13);
+  // Suplentes
+  if (subs.length > 0) {
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...BRAND_RED);
-    doc.text('ANÁLISIS INDIVIDUAL DE JUGADORES', 14, 20);
-    
-    doc.setFontSize(8.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(110, 110, 110);
-    doc.text('Detalles técnicos y minutos de eventos registrados por futbolista.', 14, 25);
+    doc.setTextColor(50, 50, 50);
+    doc.text('SUPLENTES', tableX, finalYTitulares + 6);
 
-    let currY = 32;
-
-    playersWithAspects.forEach(s => {
-      const p = players.find(x => x.id === s.player_id);
-      if (!p) return;
-
-      // Mantener control de página
-      if (currY > 260) {
-        doc.addPage();
-        doc.setFillColor(...BRAND_RED);
-        doc.rect(0, 8, doc.internal.pageSize.width, 4, 'F');
-        currY = 20;
-      }
-
-      // Nombre y Demarcación del Jugador
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 15, 15);
-      const headerStr = `${p.dorsal ? '(' + p.dorsal + ') ' : ''}${p.full_name} - ${s.is_starter ? 'Titular (' + s.position + ')' : 'Suplente'}`;
-      doc.text(headerStr, 14, currY);
-      currY += 4.5;
-
-      const events: string[] = [];
-      if (s.event_minutes) {
-        if (s.event_minutes.goals && s.event_minutes.goals.length > 0) {
-          events.push(`Goles: ${s.event_minutes.goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.penalty_goals && s.event_minutes.penalty_goals.length > 0) {
-          events.push(`Goles Penalti: ${s.event_minutes.penalty_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.conceded_goals && s.event_minutes.conceded_goals.length > 0) {
-          events.push(`Goles Encajados: ${s.event_minutes.conceded_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.conceded_penalty_goals && s.event_minutes.conceded_penalty_goals.length > 0) {
-          events.push(`Goles Enc. Penalti: ${s.event_minutes.conceded_penalty_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.own_goals && s.event_minutes.own_goals.length > 0) {
-          events.push(`Goles en Propia: ${s.event_minutes.own_goals.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.assists && s.event_minutes.assists.length > 0) {
-          events.push(`Asistencias: ${s.event_minutes.assists.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.yellow_cards && s.event_minutes.yellow_cards.length > 0) {
-          events.push(`Tarjetas Amarillas: ${s.event_minutes.yellow_cards.map(m => m.includes("'") ? m : m + "'").join(', ')}`);
-        }
-        if (s.event_minutes.red_card !== null && s.event_minutes.red_card !== undefined) {
-          events.push(`Tarjeta Roja: ${s.event_minutes.red_card.toString().includes("'") ? s.event_minutes.red_card : s.event_minutes.red_card + "'"}`);
-        }
-      }
-
-      if (events.length > 0) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...BRAND_RED);
-        doc.text(`Minutos de Incidencias: ${events.join(' | ')}`, 16, currY);
-        currY += 4;
-      }
-
-      // Aspectos del Jugador
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(60, 60, 60);
-
-      if (s.positive_aspects) {
-        const lines = doc.splitTextToSize(`+ Aspectos Positivos: ${s.positive_aspects}`, 175);
-        doc.text(lines, 16, currY);
-        currY += (lines.length * 3.2) + 1;
-      }
-      if (s.improve_aspects) {
-        const lines = doc.splitTextToSize(`- Aspectos a Mejorar: ${s.improve_aspects}`, 175);
-        doc.text(lines, 16, currY);
-        currY += (lines.length * 3.2) + 1;
-      }
-
-      // Línea separadora
-      doc.setDrawColor(235, 235, 235);
-      doc.setLineWidth(0.15);
-      doc.line(14, currY + 1, 196, currY + 1);
-      currY += 5;
+    autoTable(doc, {
+      head: [headers],
+      body: subs.map(getRowData),
+      startY: finalYTitulares + 8,
+      margin: { left: tableX },
+      tableWidth: tableW,
+      styles: { fontSize: 7, cellPadding: 1.5, halign: 'center' },
+      columnStyles: {
+        0: { cellWidth: 7 },
+        1: { halign: 'left', cellWidth: 26 },
+        2: { cellWidth: 23 },
+        3: { cellWidth: 8 },
+        4: { cellWidth: 7 },
+        5: { cellWidth: 7 },
+        6: { cellWidth: 7 },
+        7: { cellWidth: 7 }
+      },
+      headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 248, 248] },
+      theme: 'grid',
+      tableLineColor: [220, 220, 220],
+      tableLineWidth: 0.1,
+      showHead: 'firstPage'
     });
   }
 
-  const filename = `Informe_Partido_${match.date}_vs_${match.rival.replace(/\s+/g, '_')}`;
+  // 5. Cronología de Eventos (Derecha)
+  const timelineX = 212;
+  const timelineW = 75;
+  let timelineY = 38;
+
+  doc.setFillColor(...BRAND_RED);
+  doc.rect(timelineX, timelineY, timelineW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text('CRONOLOGÍA DE INCIDENCIAS', timelineX + timelineW/2, timelineY + 4.2, { align: 'center' });
+
+  timelineY += 10;
+
+  const getEventText = (e: any) => {
+    switch (e.type) {
+      case 'goals': return `Gol de ${e.playerName}`;
+      case 'penalty_goals': return `Gol Penalti de ${e.playerName}`;
+      case 'own_goals': return `Gol P.P de ${e.playerName}`;
+      case 'assists': return `Asist. de ${e.playerName}`;
+      case 'yellow_cards': return `Tarj. Amarilla ${e.playerName}`;
+      case 'red_card': return `Tarj. Roja ${e.playerName}`;
+      case 'injury': return `Lesión de ${e.playerName}`;
+      case 'sub_in': return `Entra ${e.playerName}`;
+      case 'sub_out': return `Sale ${e.playerName}`;
+      case 'substitution': return `Sustitución de ${e.playerName}`;
+      case 'opponent_goal': return `Gol ${e.playerName}`;
+      case 'opponent_yellow_card': return `Amarilla ${e.playerName}`;
+      case 'conceded_goals': return `Gol encajado (${e.playerName})`;
+      case 'conceded_penalty_goals': return `Gol Pen. encajado (${e.playerName})`;
+      default: return `${e.type}: ${e.playerName}`;
+    }
+  };
+
+  const getEventIconColor = (e: any): [number, number, number] => {
+    switch (e.type) {
+      case 'goals':
+      case 'penalty_goals': 
+        return [34, 197, 94]; // verde
+      case 'own_goals':
+      case 'opponent_goal':
+      case 'conceded_goals':
+      case 'conceded_penalty_goals':
+        return [239, 68, 68]; // rojo
+      case 'yellow_cards':
+      case 'opponent_yellow_card':
+        return [234, 179, 8]; // amarillo
+      case 'red_card':
+        return [220, 38, 38]; // rojo oscuro
+      case 'sub_in':
+        return [59, 130, 246]; // azul
+      case 'sub_out':
+      case 'substitution':
+        return [156, 163, 175]; // gris
+      case 'injury':
+        return [249, 115, 22]; // naranja
+      case 'assists':
+        return [168, 85, 247]; // morado
+      default:
+        return [100, 100, 100];
+    }
+  };
+
+  const printEvents = (eventsPart: any[], title: string) => {
+    if (eventsPart.length === 0) return;
+    
+    // Check if we need new page
+    if (timelineY > pageHeight - 20) {
+      doc.addPage();
+      timelineY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 30, 30);
+    doc.setFillColor(240, 240, 240);
+    doc.rect(timelineX, timelineY - 3, timelineW, 5, 'F');
+    doc.text(title, timelineX + timelineW/2, timelineY + 0.5, { align: 'center' });
+    timelineY += 5;
+
+    eventsPart.forEach(e => {
+      if (timelineY > pageHeight - 15) {
+        doc.addPage();
+        timelineY = 20;
+      }
+      
+      const iconColor = getEventIconColor(e);
+      doc.setFillColor(...iconColor);
+      doc.circle(timelineX + 5, timelineY, 1.5, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(50, 50, 50);
+      
+      // Limpiar prefijos "1T" o "2T" que a veces se guardan en la BBDD, 
+      // ya que la cronología ya está dividida por partes
+      let minStr = e.minute.toString().replace(/1T\s*/i, '').replace(/2T\s*/i, '').trim();
+      if (!minStr.includes("'")) minStr += "'";
+      
+      doc.text(minStr, timelineX + 8, timelineY + 1);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      const text = getEventText(e);
+      const lines = doc.splitTextToSize(text, timelineW - 16);
+      doc.text(lines, timelineX + 14, timelineY + 1);
+      
+      timelineY += (lines.length * 3.5);
+    });
+    
+    timelineY += 4;
+  };
+
+  // Separat events into halves
+  const getMinVal = (m: string | number) => parseInt(m.toString().replace("'", '')) || 0;
+  
+  const firstHalf = matchEvents.filter(e => getMinVal(e.minute) <= 45);
+  const secondHalf = matchEvents.filter(e => getMinVal(e.minute) > 45);
+
+  printEvents(firstHalf, '1ª PARTE');
+  printEvents(secondHalf, '2ª PARTE');
+
+  const filename = `Acta_${match.date}_vs_${match.rival.replace(/\s+/g, '_')}`;
   doc.save(`${filename}.pdf`);
 };
 

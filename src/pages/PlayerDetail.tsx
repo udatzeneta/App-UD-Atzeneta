@@ -98,6 +98,49 @@ export const PlayerDetail: React.FC = () => {
     enabled: detailTab === 'stats'
   });
 
+  const { data: allMatchStats = [] } = useQuery({
+    queryKey: ['playerMatchStatsAll', playerId],
+    queryFn: () => playerId ? dataService.getAllPlayerMatchStatsByPlayer(playerId) : Promise.resolve([]),
+    enabled: !!playerId && (detailTab === 'ficha' || detailTab === 'stats')
+  });
+
+  const topPositions = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    let total = 0;
+    
+    // Mapeo para retrocompatibilidad con datos antiguos que solo guardaron "DFC", "MC", etc.
+    const oldRoleMap: Record<string, string> = {
+      'DFC': 'Defensa Central',
+      'LI': 'Lateral Izquierdo',
+      'LD': 'Lateral Derecho',
+      'MC': 'Mediocentro',
+      'MCD': 'Pivote',
+      'MI': 'Interior Izquierdo',
+      'MD': 'Interior Derecho',
+      'MCO': 'Mediapunta',
+      'MP': 'Mediapunta',
+      'DC': 'Delantero Centro',
+      'EI': 'Extremo Izquierdo',
+      'ED': 'Extremo Derecho',
+      'GK': 'Portero'
+    };
+
+    allMatchStats.forEach(s => {
+      // Solo contar si realmente jugó (titular o entró de suplente)
+      if (s.position && (s.minutes_played || 0) > 0) {
+        const posName = oldRoleMap[s.position] || s.position;
+        counts[posName] = (counts[posName] || 0) + 1;
+        total++;
+      }
+    });
+    if (total === 0) return [];
+    
+    return Object.entries(counts)
+      .map(([pos, count]) => ({ pos, count, percentage: ((count / total) * 100).toFixed(1) }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+  }, [allMatchStats]);
+
   const { data: matches = [] } = useQuery({
     queryKey: ['matches'],
     queryFn: () => dataService.getMatches(),
@@ -754,22 +797,52 @@ export const PlayerDetail: React.FC = () => {
 
         {/* ===== FICHA TÉCNICA ===== */}
         {detailTab === 'ficha' && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
-            {[
-              { label: 'Pie Dominante', value: player.dominant_foot || 'No definido', icon: <Activity className="w-4 h-4 text-brand-red-600" /> },
-              { label: 'Estatura', value: player.height ? `${player.height} cm` : 'No definido', icon: <Ruler className="w-4 h-4 text-brand-red-600" /> },
-              { label: 'Peso Actual', value: player.weight ? `${player.weight} kg` : 'No definido', icon: <Scale className="w-4 h-4 text-brand-red-600" /> },
-              { label: 'Fecha Nacimiento', value: player.birth_date || 'No definido', icon: <Calendar className="w-4 h-4 text-brand-red-600" /> },
-              { label: 'Teléfono', value: player.phone || 'No definido', icon: <Phone className="w-4 h-4 text-brand-red-600" /> },
-              { label: 'Email', value: player.email || 'No definido', icon: <Mail className="w-4 h-4 text-brand-red-600" /> },
-            ].map((item, i) => (
-              <div key={i} className="bg-brand-black/30 border border-brand-black-border p-4 rounded-lg">
-                <span className="text-[9px] text-brand-gray-muted uppercase font-bold block mb-1">{item.label}</span>
-                <span className="text-sm font-semibold text-brand-gray-light flex items-center gap-2">
-                  {item.icon} {item.value}
-                </span>
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
+              {[
+                { label: 'Pie Dominante', value: player.dominant_foot || 'No definido', icon: <Activity className="w-4 h-4 text-brand-red-600" /> },
+                { label: 'Estatura', value: player.height ? `${player.height} cm` : 'No definido', icon: <Ruler className="w-4 h-4 text-brand-red-600" /> },
+                { label: 'Peso Actual', value: player.weight ? `${player.weight} kg` : 'No definido', icon: <Scale className="w-4 h-4 text-brand-red-600" /> },
+                { label: 'Fecha Nacimiento', value: player.birth_date || 'No definido', icon: <Calendar className="w-4 h-4 text-brand-red-600" /> },
+                { label: 'Teléfono', value: player.phone || 'No definido', icon: <Phone className="w-4 h-4 text-brand-red-600" /> },
+                { label: 'Email', value: player.email || 'No definido', icon: <Mail className="w-4 h-4 text-brand-red-600" /> },
+              ].map((item, i) => (
+                <div key={i} className="bg-brand-black/30 border border-brand-black-border p-4 rounded-lg">
+                  <span className="text-[9px] text-brand-gray-muted uppercase font-bold block mb-1">{item.label}</span>
+                  <span className="text-sm font-semibold text-brand-gray-light flex items-center gap-2">
+                    {item.icon} {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Demarcaciones Más Utilizadas */}
+            {topPositions.length > 0 && (
+              <div className="bg-brand-black/30 border border-brand-black-border p-5 rounded-xl">
+                <h4 className="text-xs font-bold text-brand-gray-light uppercase mb-4 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-brand-red-600" /> Demarcaciones Más Utilizadas
+                </h4>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  {topPositions.map((p, idx) => (
+                    <div key={p.pos} className="flex-1 bg-brand-black border border-brand-black-border p-4 rounded-lg flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-brand-gray-dark transition-colors">
+                      {idx === 0 && (
+                        <div className="absolute top-0 right-0 bg-brand-red-600 text-white text-[8px] font-black px-2 py-0.5 rounded-bl-lg">
+                          PRINCIPAL
+                        </div>
+                      )}
+                      <span className="text-2xl font-black text-brand-gray-light mb-1.5">{p.pos}</span>
+                      <div className="w-full bg-brand-black-card h-1.5 rounded-full mb-2 overflow-hidden border border-brand-black-border/50">
+                        <div className="h-full bg-brand-red-600 rounded-full" style={{ width: `${p.percentage}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-[11px] font-bold text-brand-gray-light">{p.percentage}%</span>
+                        <span className="text-[10px] font-bold text-brand-gray-muted">{p.count} part.</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
           </div>
         )}
 
@@ -1016,6 +1089,13 @@ export const PlayerDetail: React.FC = () => {
 
                         {/* Diagnóstico */}
                         <p className="text-xs text-brand-gray-light leading-relaxed">{inj.diagnosis}</p>
+
+                        {/* Origen / Contexto */}
+                        {inj.origin && (
+                          <p className="text-[10px] text-brand-gray-muted leading-normal mt-1 flex items-center gap-1">
+                            <Activity className="w-3 h-3" /> <span className="font-semibold text-brand-gray-light">Origen:</span> {inj.origin}
+                          </p>
+                        )}
 
                         {/* Tratamiento */}
                         {inj.treatment && (

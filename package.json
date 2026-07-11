@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.101.0",
     "clsx": "^2.1.1",
@@ -20,9 +21,11 @@
     "lucide-react": "^1.20.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-easy-crop": "^6.2.2",
     "react-hook-form": "^7.79.0",
     "react-router-dom": "^7.18.0",
     "react-use": "^17.6.1",
+    "recharts": "^3.9.2",
     "tailwind-merge": "^3.6.0",
     "ws": "^8.21.0",
     "zod": "^4.4.3"

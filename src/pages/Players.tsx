@@ -7,10 +7,13 @@ import { TableSkeleton } from '../components/Skeletons';
 import { 
   Users, Plus, Edit2, Trash2, Scale, HeartPulse, Trophy, Activity, Calendar,
   TrendingUp, Ruler, UserCheck, AlertTriangle, ShieldCheck, ChevronRight, Phone, Mail, Search,
-  Download, FileText, ChevronDown, Check, X, ShieldAlert, LayoutGrid, List as ListIcon, Map
+  Download, FileText, ChevronDown, Check, X, ShieldAlert, LayoutGrid, List as ListIcon, Map,
+  PlayCircle, Target, Navigation, BarChart2
 } from 'lucide-react';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Player, PlayerWeight, PlayerPhysioRecord, TrainingAttendance, ScoutingPlayer } from '../types';
 import { Modal } from '../components/Modal';
+import { PhotoCropUpload } from '../components/PhotoCropUpload';
 import { useToast } from '../context/ToastContext';
 import { exportToCSV, exportToPDF, exportSquadToPDF } from '../utils/export';
 
@@ -30,9 +33,16 @@ export const Players: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPosition, setFilterPosition] = useState('Todos');
   const [filterStatus, setFilterStatus] = useState('Todos');
+  type StatKey = 'minutes' | 'called' | 'starter' | 'goals' | 'assists' | 'conceded' | 'yellow' | 'red';
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [detailTab, setDetailTab] = useState<'ficha' | 'stats' | 'peso' | 'fisio'>('ficha');
-  const [viewMode, setViewMode] = useState<'pitch' | 'grid' | 'list'>('pitch');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'stats'>('list');
+  const [filterCompetition, setFilterCompetition] = useState('Liga');
+  
+  // Controles de gráficas
+  const [scatterXAxis, setScatterXAxis] = useState<StatKey>('minutes');
+  const [scatterYAxis, setScatterYAxis] = useState<StatKey>('goals');
+  const [barMetric, setBarMetric] = useState<StatKey>('goals');
 
   // Modales
   const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
@@ -78,6 +88,57 @@ export const Players: React.FC = () => {
     queryKey: ['players'],
     queryFn: () => dataService.getPlayers()
   });
+
+  // React Query - Cargar Todos los Partidos
+  const { data: allMatches = [] } = useQuery({
+    queryKey: ['matches'],
+    queryFn: () => dataService.getMatches()
+  });
+
+  // React Query - Cargar Todas las Estadísticas de Partidos
+  const { data: allPlayerStats = [] } = useQuery({
+    queryKey: ['allPlayerStats'],
+    queryFn: () => dataService.getAllPlayerMatchStats()
+  });
+
+  // Rankings
+  const rankings = React.useMemo(() => {
+    const validMatches = allMatches.filter((m: any) => filterCompetition === 'Todas' || m.competition === filterCompetition);
+    const validMatchIds = new Set(validMatches.map((m: any) => m.id));
+    const validStats = allPlayerStats.filter((s: any) => validMatchIds.has(s.match_id));
+
+    const playerTotals: Record<string, { minutes: number, called: number, starter: number, goals: number, assists: number, conceded: number, yellow: number, red: number }> = {};
+    
+    players.forEach((p: any) => {
+      playerTotals[p.id] = { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 };
+    });
+
+    validStats.forEach((s: any) => {
+      if (!playerTotals[s.player_id]) return;
+      const t = playerTotals[s.player_id];
+      if (s.is_called_up) t.called += 1;
+      if (s.is_starter) t.starter += 1;
+      t.minutes += (s.minutes_played || 0);
+      t.goals += (s.goals || 0);
+      t.assists += (s.assists || 0);
+      t.conceded += (s.conceded_goals || 0);
+      t.yellow += (s.yellow_cards || 0);
+      if (s.red_card) t.red += 1;
+    });
+
+    return players.map((p: any) => ({
+      ...p,
+      stats: playerTotals[p.id] || { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 }
+    }));
+  }, [players, allMatches, allPlayerStats, filterCompetition]);
+
+  const topPlayers = (key: keyof typeof rankings[0]['stats'], ascending = false) => {
+    return [...rankings]
+      .filter((p: any) => ascending ? true : (key === 'conceded' || p.stats[key] > 0))
+      .filter((p: any) => key === 'conceded' ? p.stats.minutes > 0 : true)
+      .sort((a: any, b: any) => ascending ? a.stats[key] - b.stats[key] : b.stats[key] - a.stats[key])
+      .slice(0, 5);
+  };
 
   // React Query - Cargar Jugadores de Scouting para Importar
   const { data: scoutingPlayers = [] } = useQuery({
@@ -673,13 +734,6 @@ export const Players: React.FC = () => {
         <div className="flex items-center gap-2 shrink-0">
           <div className="flex items-center bg-brand-black border border-brand-black-border rounded-lg p-0.5 mr-2">
             <button
-              onClick={() => setViewMode('pitch')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'pitch' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
-              title="Vista de Campograma"
-            >
-              <Map className="w-4 h-4" />
-            </button>
-            <button
               onClick={() => setViewMode('grid')}
               className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
               title="Vista de Fichas"
@@ -692,6 +746,13 @@ export const Players: React.FC = () => {
               title="Vista de Listado"
             >
               <ListIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('stats')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'stats' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
+              title="Vista de Estadísticas"
+            >
+              <BarChart2 className="w-4 h-4" />
             </button>
           </div>
           {canExport && (
@@ -764,192 +825,179 @@ export const Players: React.FC = () => {
             <option value="Baja">Baja</option>
           </select>
         </div>
+
+        <div>
+          <select
+            value={filterCompetition}
+            onChange={(e) => setFilterCompetition(e.target.value)}
+            className="form-input w-full bg-brand-black-bg text-brand-red-600 font-bold border-brand-red-600/30 focus:border-brand-red-600 focus:ring-brand-red-600/20"
+          >
+            <option value="Todas">Todas las Competiciones</option>
+            <option value="Liga">Liga</option>
+            <option value="Copa">Copa</option>
+            <option value="Amistoso">Amistoso</option>
+          </select>
+        </div>
       </div>
 
       {/* Layout Grid - Jugadores a la izquierda, detalle a la derecha si hay seleccionado */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Listado de Jugadores */}
-        <div className="lg:col-span-12 space-y-4">
+        <div className={`${selectedPlayer ? 'lg:col-span-5' : 'lg:col-span-8'} space-y-4`}>
           {isLoading ? (
             <TableSkeleton />
           ) : filteredPlayers.length === 0 ? (
             <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center">
               <p className="text-sm text-brand-gray-muted">No se encontraron fichas de jugadores.</p>
             </div>
-                                        ) : viewMode === 'pitch' ? (
-            <div className="w-full bg-[#469A33] rounded-2xl border-4 border-[#2D6A1F] p-4 sm:p-6 md:p-8 relative min-h-[800px] md:min-h-0 md:h-[750px] shadow-2xl overflow-hidden" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(0,0,0,0.06) 50px, rgba(0,0,0,0.06) 100px)' }}>
-              
-              <style>{`
-                .pitch-group {
-                  position: absolute;
-                  left: var(--x);
-                  top: var(--y);
-                  transform: translate(-50%, -50%);
-                  display: flex;
-                  flex-direction: row;
-                  flex-wrap: wrap;
-                  justify-content: center;
-                  align-items: center;
-                  width: 150px;
-                  gap: 4px;
-                  z-index: 10;
-                }
-                /* MOBILE (Vertical, Atacando hacia arriba) */
-                .pos-GK    { --x: 50%; --y: 92%; }
-                .pos-DEF_L { --x: 18%; --y: 78%; }
-                .pos-DEF_C { --x: 50%; --y: 78%; }
-                .pos-DEF_R { --x: 82%; --y: 78%; }
-                .pos-MID_C { --x: 50%; --y: 58%; }
-                .pos-EXT_L { --x: 18%; --y: 36%; }
-                .pos-EXT_R { --x: 82%; --y: 36%; }
-                .pos-FWD_C { --x: 50%; --y: 15%; }
+          ) : viewMode === 'stats' ? (
+            <div className="space-y-6">
+              {/* Gráfica de Dispersión */}
+              <div className="bg-brand-black border border-brand-black-border rounded-xl p-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-brand-red-600" /> Comparativa de Dispersión
+                  </h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-brand-gray-muted">Eje X:</span>
+                      <select value={scatterXAxis} onChange={e => setScatterXAxis(e.target.value as StatKey)} className="form-input py-1 text-xs min-w-[120px] bg-brand-black-bg">
+                        <option value="minutes">Minutos</option>
+                        <option value="goals">Goles</option>
+                        <option value="assists">Asistencias</option>
+                        <option value="starter">Partidos Titular</option>
+                        <option value="called">Convocatorias</option>
+                        <option value="conceded">Goles Encajados</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-brand-gray-muted">Eje Y:</span>
+                      <select value={scatterYAxis} onChange={e => setScatterYAxis(e.target.value as StatKey)} className="form-input py-1 text-xs min-w-[120px] bg-brand-black-bg">
+                        <option value="goals">Goles</option>
+                        <option value="assists">Asistencias</option>
+                        <option value="minutes">Minutos</option>
+                        <option value="starter">Partidos Titular</option>
+                        <option value="called">Convocatorias</option>
+                        <option value="conceded">Goles Encajados</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div className="h-80 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                      <XAxis type="number" dataKey={`stats.${scatterXAxis}`} name={scatterXAxis} stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <YAxis type="number" dataKey={`stats.${scatterYAxis}`} name={scatterYAxis} stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          const valX = data.stats[scatterXAxis];
+                          const valY = data.stats[scatterYAxis];
+                          
+                          const matchingPlayers = rankings.filter((p: any) => p.stats[scatterXAxis] === valX && p.stats[scatterYAxis] === valY);
 
-                /* ESCRITORIO (Horizontal, Atacando hacia la derecha) */
-                @media (min-width: 768px) {
-                  .pitch-group {
-                     width: 140px;
-                     gap: 6px;
-                  }
-                  .pos-GK    { --x: 8%;  --y: 50%; }
-                  .pos-DEF_L { --x: 22%; --y: 18%; }
-                  .pos-DEF_C { --x: 22%; --y: 50%; }
-                  .pos-DEF_R { --x: 22%; --y: 82%; }
-                  .pos-MID_C { --x: 42%; --y: 50%; }
-                  .pos-EXT_L { --x: 65%; --y: 18%; }
-                  .pos-EXT_R { --x: 65%; --y: 82%; }
-                  .pos-FWD_C { --x: 82%; --y: 50%; }
-                }
-              `}</style>
-
-              {/* === DIBUJO DEL CAMPO (LÍNEAS) === */}
-              <div className="absolute inset-4 md:inset-8 border-2 border-white/60 pointer-events-none z-0">
-                 {/* Línea Central */}
-                 <div className="absolute top-1/2 left-0 right-0 h-[2px] bg-white/60 md:top-0 md:bottom-0 md:left-1/2 md:right-auto md:w-[2px] md:h-full -translate-y-1/2 md:translate-y-0 md:-translate-x-1/2" />
-                 
-                 {/* Círculo Central */}
-                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 md:w-40 md:h-40 rounded-full border-2 border-white/60" />
-                 {/* Punto Central */}
-                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white/90" />
-
-                 {/* --- MÓVIL (Campo Vertical) --- */}
-                 <div className="md:hidden">
-                   {/* Área Grande Arriba */}
-                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-56 h-28 border-2 border-t-0 border-white/60" />
-                   {/* Área Pequeña Arriba */}
-                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-10 border-2 border-t-0 border-white/60" />
-                   {/* Punto Penalti Arriba */}
-                   <div className="absolute top-20 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/90" />
-                   {/* Semicírculo Arriba */}
-                   <div className="absolute top-28 left-1/2 -translate-x-1/2 w-20 h-10 border-b-2 border-white/60 rounded-b-full" />
-
-                   {/* Área Grande Abajo */}
-                   <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-56 h-28 border-2 border-b-0 border-white/60" />
-                   {/* Área Pequeña Abajo */}
-                   <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-10 border-2 border-b-0 border-white/60" />
-                   {/* Punto Penalti Abajo */}
-                   <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/90" />
-                   {/* Semicírculo Abajo */}
-                   <div className="absolute bottom-28 left-1/2 -translate-x-1/2 w-20 h-10 border-t-2 border-white/60 rounded-t-full" />
-                 </div>
-
-                 {/* --- ESCRITORIO (Campo Horizontal) --- */}
-                 <div className="hidden md:block">
-                   {/* Área Grande Izquierda */}
-                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-32 h-72 border-2 border-l-0 border-white/60" />
-                   {/* Área Pequeña Izquierda */}
-                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-12 h-32 border-2 border-l-0 border-white/60" />
-                   {/* Punto Penalti Izquierda */}
-                   <div className="absolute left-24 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/90" />
-                   {/* Semicírculo Izquierda */}
-                   <div className="absolute left-32 top-1/2 -translate-y-1/2 w-12 h-24 border-r-2 border-white/60 rounded-r-full" />
-
-                   {/* Área Grande Derecha */}
-                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-32 h-72 border-2 border-r-0 border-white/60" />
-                   {/* Área Pequeña Derecha */}
-                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-32 border-2 border-r-0 border-white/60" />
-                   {/* Punto Penalti Derecha */}
-                   <div className="absolute right-24 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/90" />
-                   {/* Semicírculo Derecha */}
-                   <div className="absolute right-32 top-1/2 -translate-y-1/2 w-12 h-24 border-l-2 border-white/60 rounded-l-full" />
-                 </div>
+                          return (
+                            <div className="bg-brand-black border border-brand-black-border p-3 rounded-lg shadow-xl max-w-[200px]">
+                              <div className="text-[10px] mb-2 pb-2 border-b border-brand-black-border flex justify-between gap-2">
+                                <p><span className="font-bold text-brand-red-400 capitalize">{scatterXAxis}:</span> {valX}</p>
+                                <p><span className="font-bold text-brand-red-400 capitalize">{scatterYAxis}:</span> {valY}</p>
+                              </div>
+                              <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar pr-1">
+                                {matchingPlayers.map((p: any) => (
+                                  <div key={p.id} className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full overflow-hidden bg-brand-black-bg border border-brand-black-border shrink-0 flex items-center justify-center">
+                                      {p.photo_url ? (
+                                        <img src={p.photo_url} alt={p.nickname || p.full_name} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <span className="text-[8px] font-bold text-brand-gray-light">{p.dorsal || '?'}</span>
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-white text-[11px] truncate leading-tight">{p.nickname || p.full_name}</p>
+                                      <p className="text-brand-gray-muted text-[9px] leading-tight truncate">{p.position || 'Sin demarc.'}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }} />
+                      <Scatter name="Jugadores" data={rankings} shape={(props: any) => {
+                        const { cx, cy, payload } = props;
+                        const displayName = payload.nickname || payload.full_name.split(' ')[0];
+                        const dorsalStr = payload.dorsal ? `${payload.dorsal}` : '?';
+                        const size = 32;
+                        
+                        return (
+                          <g transform={`translate(${cx},${cy})`} className="cursor-pointer hover:scale-125 transition-transform" style={{ transformOrigin: 'center' }}>
+                            {payload.photo_url ? (
+                              <foreignObject x={-size/2} y={-size/2} width={size} height={size} style={{ overflow: 'visible' }}>
+                                <div className="w-full h-full rounded-full overflow-hidden border-2 border-brand-red-600 shadow-lg bg-brand-black flex items-center justify-center relative">
+                                  <img src={payload.photo_url} alt={displayName} className="w-full h-full object-cover" />
+                                </div>
+                              </foreignObject>
+                            ) : (
+                              <foreignObject x={-size/2} y={-size/2} width={size} height={size} style={{ overflow: 'visible' }}>
+                                <div className="w-full h-full rounded-full overflow-hidden border-2 border-brand-red-600 shadow-lg bg-brand-black flex items-center justify-center">
+                                  <span className="text-[11px] font-black text-brand-gray-light leading-none">{dorsalStr}</span>
+                                </div>
+                              </foreignObject>
+                            )}
+                          </g>
+                        );
+                      }} />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
 
-              {/* === JUGADORES === */}
-              {(() => {
-                const getPlayerGroup = (pos: string) => {
-                  if (!pos) return 'MID_C';
-                  const p = pos.toLowerCase();
-                  
-                  if (p.includes('portero')) return 'GK';
-                  
-                  if (p.includes('lateral izquierd') || p.match(/\b(li)\b/)) return 'DEF_L';
-                  if (p.includes('lateral derech') || p.match(/\b(ld)\b/)) return 'DEF_R';
-                  if (p.includes('defensa') || p.includes('central') || p.match(/\b(dfc)\b/)) return 'DEF_C';
-                  
-                  if (p.includes('extremo izquierd') || p.match(/\b(ei)\b/)) return 'EXT_L';
-                  if (p.includes('extremo derech') || p.match(/\b(ed)\b/)) return 'EXT_R';
-                  
-                  if (p.includes('delantero') || p.match(/\b(dc)\b/)) return 'FWD_C';
-                  
-                  // Pivote Defensivo, Mediocentro, Interior, Mediapunta
-                  return 'MID_C';
-                };
-
-                const renderPlayerCard = (player: any) => {
-                  const isSelected = selectedPlayer?.id === player.id;
-                  const statusColor = player.physical_status === 'Disponible' ? 'bg-emerald-500' :
-                                      player.physical_status === 'En duda' ? 'bg-amber-500' : 'bg-red-500';
-
-                  return (
-                    <div 
-                      key={player.id} 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        navigate(`/players/${player.id}`); 
-                      }}
-                      className={`flex flex-col items-center justify-center cursor-pointer group hover:scale-110 transition-transform w-[55px] md:w-[65px] ${isSelected ? 'scale-110 ring-4 ring-brand-red-600 rounded-lg p-1 bg-black/20' : ''}`}
-                      title={`${player.nickname || player.full_name} - ${player.position}`}
-                    >
-                      <div className="relative flex flex-col items-center drop-shadow-xl group-hover:drop-shadow-2xl transition-all">
-                        <div className="w-12 h-12 md:w-14 md:h-14 relative">
-                          <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M15.5 2C15.5 2 14 3.5 12 3.5C10 3.5 8.5 2 8.5 2L3 5.5L2 10L6.5 11.5V22H17.5V11.5L22 10L21 5.5L15.5 2Z" fill="#dc2626" stroke="#7f1d1d" strokeWidth="1" strokeLinejoin="round"/>
-                            <path d="M8.5 2C8.5 2 10 3.5 12 3.5C14 3.5 15.5 2 15.5 2" stroke="#171717" strokeWidth="1.5" strokeLinecap="round"/>
-                            <path d="M3 5.5L6.5 11.5M21 5.5L17.5 11.5" stroke="#7f1d1d" strokeWidth="1"/>
-                          </svg>
-                          {player.dorsal && (
-                            <span className="absolute inset-0 flex items-center justify-center text-white font-black text-xs md:text-sm pt-2 drop-shadow-md">
-                              {player.dorsal}
-                            </span>
-                          )}
-                        </div>
-                        <div className={`absolute top-0 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full border-2 border-white shadow-md ${statusColor}`} title={player.physical_status}>
-                          {player.physical_status === 'Lesionado' && (
-                            <span className="text-white text-[9px] font-black leading-none">+</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-1 bg-black/70 border border-white/10 px-1.5 py-0.5 rounded text-[9px] font-bold text-white w-full truncate text-center backdrop-blur-sm shadow-md">
-                        {player.nickname || player.full_name.split(' ')[0]}
-                      </div>
-                    </div>
-                  );
-                };
-
-                const positions = ['GK', 'DEF_L', 'DEF_C', 'DEF_R', 'MID_C', 'EXT_L', 'EXT_R', 'FWD_C'];
-
-                return positions.map((posId) => {
-                  const playersInPos = filteredPlayers.filter(p => getPlayerGroup(p.position || '') === posId);
-                  if (playersInPos.length === 0) return null;
-                  
-                  return (
-                    <div key={posId} className={`pitch-group pos-${posId}`}>
-                      {playersInPos.map(renderPlayerCard)}
-                    </div>
-                  );
-                });
-              })()}
+              {/* Gráfica de Barras */}
+              <div className="bg-brand-black border border-brand-black-border rounded-xl p-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <BarChart2 className="w-5 h-5 text-brand-red-600" /> Clasificación de Jugadores
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-brand-gray-muted">Métrica:</span>
+                    <select value={barMetric} onChange={e => setBarMetric(e.target.value as StatKey)} className="form-input py-1 text-xs min-w-[160px] bg-brand-black-bg">
+                      <option value="goals">Goles</option>
+                      <option value="assists">Asistencias</option>
+                      <option value="minutes">Minutos Jugados</option>
+                      <option value="starter">Partidos Titular</option>
+                      <option value="called">Convocatorias</option>
+                      <option value="yellow">Tarjetas Amarillas</option>
+                      <option value="red">Tarjetas Rojas</option>
+                      <option value="conceded">Goles Encajados</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[...rankings].sort((a, b) => b.stats[barMetric] - a.stats[barMetric])} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                      <XAxis dataKey="nickname" stroke="#9ca3af" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" />
+                      <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-brand-black border border-brand-black-border p-3 rounded-lg shadow-xl">
+                              <p className="font-bold text-white text-sm">{data.nickname}</p>
+                              <p className="mt-1 text-xs"><span className="font-bold text-brand-red-400 capitalize">{barMetric}:</span> {data.stats[barMetric]}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }} />
+                      <Bar dataKey={`stats.${barMetric}`} fill="#dc2626" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-4">
@@ -1150,9 +1198,64 @@ export const Players: React.FC = () => {
           )}
         </div>
 
+        {/* Panel de Rankings */}
+        {!selectedPlayer && (
+          <div className="lg:col-span-4 space-y-4">
+            <div className="dashboard-card p-5 border-brand-red-600/20">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-brand-red-600" /> Rankings ({filterCompetition})
+              </h3>
+              
+              <div className="space-y-6">
+                {[
+                  { title: 'Minutos Jugados', key: 'minutes', icon: Activity, asc: false, suffix: "'" },
+                  { title: 'Partidos Titular', key: 'starter', icon: PlayCircle, asc: false },
+                  { title: 'Convocatorias', key: 'called', icon: ListIcon, asc: false },
+                  { title: 'Goles Marcados', key: 'goals', icon: Target, asc: false },
+                  { title: 'Asistencias', key: 'assists', icon: Navigation, asc: false },
+                  { title: 'Goles Encajados', key: 'conceded', icon: ShieldAlert, asc: true },
+                  { title: 'Tarjetas Amarillas', key: 'yellow', icon: AlertTriangle, asc: true },
+                  { title: 'Tarjetas Rojas', key: 'red', icon: ShieldAlert, asc: true },
+                ].map(category => (
+                  <div key={category.key}>
+                    <h4 className="text-xs font-bold text-brand-gray-muted uppercase mb-2 flex items-center gap-1.5 border-b border-brand-black-border pb-1">
+                      <category.icon className="w-3.5 h-3.5 text-brand-red-600" /> {category.title}
+                    </h4>
+                    <ul className="space-y-2">
+                      {topPlayers(category.key as any, category.asc).map((p: any, idx) => (
+                        <li key={p.id} className="flex items-center justify-between group">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-black text-brand-gray-dark w-3 text-right">{idx + 1}.</span>
+                            {p.photo_url ? (
+                              <img src={p.photo_url} alt={p.full_name} className="w-5 h-5 rounded-full object-cover shrink-0 border border-brand-black-border" />
+                            ) : (
+                              <div className="w-5 h-5 rounded-full bg-brand-black border border-brand-black-border flex items-center justify-center shrink-0">
+                                <span className="text-[8px] text-brand-gray-muted font-bold">{p.nickname?.[0] || p.full_name[0]}</span>
+                              </div>
+                            )}
+                            <span className="text-xs text-brand-gray-light font-medium truncate group-hover:text-brand-red-400 transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/players/${p.id}`); }}>
+                              {p.nickname || p.full_name.split(' ')[0]}
+                            </span>
+                          </div>
+                          <span className="text-xs font-black text-white shrink-0 ml-2">
+                            {p.stats[category.key]}{category.suffix || ''}
+                          </span>
+                        </li>
+                      ))}
+                      {topPlayers(category.key as any, category.asc).length === 0 && (
+                        <li className="text-[10px] text-brand-gray-dark italic">No hay datos suficientes</li>
+                      )}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Panel de Detalles del Jugador */}
         {selectedPlayer && (
-          <div className="lg:col-span-6 xl:col-span-7 dashboard-card p-6 border border-brand-red-600/20 flex flex-col justify-between space-y-6">
+          <div className="lg:col-span-7 dashboard-card p-6 border border-brand-red-600/20 flex flex-col justify-between space-y-6">
             
             {/* Header del Detalle */}
             <div className="flex justify-between items-start border-b border-brand-black-border pb-4">
@@ -1423,26 +1526,18 @@ export const Players: React.FC = () => {
       >
         <form onSubmit={handleSavePlayer} className="space-y-4 text-left">
           
-          {/* FOTO URL (Primera opción) */}
-          <div className="flex items-center gap-4 bg-brand-black/40 border border-brand-black-border p-3.5 rounded-xl">
-            <div className="w-16 h-16 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-              {photoUrl ? (
-                <img src={photoUrl} alt="Vista previa" className="w-full h-full object-cover" />
-              ) : (
-                <Users className="w-8 h-8 text-brand-gray-dark" />
-              )}
-            </div>
-            <div className="flex-1">
-              <label className="form-label">Foto de Perfil (URL)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="https://image-url.com/avatar.jpg"
-                value={photoUrl}
-                onChange={(e) => setPhotoUrl(e.target.value)}
-              />
-            </div>
-          </div>
+          {/* FOTO DE PERFIL (subida + recorte circular) */}
+          <PhotoCropUpload value={photoUrl} onChange={setPhotoUrl} />
+          <p className="text-[11px] text-brand-gray-muted -mt-2 px-1">
+            Sube una imagen y ajusta el recorte circular. También puedes pegar una URL directa manualmente si lo prefieres.
+          </p>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="O pega una URL de imagen directa..."
+            value={photoUrl.startsWith('data:') ? '' : photoUrl}
+            onChange={(e) => setPhotoUrl(e.target.value)}
+          />
 
           {/* Nombre y Apellidos y Nombre Futbolístico */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
