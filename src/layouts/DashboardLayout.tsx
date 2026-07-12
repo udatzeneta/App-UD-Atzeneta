@@ -5,7 +5,7 @@ import { isMockMode } from '../lib/supabase';
 import {
   LayoutDashboard, Calendar, Trophy, Dumbbell, ShieldAlert, Shield,
   Award, Search, BarChart3, Settings, Menu, X, LogOut, ChevronRight,
-  ClipboardCheck, Users, ClipboardList
+  ClipboardCheck, Users, ClipboardList, TrendingUp
 } from 'lucide-react';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -32,6 +32,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
     { name: 'Partidos', path: '/matches', pageKey: 'matches', icon: Trophy },
     { name: 'Equipo', path: '/team', pageKey: 'team', icon: Shield },
     { name: 'Jugadores', path: '/players', pageKey: 'players', icon: Users },
+    { name: 'Mejora Individual', path: '/mejora-individual', pageKey: 'individual_improvement', icon: TrendingUp },
     { name: 'Entrenamientos', path: '/trainings', pageKey: 'trainings', icon: Dumbbell },
     { name: 'Editor Sesión', path: '/training-editor', pageKey: 'training_editor', icon: ClipboardList },
     { name: 'Asistencia', path: '/attendance', pageKey: 'attendance', icon: ClipboardCheck },

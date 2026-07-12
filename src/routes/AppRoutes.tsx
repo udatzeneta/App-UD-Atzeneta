@@ -17,6 +17,7 @@ import { Attendance } from '../pages/Attendance';
 import { Fines } from '../pages/Fines';
 import { Points } from '../pages/Points';
 import { Scouting } from '../pages/Scouting';
+import { IndividualImprovement } from '../pages/IndividualImprovement';
 import { OpponentAnalysisPage } from '../pages/OpponentAnalysis';
 import { SettingsPage } from '../pages/Settings';
 import { AccessDenied } from '../pages/AccessDenied';
@@ -118,6 +119,10 @@ export const AppRoutes: React.FC = () => {
 
           <Route element={<ProtectedRoute pageKey="points" />}>
             <Route path="/points" element={<Points />} />
+          </Route>
+
+          <Route element={<ProtectedRoute pageKey="individual_improvement" />}>
+            <Route path="/mejora-individual" element={<IndividualImprovement />} />
           </Route>
 
           <Route element={<ProtectedRoute pageKey="scouting" />}>

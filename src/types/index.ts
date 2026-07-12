@@ -405,3 +405,143 @@ export interface TrainingSessionTask {
   task?: TrainingTask;
 }
 
+// =====================================================================
+// MÓDULO "MEJORA INDIVIDUAL" (Individual Improvement)
+// =====================================================================
+
+export type ImprovementStatus =
+  | 'Borrador' | 'Enviado' | 'Revisado' | 'Comentado' | 'Finalizado';
+
+export type ImprovementHalf = 'Primera parte' | 'Segunda parte' | 'Prórroga';
+
+export type ImprovementActionType =
+  | 'Ataque' | 'Defensa' | 'Transición' | 'ABP' | 'Duelo' | 'Pase'
+  | 'Finalización' | 'Presión' | 'Cobertura' | 'Otro';
+
+export type ImprovementResult = 'Positivo' | 'Negativo' | 'Mejorable';
+
+export type ImprovementImportance = 'Alta' | 'Media' | 'Baja';
+
+// Estados emocionales predefinidos (emoji + etiqueta)
+export const EMOTIONAL_STATES = [
+  '😀 Seguro',
+  '😐 Normal',
+  '😟 Nervioso',
+  '😤 Frustrado',
+  '😎 Muy confiado',
+] as const;
+export type ImprovementEmotionalState = (typeof EMOTIONAL_STATES)[number];
+
+// Cabecera del análisis por partido (incluye el cuestionario de autoevaluación)
+export interface ImprovementAnalysis {
+  id: string;
+  player_id: string;
+  match_id: string;
+  season?: string | null;
+  status: ImprovementStatus;
+
+  // Cuestionario (1-10)
+  rating_match?: number | null;
+  rating_physical?: number | null;
+  rating_mental?: number | null;
+  rating_concentration?: number | null;
+  rating_communication?: number | null;
+
+  // Texto libre
+  did_well?: string | null;
+  to_improve?: string | null;
+  next_goal?: string | null;
+
+  // Valoración del entrenador (percepción vs. técnico)
+  coach_rating?: number | null;
+
+  time_spent_seconds: number;
+  submitted_at?: string | null;
+  reviewed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+
+  // Relaciones opcionales (populadas al cargar detalle)
+  match?: Match;
+  player?: Player;
+  actions?: ImprovementAction[];
+}
+
+export interface ImprovementAction {
+  id: string;
+  analysis_id: string;
+  minute?: number | null;
+  half?: ImprovementHalf | null;
+  action_type?: ImprovementActionType | null;
+  result?: ImprovementResult | null;
+  description?: string | null;
+
+  reflection_why?: string | null;
+  reflection_options?: string | null;
+  reflection_keep_same?: string | null;
+  reflection_change?: string | null;
+  reflection_learning?: string | null;
+
+  emotional_state?: string | null;
+  importance: ImprovementImportance;
+
+  video_url?: string | null;
+  video_timestamp?: number | null;
+
+  board_data?: string | null; // JSON del campograma (TaskBoardEditor)
+
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+
+  // Relaciones opcionales
+  evidence?: ImprovementEvidence[];
+  messages?: ImprovementMessage[];
+}
+
+export interface ImprovementEvidence {
+  id: string;
+  action_id: string;
+  type: 'image' | 'screenshot' | 'annotation' | 'video';
+  url: string;
+  caption?: string | null;
+  created_at?: string;
+}
+
+export interface ImprovementMessage {
+  id: string;
+  action_id: string;
+  sender_id: string;
+  body: string;
+  read_at?: string | null;
+  created_at?: string;
+
+  // Relación opcional para pintar el chat
+  sender?: Pick<Profile, 'id' | 'full_name' | 'avatar_url' | 'role_id'>;
+}
+
+export interface ImprovementObjective {
+  id: string;
+  player_id: string;
+  created_by?: string | null;
+  title: string;
+  description?: string | null;
+  target_date?: string | null;
+  progress: number;
+  status: 'Activo' | 'En progreso' | 'Cumplido' | 'Descartado';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ImprovementNotification {
+  id: string;
+  recipient_id: string;
+  actor_id?: string | null;
+  type: 'analysis_submitted' | 'coach_replied' | 'objective_assigned' | 'analysis_reviewed';
+  analysis_id?: string | null;
+  action_id?: string | null;
+  message?: string | null;
+  read_at?: string | null;
+  created_at?: string;
+}
+

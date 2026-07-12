@@ -4,7 +4,7 @@ import { dataService } from '../services/data';
 import { authService } from '../services/auth';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText, AlertTriangle, Activity } from 'lucide-react';
+import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText, AlertTriangle, Activity, TrendingUp } from 'lucide-react';
 import { Fine, Training, Match, Profile } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -390,6 +390,21 @@ export const Dashboard: React.FC = () => {
       {/* Main Options Grid */}
       {!activeForm && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+          <div 
+            onClick={() => navigate('/mejora-individual')}
+            className="bg-brand-black-card border border-brand-black-border hover:border-brand-red-500/50 rounded-2xl p-6 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-premium group flex flex-col items-center text-center gap-4"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-brand-red-600/10 border border-brand-red-600/30 flex items-center justify-center text-brand-red-500 group-hover:scale-110 transition-transform">
+              <TrendingUp className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-brand-gray-light">Mejora Individual</h3>
+              <p className="text-xs text-brand-gray-muted mt-2 leading-relaxed">
+                {user?.role_id === 1 || user?.role_id === 2 ? 'Revisa y responde los análisis de los jugadores.' : 'Autoevalúa tu rendimiento después de cada partido.'}
+              </p>
+            </div>
+          </div>
           
           {canManageFines && (
             <div 
