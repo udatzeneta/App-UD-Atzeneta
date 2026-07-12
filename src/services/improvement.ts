@@ -331,7 +331,7 @@ export const improvementService = {
     }
     const { data, error } = await supabase
       .from('improvement_messages')
-      .select('*, sender:profiles(id, full_name, avatar_url, role_id)')
+      .select('*, sender:profiles(id, full_name, nickname, avatar_url, role_id)')
       .eq('action_id', actionId)
       .order('created_at', { ascending: true });
     if (error) throw error;
@@ -347,7 +347,7 @@ export const improvementService = {
       const msg: ImprovementMessage = {
         id: uid('iim'), action_id: actionId, sender_id: senderId, body,
         created_at: new Date().toISOString(),
-        sender: p ? { id: p.id, full_name: p.full_name, avatar_url: p.avatar_url, role_id: p.role_id } : undefined,
+        sender: p ? { id: p.id, full_name: p.full_name, nickname: p.nickname, avatar_url: p.avatar_url, role_id: p.role_id } : undefined,
       };
       list.push(msg);
       mockSet('ii_messages', list);
@@ -356,7 +356,7 @@ export const improvementService = {
     const { data, error } = await supabase
       .from('improvement_messages')
       .insert({ action_id: actionId, sender_id: senderId, body })
-      .select('*, sender:profiles(id, full_name, avatar_url, role_id)')
+      .select('*, sender:profiles(id, full_name, nickname, avatar_url, role_id)')
       .single();
     if (error) throw error;
     return data as ImprovementMessage;

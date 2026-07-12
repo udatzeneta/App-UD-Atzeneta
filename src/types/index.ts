@@ -517,7 +517,7 @@ export interface ImprovementMessage {
   created_at?: string;
 
   // Relación opcional para pintar el chat
-  sender?: Pick<Profile, 'id' | 'full_name' | 'avatar_url' | 'role_id'>;
+  sender?: Pick<Profile, 'id' | 'full_name' | 'nickname' | 'avatar_url' | 'role_id'>;
 }
 
 export interface ImprovementObjective {
