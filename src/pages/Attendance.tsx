@@ -10,7 +10,7 @@ import { exportToCSV, exportToPDF, exportAttendanceToPDF, ExportCell } from '../
 import {
   ClipboardCheck, Download, FileText, Calendar,
   TrendingUp, Info, Award, UserCheck, MessageSquare,
-  BarChart2, User, Activity, Zap, Trash2
+  BarChart2, User, Activity, Zap, Trash2, CheckCircle2, X, AlertTriangle
 } from 'lucide-react';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ export const Attendance: React.FC = () => {
   const [editingCell, setEditingCell] = useState<{
     trainingId: string; playerId: string; status: string; observations: string;
   } | null>(null);
-  const [rollCallList, setRollCallList] = useState<Record<string, { status: string; observations: string }>>({});
+  const [rollCallList, setRollCallList] = useState<Record<string, { status: string; observations: string; intent?: boolean | null; intentReason?: string }>>({});
   const [rollCallOpen, setRollCallOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat]       = useState<'csv' | 'pdf'>('pdf');
@@ -125,14 +125,23 @@ export const Attendance: React.FC = () => {
 
   useEffect(() => {
     if (!selectedTrainingId) return;
-    const init: Record<string, { status: string; observations: string }> = {};
+    const init: Record<string, { status: string; observations: string; intent?: boolean | null; intentReason?: string }> = {};
     visiblePlayers.forEach(p => {
-      const log = attendanceData.find((a: any) => a.training_id === selectedTrainingId && a.player_id === p.id);
+      const log = attendanceData.find((a: any) => a.training_id === selectedTrainingId && a.player_id === p.id) 
+               || allAttendanceData.find((a: any) => a.training_id === selectedTrainingId && a.player_id === p.id);
       const isBaja = p.physical_status === 'Baja';
-      init[p.id] = { status: log?.status || (isBaja ? 'L' : 'ENT'), observations: log?.observations || (isBaja ? 'Baja médica' : '') };
+      let defaultStatus = isBaja ? 'L' : 'ENT';
+      if (log?.player_intent === false && defaultStatus === 'ENT') defaultStatus = 'AA';
+      
+      init[p.id] = { 
+        status: log?.status && log.status !== '-' ? log.status : defaultStatus, 
+        observations: log?.observations || (isBaja ? 'Baja médica' : ''),
+        intent: log?.player_intent,
+        intentReason: log?.player_reason
+      };
     });
     setRollCallList(init);
-  }, [selectedTrainingId, attendanceData]);
+  }, [selectedTrainingId, attendanceData, allAttendanceData]);
 
   // ── Mutaciones ─────────────────────────────────────────────────────────────
   const updateMut = useMutation({
@@ -457,10 +466,12 @@ export const Attendance: React.FC = () => {
                               return (
                                 <td key={t.id} className="p-0 text-center relative">
                                   <button onClick={() => handleCellClick(t.id, p.id)} disabled={!canEdit}
-                                    title={`${t.date} — ${hasData ? getLabel(status) : 'Sin registro'}${log?.observations ? `\nObs: ${log.observations}` : ''}`}
+                                    title={`${t.date} — ${hasData ? getLabel(status) : 'Sin registro'}${log?.observations ? `\nObs: ${log.observations}` : ''}${log?.player_intent !== undefined && log?.player_intent !== null ? `\nConfirmación Jugador: ${log.player_intent ? 'Sí asiste' : 'No asiste'}${log.player_reason ? ` (${log.player_reason})` : ''}` : ''}`}
                                     className={`w-full min-h-[32px] flex items-center justify-center transition-all ${cellBg} ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}>
-                                    <span className={`text-[10px] font-bold ${textCl}`}>{hasData ? getShort(status) : '·'}</span>
+                                    <span className={`text-[10px] font-bold ${textCl}`}>{hasData && status !== '-' ? getShort(status) : '·'}</span>
                                     {log?.observations && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-brand-red-600" />}
+                                    {log?.player_intent === false && <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" title="Confirmó que no asistiría" />}
+                                    {log?.player_intent === true && <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500" title="Confirmó que asistiría" />}
                                   </button>
                                 </td>
                               );
@@ -915,16 +926,23 @@ export const Attendance: React.FC = () => {
                         )}
                       </div>
                     </div>
-                    <select value={cur}
-                      disabled={p.physical_status === 'Baja'}
-                      onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], status: e.target.value } }))}
-                      className={`text-[11px] font-bold rounded-lg border px-2 py-1.5 focus:ring-0 focus:outline-none cursor-pointer ${getStatusStyles(cur)} ${p.physical_status === 'Baja' ? 'opacity-60 cursor-not-allowed' : 'bg-brand-black'}`}>
-                      {STATUS_OPTIONS.map(o => (
-                        <option key={o.value} value={o.value} className="bg-brand-black text-brand-gray-light">
-                          {o.short} — {o.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      {rollCallList[p.id]?.intent === true && <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title="El jugador confirmó que asiste"><CheckCircle2 className="w-3 h-3" /> Voy</span>}
+                      {rollCallList[p.id]?.intent === false && <span className="text-[10px] text-brand-red-400 font-bold bg-brand-red-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title={rollCallList[p.id]?.intentReason || "El jugador confirmó que NO asiste"}><X className="w-3 h-3" /> No voy</span>}
+                      {rollCallList[p.id]?.intent === null && <span className="text-[10px] text-brand-gray-dark font-bold bg-brand-black-border/50 px-1.5 py-0.5 rounded flex items-center gap-1" title="El jugador no ha respondido"><AlertTriangle className="w-3 h-3" /> N/R</span>}
+                      
+                      <select value={cur}
+                        disabled={p.physical_status === 'Baja'}
+                        onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], status: e.target.value } }))}
+                        className={`text-[11px] font-bold rounded-lg border px-2 py-1.5 focus:ring-0 focus:outline-none cursor-pointer ${getStatusStyles(cur)} ${p.physical_status === 'Baja' ? 'opacity-60 cursor-not-allowed' : 'bg-brand-black'}`}>
+                        <option value="-" className="bg-brand-black text-brand-gray-light">- Pendiente -</option>
+                        {STATUS_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value} className="bg-brand-black text-brand-gray-light">
+                            {o.short} — {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="relative">
                     <MessageSquare className="w-3 h-3 text-brand-gray-dark absolute left-2.5 top-2.5" />

@@ -272,6 +272,8 @@ export interface TrainingAttendance {
   player_id: string;
   status: string;
   observations?: string;
+  player_intent?: boolean | null;
+  player_reason?: string | null;
   created_at?: string;
   updated_at?: string;
   players?: Player;

@@ -8,7 +8,7 @@ import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, 
 import { Fine, Training, Match, Profile } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 
-type FormType = 'fines' | 'attendance' | 'matches_convocatoria' | 'matches_acta' | null;
+type FormType = 'fines' | 'attendance' | 'matches_convocatoria' | 'matches_acta' | 'player_confirm' | null;
 
 export const Dashboard: React.FC = () => {
   const { user, hasPermission } = useAuth();
@@ -21,6 +21,7 @@ export const Dashboard: React.FC = () => {
   const canManageFines = hasPermission('fines', 'crear');
   const canManageTrainings = hasPermission('trainings', 'crear');
   const canManageMatches = hasPermission('matches', 'crear');
+  const isPlayer = user?.role_id === 3 || user?.role_id === 1; // Habilitado para admin para pruebas
 
   // ==========================================
   // DATA FETCHING
@@ -34,13 +35,13 @@ export const Dashboard: React.FC = () => {
   const { data: dbPlayers = [], isLoading: loadingPlayers } = useQuery({
     queryKey: ['players'],
     queryFn: () => dataService.getPlayers(),
-    enabled: canManageFines || canManageTrainings
+    enabled: canManageFines || canManageTrainings || isPlayer
   });
 
   const { data: trainings = [], isLoading: loadingTrainings } = useQuery({
     queryKey: ['trainings'],
     queryFn: () => dataService.getTrainings(),
-    enabled: canManageTrainings
+    enabled: canManageTrainings || isPlayer
   });
 
   const { data: matches = [], isLoading: loadingMatches } = useQuery({
@@ -265,6 +266,48 @@ export const Dashboard: React.FC = () => {
   };
 
   // ==========================================
+  // PLAYER INTENT STATE & LOGIC
+  // ==========================================
+  const [pSelectedTrainingId, setPSelectedTrainingId] = useState<string>('');
+  const [pIntent, setPIntent] = useState<boolean | null>(null);
+  const [pReason, setPReason] = useState<string>('');
+
+  const saveIntentMutation = useMutation({
+    mutationFn: async (payload: { training_id: string, player_id: string, intent: boolean, reason: string }) => {
+      return dataService.savePlayerAttendanceIntent(payload.training_id, payload.player_id, payload.intent, payload.reason);
+    },
+    onSuccess: () => {
+      showToast('success', 'Confirmación enviada', 'Tu asistencia ha sido registrada.');
+      setActiveForm(null);
+    },
+    onError: (err: any) => {
+      showToast('error', 'Error', err.message || 'No se pudo guardar la confirmación');
+    }
+  });
+
+  const handleSaveIntent = () => {
+    if (!pSelectedTrainingId || pIntent === null || !user) return;
+    if (!pIntent && !pReason.trim()) {
+      showToast('error', 'Motivo requerido', 'Debes indicar el motivo de tu ausencia.');
+      return;
+    }
+    const player = dbPlayers.find(p => p.profile_id === user.id);
+    const targetPlayerId = player ? player.id : user.id;
+
+    saveIntentMutation.mutate({
+      training_id: pSelectedTrainingId,
+      player_id: targetPlayerId,
+      intent: pIntent,
+      reason: pReason.trim()
+    });
+  };
+
+  const futureTrainings = React.useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return trainings.filter(t => t.date >= today).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [trainings]);
+
+  // ==========================================
   // MATCH DATA STATE & LOGIC
   // ==========================================
   const [mSelectedMatchId, setMSelectedMatchId] = useState<string>('');
@@ -365,6 +408,28 @@ export const Dashboard: React.FC = () => {
                 <h3 className="text-xl font-bold text-brand-gray-light">Multas y Pagos</h3>
                 <p className="text-xs text-brand-gray-muted mt-2 leading-relaxed">
                   Aplica sanciones o registra abonos de los jugadores.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {isPlayer && (
+            <div 
+              onClick={() => {
+                setActiveForm('player_confirm');
+                setPSelectedTrainingId('');
+                setPIntent(null);
+                setPReason('');
+              }}
+              className="bg-brand-black-card border border-brand-black-border hover:border-emerald-500/50 rounded-2xl p-6 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-premium group flex flex-col items-center text-center gap-4"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-brand-gray-light">Confirmar Asistencia</h3>
+                <p className="text-xs text-brand-gray-muted mt-2 leading-relaxed">
+                  Confirma tu asistencia a los próximos entrenamientos.
                 </p>
               </div>
             </div>
@@ -784,6 +849,126 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* FORM: PLAYER CONFIRM INTENT */}
+      {activeForm === 'player_confirm' && (
+        <div className="bg-brand-black-card border border-brand-black-border rounded-2xl overflow-hidden animate-fade-in shadow-premium relative max-w-xl mx-auto">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-[50px] pointer-events-none" />
+          
+          <div className="flex items-center justify-between p-6 border-b border-brand-black-border bg-brand-black/50">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setActiveForm(null)} className="p-2 hover:bg-brand-black border border-transparent hover:border-brand-black-border rounded-lg transition-colors text-brand-gray-muted">
+                <X className="w-5 h-5" />
+              </button>
+              <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+              <h3 className="text-lg font-bold text-brand-gray-light">Confirmar Asistencia</h3>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {!pSelectedTrainingId ? (
+              <div className="py-4">
+                <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-4 text-center">
+                  1. Seleccionar Entrenamiento Próximo
+                </h4>
+                <div className="space-y-3">
+                  {futureTrainings.slice(0, 5).map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setPSelectedTrainingId(t.id);
+                        setPIntent(null);
+                        setPReason('');
+                      }}
+                      className="w-full bg-brand-black/40 border border-brand-black-border hover:border-emerald-500/40 p-4 rounded-xl flex items-center justify-between group transition-all"
+                    >
+                      <div className="flex flex-col text-left">
+                        <span className="text-sm font-bold text-brand-gray-light">{t.date}</span>
+                        <span className="text-xs text-brand-gray-muted mt-1">{t.objective || 'Entrenamiento Regular'} • {t.time}</span>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-brand-gray-dark group-hover:text-emerald-500 transition-colors" />
+                    </button>
+                  ))}
+                  {futureTrainings.length === 0 && (
+                    <p className="text-center text-brand-gray-muted text-sm py-4">No hay próximos entrenamientos programados.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="animate-fade-in py-4">
+                <div className="flex justify-between items-center mb-6 bg-brand-black/30 border border-brand-black-border p-4 rounded-xl">
+                  <div>
+                    <h4 className="text-xs font-semibold text-brand-gray-muted uppercase tracking-wider mb-1">
+                      2. Tu Confirmación
+                    </h4>
+                    <p className="text-sm font-bold text-brand-gray-light">
+                      Para el {futureTrainings.find(t => t.id === pSelectedTrainingId)?.date}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setPSelectedTrainingId('')}
+                    className="text-xs text-brand-gray-muted hover:text-brand-gray-light underline"
+                  >
+                    Cambiar
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-4 mb-6">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => { setPIntent(true); setPReason(''); }}
+                      className={`p-4 rounded-xl border flex flex-col items-center justify-center transition-all ${
+                        pIntent === true 
+                          ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' 
+                          : 'bg-brand-black/40 border-brand-black-border text-brand-gray-muted hover:border-emerald-500/50 hover:text-emerald-400'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-8 h-8 mb-2" />
+                      <span className="font-bold text-sm">Voy a asistir</span>
+                    </button>
+                    <button
+                      onClick={() => setPIntent(false)}
+                      className={`p-4 rounded-xl border flex flex-col items-center justify-center transition-all ${
+                        pIntent === false 
+                          ? 'bg-brand-red-600/20 border-brand-red-500 text-brand-red-400' 
+                          : 'bg-brand-black/40 border-brand-black-border text-brand-gray-muted hover:border-brand-red-500/50 hover:text-brand-red-400'
+                      }`}
+                    >
+                      <X className="w-8 h-8 mb-2" />
+                      <span className="font-bold text-sm">No voy a asistir</span>
+                    </button>
+                  </div>
+
+                  {pIntent === false && (
+                    <div className="animate-fade-in space-y-2 mt-2">
+                      <label className="text-xs font-bold text-brand-gray-light block">Motivo de la ausencia *</label>
+                      <textarea
+                        className="w-full bg-brand-black/50 border border-brand-black-border rounded-lg p-3 text-sm text-brand-gray-light focus:ring-1 focus:ring-brand-red-500"
+                        placeholder="Explica brevemente por qué no puedes asistir..."
+                        rows={3}
+                        value={pReason}
+                        onChange={e => setPReason(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-brand-black-border pt-6 flex justify-end">
+                  <button
+                    onClick={handleSaveIntent}
+                    disabled={saveIntentMutation.isPending || pIntent === null || (pIntent === false && !pReason.trim())}
+                    className="btn-primary py-3 px-8 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 shadow-[0_0_12px_rgba(16,185,129,0.2)] disabled:opacity-50"
+                  >
+                    {saveIntentMutation.isPending ? 'Guardando...' : 'Confirmar'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

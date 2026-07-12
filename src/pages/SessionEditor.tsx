@@ -293,11 +293,11 @@ export const SessionEditor: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           <select
             value={selectedTrainingId}
             onChange={(e) => setSelectedTrainingId(e.target.value)}
-            className="bg-brand-black-card border border-brand-black-border rounded-lg px-4 py-2 text-brand-gray-light text-sm focus:border-brand-red-600 outline-none min-w-[300px]"
+            className="bg-brand-black-card border border-brand-black-border rounded-lg px-4 py-2 text-brand-gray-light text-sm focus:border-brand-red-600 outline-none w-full sm:w-auto sm:min-w-[300px]"
           >
             <option value="">Selecciona un entrenamiento...</option>
             {sortedTrainings.map(t => (
@@ -310,16 +310,16 @@ export const SessionEditor: React.FC = () => {
           <button
             onClick={handleSaveSession}
             disabled={!selectedTrainingId || isSaving}
-            className="btn-primary"
+            className="btn-primary flex-1 sm:flex-none justify-center"
           >
             <Save className="w-4 h-4" />
-            <span className="hidden sm:inline">{isSaving ? 'Guardando...' : 'Guardar Sesión'}</span>
+            <span>{isSaving ? 'Guardando...' : 'Guardar'}</span>
           </button>
 
           <button
             onClick={() => setIsPreviewModalOpen(true)}
             disabled={!selectedTrainingId}
-            className="btn-secondary"
+            className="btn-secondary justify-center"
             title="Exportar a PDF"
           >
             <Download className="w-4 h-4" />
@@ -406,14 +406,14 @@ export const SessionEditor: React.FC = () => {
                 <Reorder.Item 
                   key={sessionTask.id} 
                   value={sessionTask}
-                  className={`border rounded-lg p-4 flex gap-4 items-center group shadow-sm transition-colors relative ${getCategoryColor(sessionTask.task?.category || '')}`}
+                  className={`border rounded-lg p-4 pl-8 sm:pl-4 flex flex-col sm:flex-row gap-4 sm:items-center group shadow-sm transition-colors relative ${getCategoryColor(sessionTask.task?.category || '')}`}
                 >
-                  <div className="cursor-grab active:cursor-grabbing p-1 text-brand-gray-muted hover:text-white rounded absolute left-2 top-1/2 -translate-y-1/2">
+                  <div className="cursor-grab active:cursor-grabbing p-1 text-brand-gray-muted hover:text-white rounded absolute left-2 top-4 sm:top-1/2 sm:-translate-y-1/2">
                     <GripVertical className="w-5 h-5" />
                   </div>
-                  
+
                   {/* Thumbnail Preview */}
-                  <div className="ml-6 w-56 sm:w-60 h-40 shrink-0 overflow-hidden relative rounded border border-white/10 pointer-events-none bg-black/40 flex items-center justify-center">
+                  <div className="w-full sm:ml-6 sm:w-60 h-40 shrink-0 overflow-hidden relative rounded border border-white/10 pointer-events-none bg-black/40 flex items-center justify-center">
                      {sessionTask.task?.board_data ? (
                         <div style={{ width: '480px', height: '320px', transform: 'scale(0.5)', transformOrigin: 'center' }} className="flex flex-col justify-center shrink-0">
                            <TaskBoardEditor value={sessionTask.task.board_data} readOnly hideToolbar rotateFullField={true} />
@@ -445,7 +445,7 @@ export const SessionEditor: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 border-l border-brand-black-border pl-4">
+                  <div className="flex items-center gap-2 self-end sm:self-auto sm:border-l sm:border-brand-black-border sm:pl-4">
                     <button
                       onClick={() => sessionTask.task && openEditTaskModal(sessionTask.task)}
                       className="p-2 text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-hover rounded transition-colors"

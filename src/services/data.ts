@@ -1080,7 +1080,9 @@ export const dataService = {
         training_id: item.training_id,
         player_id: item.player_id,
         status: item.status,
-        observations: item.observations
+        observations: item.observations,
+        player_intent: item.player_intent,
+        player_reason: item.player_reason
       }));
 
       const { data, error } = await supabase
@@ -1121,6 +1123,52 @@ export const dataService = {
           { training_id: trainingId, player_id: playerId, status, observations },
           { onConflict: 'training_id,player_id' }
         )
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data as TrainingAttendance;
+    }
+  },
+
+  async savePlayerAttendanceIntent(trainingId: string, playerId: string, intent: boolean, reason: string): Promise<TrainingAttendance> {
+    if (isMockMode) {
+      await delay(200);
+      const attendance = MockDatabase.getTrainingAttendance();
+      const idx = attendance.findIndex(x => x.training_id === trainingId && x.player_id === playerId);
+      let updatedItem: TrainingAttendance;
+      if (idx !== -1) {
+        attendance[idx] = { ...attendance[idx], player_intent: intent, player_reason: reason };
+        updatedItem = attendance[idx];
+      } else {
+        updatedItem = {
+          id: `att-${Date.now()}`,
+          training_id: trainingId,
+          player_id: playerId,
+          status: '-', // or 'Pendiente'
+          player_intent: intent,
+          player_reason: reason
+        };
+        attendance.push(updatedItem);
+      }
+      MockDatabase.setTrainingAttendance(attendance);
+      return updatedItem;
+    } else {
+      // Intentamos hacer fetch primero para no sobreescribir el status actual si ya existe
+      const { data: existing } = await supabase
+        .from('training_attendance')
+        .select('*')
+        .eq('training_id', trainingId)
+        .eq('player_id', playerId)
+        .maybeSingle();
+
+      const itemToSave = existing 
+        ? { ...existing, player_intent: intent, player_reason: reason }
+        : { training_id: trainingId, player_id: playerId, status: '-', player_intent: intent, player_reason: reason };
+
+      const { data, error } = await supabase
+        .from('training_attendance')
+        .upsert(itemToSave, { onConflict: 'training_id,player_id' })
         .select('*')
         .single();
 
