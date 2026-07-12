@@ -137,7 +137,7 @@ export const Attendance: React.FC = () => {
         status: log?.status && log.status !== '-' ? log.status : defaultStatus, 
         observations: log?.observations || (isBaja ? 'Baja médica' : ''),
         intent: log?.player_intent,
-        intentReason: log?.player_reason
+        intentReason: log?.player_reason ?? undefined
       };
     });
     setRollCallList(init);
