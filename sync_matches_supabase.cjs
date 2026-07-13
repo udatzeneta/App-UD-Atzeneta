@@ -72,6 +72,12 @@ function parseGoals(val) {
   return isNaN(n) ? null : n;
 }
 
+// La temporada 2026/2027 va de 2026-07-01 a 2027-06-30. Comparar solo el año
+// del partido no basta, porque la 2025/2026 también tiene fechas con año 2026.
+function isTemporada2026_2027(fecha) {
+  return fecha >= '2026-07-01' && fecha <= '2027-06-30';
+}
+
 function mapPartido(p, competicion) {
   const fecha = pick(p, ['fecha', 'Fecha', 'fecha_partido']);
   const hora = pick(p, ['hora', 'Hora', 'hora_partido']);
@@ -426,9 +432,9 @@ async function handleCookies(page) {
           };
         }).filter(Boolean);
         
-        // Descartar partidos que no sean de la temporada 2026/2027 (es decir, evitar 2025)
-        const mappedMatchesFiltered = mappedMatches.filter(m => m.date.startsWith('2026') || m.date.startsWith('2027'));
-        
+        // Descartar partidos que no pertenezcan a la temporada 2026/2027 (rango: 2026-07-01 a 2027-06-30)
+        const mappedMatchesFiltered = mappedMatches.filter(m => isTemporada2026_2027(m.date));
+
         if (mappedMatchesFiltered.length === 0) {
            console.log('   ℹ️  No se encontraron partidos válidos para la temporada 2026/2027 en pantalla.');
            continue;
@@ -457,9 +463,9 @@ async function handleCookies(page) {
 
       const mappedMatches = partidos.map(p => mapPartido(p, competicion)).filter(Boolean);
 
-      // Descartar partidos que no sean de la temporada 2026/2027 (es decir, evitar 2025)
-      const mappedMatchesFiltered = mappedMatches.filter(m => m.date.startsWith('2026') || m.date.startsWith('2027'));
-      
+      // Descartar partidos que no pertenezcan a la temporada 2026/2027 (rango: 2026-07-01 a 2027-06-30)
+      const mappedMatchesFiltered = mappedMatches.filter(m => isTemporada2026_2027(m.date));
+
       if (mappedMatchesFiltered.length === 0) {
          console.log('   ℹ️  No se encontraron partidos válidos para la temporada 2026/2027 en la API.');
          continue;
