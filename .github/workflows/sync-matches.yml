@@ -1,0 +1,30 @@
+name: Sync partidos FFCV
+
+on:
+  schedule:
+    # 23:59 hora española (CET, UTC+1). GitHub Actions usa UTC, así que
+    # en horario de verano (CEST, UTC+2) se ejecutará realmente a las 00:59.
+    - cron: '59 22 * * 3'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar navegadores de Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Ejecutar sincronización de partidos
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node sync_matches_supabase.cjs
