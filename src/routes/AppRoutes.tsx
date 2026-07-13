@@ -23,6 +23,7 @@ import { SettingsPage } from '../pages/Settings';
 import { AccessDenied } from '../pages/AccessDenied';
 import { NotFound } from '../pages/NotFound';
 import { Register } from '../pages/Register';
+import { UpdatePassword } from '../pages/UpdatePassword';
 
 // Componente Wrapper para Proteger Rutas según Autenticación y Permisos Dinámicos
 interface ProtectedRouteProps {
@@ -65,6 +66,9 @@ export const AppRoutes: React.FC = () => {
 
       {/* Ruta de Registro Público */}
       <Route path="/register" element={<Register />} />
+
+      {/* Ruta de Recuperación de Contraseña */}
+      <Route path="/update-password" element={<UpdatePassword />} />
 
       {/* Rutas Privadas / Protegidas */}
       <Route element={<ProtectedRoute />}>

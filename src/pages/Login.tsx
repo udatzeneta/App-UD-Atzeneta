@@ -14,6 +14,7 @@ export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,12 +25,20 @@ export const Login: React.FC = () => {
     
     setLoading(true);
     try {
-      await login(email, password);
-      showToast('success', 'Sesión Iniciada', 'Bienvenido de nuevo al portal de la UD Atzeneta.');
-      navigate('/dashboard');
+      if (isForgotPassword) {
+        // Importación dinámica de authService para evitar dependencias circulares si las hubiera
+        const { authService } = await import('../services/auth');
+        await authService.resetPassword(email);
+        showToast('success', 'Correo Enviado', 'Revisa tu bandeja de entrada para restablecer tu contraseña.');
+        setIsForgotPassword(false);
+      } else {
+        await login(email, password);
+        showToast('success', 'Sesión Iniciada', 'Bienvenido de nuevo al portal de la UD Atzeneta.');
+        navigate('/dashboard');
+      }
     } catch (err: any) {
       console.error(err);
-      showToast('error', 'Error al Iniciar Sesión', err.message || 'Credenciales incorrectas.');
+      showToast('error', isForgotPassword ? 'Error al enviar correo' : 'Error al Iniciar Sesión', err.message || 'Error desconocido.');
     } finally {
       setLoading(false);
     }
@@ -87,30 +96,57 @@ export const Login: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <label className="form-label" htmlFor="password">Contraseña</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
-              <input
-                id="password"
-                type="password"
-                className="form-input pl-10"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-              />
+          {!isForgotPassword && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="form-label mb-0" htmlFor="password">Contraseña</label>
+                <button 
+                  type="button" 
+                  onClick={() => setIsForgotPassword(true)}
+                  className="text-[10px] text-brand-red-500 hover:text-brand-red-400 font-medium transition-colors"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
+                <input
+                  id="password"
+                  type="password"
+                  className="form-input pl-10"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <button
             type="submit"
-            className="btn-primary w-full mt-6 py-2.5 font-semibold"
-            disabled={loading}
+            disabled={loading || (!isForgotPassword && !password) || !email}
+            className="w-full bg-brand-red-600 hover:bg-brand-red-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-6"
           >
-            {loading ? 'Accediendo...' : 'Iniciar Sesión'}
-            {!loading && <ArrowRight className="w-4 h-4" />}
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                {isForgotPassword ? 'Enviar enlace de recuperación' : 'Iniciar Sesión'}
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
+          
+          {isForgotPassword && (
+            <button
+              type="button"
+              onClick={() => setIsForgotPassword(false)}
+              className="w-full mt-2 text-xs text-brand-gray-muted hover:text-brand-gray-light transition-colors text-center"
+            >
+              Volver al inicio de sesión
+            </button>
+          )}
         </form>
 
         {/* Panel de Acceso Rápido (Exclusivo de Modo Demo / Dev) */}

@@ -8,17 +8,25 @@ import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Settings as SettingsType } from '../types';
 import { 
-  Settings as SettingsIcon, ShieldCheck, UserCog, 
+  Settings as SettingsIcon, ShieldCheck, UserCog, Users, Edit2, Trash2,
   Save, CheckSquare, Square, QrCode, Copy, Download, Link as LinkIcon 
 } from 'lucide-react';
+import { Profile } from '../types';
 
 export const SettingsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { isAdmin, refreshPermissions } = usePermissions();
   const { showToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'roles' | 'users' | 'share'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'roles' | 'users' | 'share' | 'members'>('general');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [editProfileName, setEditProfileName] = useState('');
+  const [editProfileEmail, setEditProfileEmail] = useState('');
+  const [editProfileRole, setEditProfileRole] = useState(3);
+  const [customDomain, setCustomDomain] = useState<string>(
+    () => localStorage.getItem('ud_atzeneta_custom_domain') || window.location.origin
+  );
 
   // Estados configuración general
   const [clubName, setClubName] = useState('');
@@ -92,6 +100,25 @@ export const SettingsPage: React.FC = () => {
     onError: (err) => showToast('error', 'Error', err.message)
   });
 
+  const updateProfileMutation = useMutation({
+    mutationFn: ({ id, item }: { id: string; item: Partial<Profile> }) => authService.updateProfile(id, item),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      showToast('success', 'Usuario actualizado', 'Los datos del usuario han sido guardados.');
+      setEditingProfile(null);
+    },
+    onError: (err) => showToast('error', 'Error', err.message)
+  });
+
+  const deleteProfileMutation = useMutation({
+    mutationFn: (id: string) => authService.deleteProfile(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      showToast('success', 'Usuario eliminado', 'El usuario ha sido eliminado del sistema.');
+    },
+    onError: (err) => showToast('error', 'Error', err.message)
+  });
+
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clubName.trim()) {
@@ -153,6 +180,32 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleEditProfile = (profile: Profile) => {
+    setEditingProfile(profile);
+    setEditProfileName(profile.full_name);
+    setEditProfileEmail(profile.email);
+    setEditProfileRole(profile.role_id);
+  };
+
+  const handleSaveProfile = () => {
+    if (editingProfile) {
+      updateProfileMutation.mutate({
+        id: editingProfile.id,
+        item: {
+          full_name: editProfileName,
+          email: editProfileEmail,
+          role_id: editProfileRole
+        }
+      });
+    }
+  };
+
+  const handleDeleteProfile = (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar este usuario permanentemente?')) {
+      deleteProfileMutation.mutate(id);
+    }
+  };
+
   const isLoading = loadingSettings || (isAdmin && (loadingPerms || loadingRolePerms || loadingUserPerms || loadingProfiles));
 
   if (isLoading) {
@@ -198,6 +251,17 @@ export const SettingsPage: React.FC = () => {
               }`}
             >
               <ShieldCheck className="w-4 h-4" /> Permisos por Rol
+            </button>
+
+            <button
+              onClick={() => setActiveTab('members')}
+              className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all ${
+                activeTab === 'members'
+                  ? 'border-brand-red-600 text-brand-gray-light'
+                  : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'
+              }`}
+            >
+              <Users className="w-4 h-4" /> Gestión de Usuarios
             </button>
 
             <button
@@ -265,7 +329,136 @@ export const SettingsPage: React.FC = () => {
       )}
 
       {/* =====================================================================
-          TAB 2: MATRIZ DE PERMISOS POR ROL
+          TAB: GESTIÓN DE USUARIOS
+          ===================================================================== */}
+      {activeTab === 'members' && isAdmin && (
+        <div className="space-y-6">
+          <div className="bg-brand-black border border-brand-black-border p-4 rounded-xl">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-brand-red-600 mb-1">Directorio de Usuarios</h4>
+            <p className="text-xs text-brand-gray-muted leading-relaxed">
+              Administra los miembros registrados en la plataforma. Puedes modificar su rol, nombre y correo, o eliminarlos del sistema por completo.
+            </p>
+          </div>
+
+          <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-brand-black-hover/40">
+                    <th className="table-th text-left">Usuario</th>
+                    <th className="table-th text-left">Email</th>
+                    <th className="table-th text-left">Rol</th>
+                    <th className="table-th text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-black-border">
+                  {profiles.map((p) => {
+                    const isEditing = editingProfile?.id === p.id;
+                    const isSystemAdmin = p.role_id === 1 && profiles.filter(pf => pf.role_id === 1).length === 1; // No dejar borrar al último admin
+
+                    return (
+                      <tr key={p.id} className="hover:bg-brand-black-hover/20 transition-colors">
+                        <td className="table-td text-sm font-medium text-brand-gray-light">
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editProfileName}
+                              onChange={(e) => setEditProfileName(e.target.value)}
+                              className="form-input text-xs py-1 px-2"
+                            />
+                          ) : (
+                            p.full_name
+                          )}
+                        </td>
+                        <td className="table-td text-xs text-brand-gray-muted">
+                          {isEditing ? (
+                            <input
+                              type="email"
+                              value={editProfileEmail}
+                              onChange={(e) => setEditProfileEmail(e.target.value)}
+                              className="form-input text-xs py-1 px-2"
+                            />
+                          ) : (
+                            p.email
+                          )}
+                        </td>
+                        <td className="table-td">
+                          {isEditing ? (
+                            <select
+                              value={editProfileRole}
+                              onChange={(e) => setEditProfileRole(Number(e.target.value))}
+                              className="form-input text-xs py-1 px-2 bg-brand-black-bg"
+                              disabled={isSystemAdmin}
+                            >
+                              <option value={1}>Administrador</option>
+                              <option value={2}>Entrenador</option>
+                              <option value={3}>Jugador</option>
+                              <option value={4}>Directivo</option>
+                            </select>
+                          ) : (
+                            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
+                              p.role_id === 1 ? 'bg-brand-red-950/30 text-brand-red-500' :
+                              p.role_id === 2 ? 'bg-amber-950/30 text-amber-500' :
+                              p.role_id === 4 ? 'bg-indigo-950/30 text-indigo-400' :
+                              'bg-brand-black-bg text-brand-gray-muted'
+                            }`}>
+                              {p.role_id === 1 ? 'Admin' : p.role_id === 2 ? 'Míster' : p.role_id === 4 ? 'Directivo' : 'Jugador'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="table-td text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  onClick={handleSaveProfile}
+                                  className="p-1.5 rounded bg-brand-red-600/10 text-brand-red-600 hover:bg-brand-red-600 hover:text-white transition-colors"
+                                  title="Guardar"
+                                >
+                                  <Save className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingProfile(null)}
+                                  className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light transition-colors"
+                                  title="Cancelar"
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleEditProfile(p)}
+                                  className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light transition-colors"
+                                  title="Editar"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                {!isSystemAdmin && (
+                                  <button
+                                    onClick={() => handleDeleteProfile(p.id)}
+                                    className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-red-500 transition-colors"
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          TAB: MATRIZ DE PERMISOS POR ROL
           ===================================================================== */}
       {activeTab === 'roles' && isAdmin && (
         <div className="space-y-6">
@@ -409,6 +602,21 @@ export const SettingsPage: React.FC = () => {
             <p className="text-xs text-brand-gray-muted leading-relaxed">
               Comparte estos enlaces o códigos QR con los nuevos integrantes del club. Al registrarse mediante estos códigos QR, el rol del nuevo miembro (Jugador, Entrenador o Directivo) quedará fijado automáticamente según el enlace.
             </p>
+            
+            <div className="mt-4 pt-4 border-t border-brand-black-border flex items-center gap-3">
+              <label className="text-xs font-semibold text-brand-gray-light whitespace-nowrap">Dominio de la App:</label>
+              <input
+                type="text"
+                value={customDomain}
+                onChange={(e) => {
+                  setCustomDomain(e.target.value);
+                  localStorage.setItem('ud_atzeneta_custom_domain', e.target.value);
+                }}
+                className="form-input text-xs py-1.5 flex-1 max-w-sm"
+                placeholder="https://app.atzeneta.com"
+              />
+              <span className="text-[10px] text-brand-gray-muted">Cámbialo si quieres generar QRs para otra URL (ej. la de producción).</span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -435,7 +643,8 @@ export const SettingsPage: React.FC = () => {
                 borderColor: 'border-brand-red-950/20'
               }
             ].map((role) => {
-              const registerUrl = `${window.location.origin}/register?role=${role.slug}`;
+              const baseDomain = customDomain.trim().replace(/\/$/, '') || window.location.origin;
+              const registerUrl = `${baseDomain}/register?role=${role.slug}`;
               const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=d92828&bgcolor=0b0b0c&qzone=2&data=${encodeURIComponent(registerUrl)}`;
 
               return (

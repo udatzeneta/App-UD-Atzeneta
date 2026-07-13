@@ -73,7 +73,8 @@ export const Fines: React.FC = () => {
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
-      const allProfiles = await authService.getProfiles();
+      // Roles: 2=Entrenador, 3=Jugador, 4=Directivo
+      const allProfiles = await dataService.getProfilesByRoles([2, 3, 4]);
       if (isMockMode) {
         return allProfiles;
       }

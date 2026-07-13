@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { isMockMode, supabase } from '../lib/supabase';
 import { MockDatabase } from '../services/mockData';
+import { dataService } from '../services/data';
 import { Lock, Mail, User, ShieldCheck, UserPlus } from 'lucide-react';
 
 export const Register: React.FC = () => {
@@ -18,6 +19,7 @@ export const Register: React.FC = () => {
   const [roleId, setRoleId] = useState<number>(3); // Por defecto: Jugador
   const [isRoleLocked, setIsRoleLocked] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string>('');
 
   // Mapeo de slugs de roles a IDs y nombres
   const rolesMap: Record<string, { id: number; name: string }> = {
@@ -33,6 +35,42 @@ export const Register: React.FC = () => {
       setIsRoleLocked(true);
     }
   }, [searchParams]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 250;
+        const MAX_HEIGHT = 250;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        setAvatarDataUrl(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,12 +103,16 @@ export const Register: React.FC = () => {
           email: email.trim().toLowerCase(),
           full_name: fullName.trim(),
           role_id: roleId,
-          avatar_url: `https://images.unsplash.com/photo-${roleId === 2 ? '1507003211169-0a1dd7228f2d' : roleId === 4 ? '1472099645785-5658abf4ff4e' : '1500648767791-00dcc994a43e'}?auto=format&fit=crop&w=100&q=80`,
+          avatar_url: avatarDataUrl || `https://images.unsplash.com/photo-${roleId === 2 ? '1507003211169-0a1dd7228f2d' : roleId === 4 ? '1472099645785-5658abf4ff4e' : '1500648767791-00dcc994a43e'}?auto=format&fit=crop&w=100&q=80`,
           created_at: new Date().toISOString()
         };
 
         MockDatabase.setProfiles([...profiles, newProfile]);
         MockDatabase.setSessionUser(newProfile.id);
+
+        if (roleId === 3) {
+          await dataService.linkPlayerToUser(newProfile.id, fullName.trim());
+        }
 
         showToast('success', 'Registro Exitoso (Demo)', 'Tu perfil de pruebas se ha creado correctamente.');
         // Forzar recarga rápida de sesión
@@ -97,8 +139,13 @@ export const Register: React.FC = () => {
             id: data.user.id,
             email: email.trim().toLowerCase(),
             full_name: fullName.trim(),
-            role_id: roleId
+            role_id: roleId,
+            avatar_url: avatarDataUrl || null
           });
+          
+          if (roleId === 3) {
+            await dataService.linkPlayerToUser(data.user.id, fullName.trim());
+          }
         } catch (dbErr) {
           console.warn('Inserción directa de perfil no disponible. Se usará el trigger o el fallback.', dbErr);
         }
@@ -211,6 +258,39 @@ export const Register: React.FC = () => {
               </p>
             )}
           </div>
+
+          {/* Campo Foto (solo Entrenadores y Directivos) */}
+          {(roleId === 2 || roleId === 4) && (
+            <div>
+              <label className="form-label">Foto de Perfil (Opcional)</label>
+              <div className="flex items-center gap-4 bg-brand-black-bg p-3 rounded-xl border border-brand-black-border">
+                <div className="w-12 h-12 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                  {avatarDataUrl ? (
+                    <img src={avatarDataUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-6 h-6 text-brand-gray-dark" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    className="block w-full text-xs text-brand-gray-muted
+                      file:mr-3 file:py-1.5 file:px-3
+                      file:rounded-md file:border-0
+                      file:text-xs file:font-semibold
+                      file:bg-brand-red-600/10 file:text-brand-red-600
+                      hover:file:bg-brand-red-600/20 cursor-pointer"
+                    onChange={handleFileSelect}
+                  />
+                  <p className="text-[10px] text-brand-gray-dark mt-1">
+                    Puedes hacerte un selfie o subir una foto.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <button
             type="submit"

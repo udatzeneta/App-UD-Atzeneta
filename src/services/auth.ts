@@ -76,6 +76,28 @@ export const authService = {
     }
   },
 
+  // Resetear contraseña
+  async resetPassword(email: string): Promise<void> {
+    if (isMockMode) {
+      await delay(500);
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/update-password`,
+    });
+    if (error) throw error;
+  },
+
+  // Actualizar contraseña del usuario actual
+  async updatePassword(newPassword: string): Promise<void> {
+    if (isMockMode) {
+      await delay(500);
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  },
+
   // Obtener sesión actual
   async getCurrentSession(): Promise<Profile | null> {
     if (isMockMode) {

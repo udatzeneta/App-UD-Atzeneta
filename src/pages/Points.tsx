@@ -49,7 +49,7 @@ export const Points: React.FC = () => {
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
-    queryFn: () => authService.getProfiles(),
+    queryFn: () => dataService.getProfilesByRoles([2, 3]),
     enabled: canCreate || canEdit
   });
 

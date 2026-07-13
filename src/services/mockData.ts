@@ -6,7 +6,7 @@ import {
 } from '../types';
 
 // Versión del esquema de datos mock. Incrementar cuando cambien PAGES o la estructura.
-const MOCK_DATA_VERSION = '11';
+const MOCK_DATA_VERSION = '12';
 
 // IDs fijos para los perfiles Mock
 export const MOCK_USER_IDS = {
@@ -111,18 +111,6 @@ const DEFAULT_PROFILES: Profile[] = [
     created_at: new Date().toISOString()
   },
   {
-    id: MOCK_USER_IDS.player,
-    email: 'paco@atzeneta.com',
-    full_name: 'Paco Alcácer (Jugador)',
-    role_id: 3,
-    avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80',
-    phone: '612345678',
-    address: 'Calle Mayor 12, Atzeneta del Maestrat',
-    dorsal: 9,
-    birth_date: '1993-08-30',
-    created_at: new Date().toISOString()
-  },
-  {
     id: MOCK_USER_IDS.board,
     email: 'directiva@atzeneta.com',
     full_name: 'Pascual Donat (Presidente)',
@@ -130,30 +118,6 @@ const DEFAULT_PROFILES: Profile[] = [
     avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80',
     phone: '600444555',
     address: 'Plaza del Ayuntamiento, 1, Atzeneta',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: MOCK_USER_IDS.player2,
-    email: 'sergio@atzeneta.com',
-    full_name: 'Sergio Gómez (Centrocampista)',
-    role_id: 3,
-    avatar_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=100&q=80',
-    phone: '622987654',
-    address: 'Calle Valencia, 24, Atzeneta',
-    dorsal: 8,
-    birth_date: '2000-09-04',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: MOCK_USER_IDS.player3,
-    email: 'nacho@atzeneta.com',
-    full_name: 'Nacho Porcar (Defensa)',
-    role_id: 3,
-    avatar_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=100&q=80',
-    phone: '633456789',
-    address: 'Avenida del Sol, 8, Atzeneta',
-    dorsal: 4,
-    birth_date: '1994-01-28',
     created_at: new Date().toISOString()
   }
 ];
@@ -273,64 +237,10 @@ const DEFAULT_MATCHES: Match[] = [
 ];
 
 // 7. Multas por defecto
-const DEFAULT_FINES = (): Fine[] => [
-  {
-    id: 'f-1',
-    user_id: MOCK_USER_IDS.player,
-    date: '2026-06-15',
-    reason: 'Llegar 15 minutos tarde al entrenamiento táctico',
-    amount: 20.00,
-    status: 'Pendiente'
-  },
-  {
-    id: 'f-2',
-    user_id: MOCK_USER_IDS.player2,
-    date: '2026-06-14',
-    reason: 'No vestir el chándal oficial en el viaje al partido',
-    amount: 50.00,
-    status: 'Pagado'
-  },
-  {
-    id: 'f-3',
-    user_id: MOCK_USER_IDS.player,
-    date: '2026-06-10',
-    reason: 'Uso del teléfono móvil en el vestuario técnico',
-    amount: 10.00,
-    status: 'Pagado'
-  }
-];
+const DEFAULT_FINES = (): Fine[] => [];
 
 // 8. Puntos por defecto
-const DEFAULT_POINTS = (): PointLog[] => [
-  {
-    id: 'p-1',
-    user_id: MOCK_USER_IDS.player,
-    date: '2026-06-14',
-    reason: 'Goleador del partido (MVP)',
-    points: 3
-  },
-  {
-    id: 'p-2',
-    user_id: MOCK_USER_IDS.player2,
-    date: '2026-06-14',
-    reason: 'Esfuerzo físico y 12 recuperaciones',
-    points: 2
-  },
-  {
-    id: 'p-3',
-    user_id: MOCK_USER_IDS.player3,
-    date: '2026-06-14',
-    reason: 'Portería a cero y solidez defensiva',
-    points: 2
-  },
-  {
-    id: 'p-4',
-    user_id: MOCK_USER_IDS.player,
-    date: '2026-06-15',
-    reason: 'Penalización por retraso',
-    points: -1
-  }
-];
+const DEFAULT_POINTS = (): PointLog[] => [];
 
 // 9. Scouting por defecto
 const DEFAULT_SCOUTING: ScoutingPlayer[] = [
@@ -403,7 +313,6 @@ const DEFAULT_ATTENDANCE: TrainingAttendance[] = [
 const DEFAULT_PLAYERS: Player[] = [
   {
     id: 'p-1',
-    profile_id: MOCK_USER_IDS.player,
     full_name: 'Paco Alcácer',
     nickname: 'Paco',
     photo_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80',
@@ -426,7 +335,6 @@ const DEFAULT_PLAYERS: Player[] = [
   },
   {
     id: 'p-2',
-    profile_id: MOCK_USER_IDS.player2,
     full_name: 'Sergio Gómez',
     nickname: 'Gómez',
     photo_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=100&q=80',
@@ -449,7 +357,6 @@ const DEFAULT_PLAYERS: Player[] = [
   },
   {
     id: 'p-3',
-    profile_id: MOCK_USER_IDS.player3,
     full_name: 'Nacho Porcar',
     nickname: 'Porcar',
     photo_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=100&q=80',

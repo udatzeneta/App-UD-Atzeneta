@@ -559,6 +559,68 @@ export const dataService = {
   },
 
 
+  async getProfilesByRoles(roleIds: number[]): Promise<Profile[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getProfiles().filter((p: any) => roleIds.includes(p.role_id));
+    } else {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role_id', roleIds);
+      if (error) throw error;
+      return data as Profile[];
+    }
+  },
+
+  async linkPlayerToUser(userId: string, fullName: string): Promise<boolean> {
+    if (isMockMode) {
+      await delay(200);
+      const players = MockDatabase.getPlayers();
+      // Búsqueda simple por similitud de texto (separando por palabras clave)
+      const queryParts = fullName.toLowerCase().trim().split(' ').filter(p => p.length > 2);
+      const match = players.find(p => {
+        const pName = p.full_name.toLowerCase();
+        return queryParts.some(part => pName.includes(part));
+      });
+      if (match) {
+        match.profile_id = userId;
+        MockDatabase.setPlayers(players);
+        return true;
+      }
+      return false;
+    } else {
+      // Búsqueda más flexible, coger la primera palabra del nombre/apellido
+      const queryParts = fullName.trim().split(' ').filter(p => p.length > 2);
+      if (queryParts.length === 0) return false;
+      
+      // Armar query OR ilike
+      const orQuery = queryParts.map(part => `full_name.ilike.%${part}%`).join(',');
+      
+      const { data: players, error } = await supabase
+        .from('players')
+        .select('id, full_name')
+        .or(orQuery);
+      
+      if (error) {
+        console.error('Error buscando jugador para enlazar:', error);
+        return false;
+      }
+      
+      if (players && players.length > 0) {
+        const playerId = players[0].id;
+        const { error: updateError } = await supabase
+          .from('players')
+          .update({ profile_id: userId })
+          .eq('id', playerId);
+          
+        if (updateError) return false;
+        return true;
+      }
+      return false;
+    }
+  },
+
   // =====================================================================
   // MULTAS (FINES)
   // =====================================================================
