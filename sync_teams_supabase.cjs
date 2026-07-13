@@ -8,8 +8,8 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-const TARGET_TEMPORADA = '21';          // 2025-2026
-const SEASON = '2025-2026';
+const TARGET_TEMPORADA = '22';          // 2026-2027
+const SEASON = '2026-2027';
 const CLASSIF_URL = 'https://ffcv.es/competiciones/';
 
 // Lista de competiciones a sincronizar con su configuración de filtrado de grupos

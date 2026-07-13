@@ -102,7 +102,7 @@ export const Scouting: React.FC = () => {
   const [fieldPlayerAltPos, setFieldPlayerAltPos] = useState<string>('');
 
   // Estados del Modal de Detalle de Jugador en Base de Datos
-  const [selectedDbPlayer, setSelectedDbPlayer] = useState<ScoutingPlayer | null>(null);
+  const [selectedDbPlayer, setSelectedDbPlayer] = useState<(ScoutingPlayer & { previousSeasonLabel?: string }) | null>(null);
   const [isDbPlayerModalOpen, setIsDbPlayerModalOpen] = useState(false);
 
   // Modales de asignación rápida en Campo
@@ -421,10 +421,42 @@ export const Scouting: React.FC = () => {
   // Fuente de datos de la Liga (usa leagueScoutingList con historial cuando está disponible)
   const leagueSource = leagueScoutingList.length > 0 ? leagueScoutingList : scoutingList;
 
+  // Temporada actual: si hay datos de esta temporada para un jugador, se muestran esos
+  // (equipo/escudo actuales). Si aún no se han descargado, se muestra su última
+  // temporada conocida marcada como "(temporada anterior)".
+  const CURRENT_SEASON = '2026-2027';
+
+  // Un jugador por nombre: prioriza el registro de la temporada actual; si no existe,
+  // cae al registro de la temporada más reciente disponible y lo marca como histórico.
+  const dedupedLeaguePlayers: Array<ScoutingPlayer & { previousSeasonLabel?: string }> = (() => {
+    const groups = new Map<string, ScoutingPlayer[]>();
+    leagueSource
+      .filter(p => p.season || p.competition)
+      .forEach(p => {
+        const key = normalizeStr(p.player_name);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(p);
+      });
+
+    const result: Array<ScoutingPlayer & { previousSeasonLabel?: string }> = [];
+    groups.forEach(list => {
+      const current = list.find(p => p.season === CURRENT_SEASON);
+      if (current) {
+        result.push(current);
+        return;
+      }
+      const mostRecent = [...list].sort((a, b) => (b.season || '').localeCompare(a.season || ''))[0];
+      if (mostRecent) {
+        result.push({ ...mostRecent, previousSeasonLabel: mostRecent.season || undefined });
+      }
+    });
+    return result;
+  })();
+
   // Equipos únicos de la liga (todos los equipos con datos de scouting)
   const uniqueTeams = Array.from(
     new Set(
-      leagueSource
+      dedupedLeaguePlayers
         .map(p => p.team)
         .filter(Boolean)
     )
@@ -433,7 +465,7 @@ export const Scouting: React.FC = () => {
   // Competiciones únicas de la liga
   const uniqueCompetitions = Array.from(
     new Set(
-      leagueSource
+      dedupedLeaguePlayers
         .filter(p => p.season || p.competition)
         .map(p => p.competition)
         .filter(Boolean)
@@ -484,8 +516,7 @@ export const Scouting: React.FC = () => {
   };
 
   // Filtrado de la Liga
-  const filteredLeaguePlayers = leagueSource
-    .filter(p => p.season || p.competition)
+  const filteredLeaguePlayers = dedupedLeaguePlayers
     .filter(p => {
       const term = normalizeStr(leagueSearch);
       const matchesSearch =
@@ -758,7 +789,7 @@ export const Scouting: React.FC = () => {
     showToast('success', 'Retirado', 'Jugador retirado del campograma.');
   };
 
-  const handleOpenDbPlayerModal = (player: ScoutingPlayer) => {
+  const handleOpenDbPlayerModal = (player: ScoutingPlayer & { previousSeasonLabel?: string }) => {
     setSelectedDbPlayer(player);
     setIsDbPlayerModalOpen(true);
   };
@@ -1418,8 +1449,20 @@ export const Scouting: React.FC = () => {
 
                     {/* Datos procedencia */}
                     <div className="text-[11px] text-brand-gray-muted mb-3 bg-brand-black/25 p-2.5 rounded border border-brand-black-border/40 space-y-1">
-                      <div>
-                        <span className="font-semibold text-brand-gray-dark">Club:</span> <span className="text-brand-gray-light">{player.team}</span>
+                      <div className="flex items-center gap-1.5">
+                        <img
+                          src={getTeamLogo(player.team)}
+                          alt={player.team}
+                          className="w-4 h-4 object-contain rounded-full bg-white shrink-0"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                        <span className="font-semibold text-brand-gray-dark">Club:</span>{' '}
+                        <span className="text-brand-gray-light">
+                          {player.team}
+                          {player.previousSeasonLabel && (
+                            <span className="text-brand-gray-muted"> ({player.previousSeasonLabel})</span>
+                          )}
+                        </span>
                       </div>
                       {player.competition && (
                         <div>
@@ -2017,7 +2060,10 @@ export const Scouting: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-lg font-bold text-brand-gray-light">{selectedDbPlayer.player_name}</h3>
-                    <p className="text-xs text-brand-gray-muted mt-0.5">{selectedDbPlayer.team}</p>
+                    <p className="text-xs text-brand-gray-muted mt-0.5">
+                      {selectedDbPlayer.team}
+                      {selectedDbPlayer.previousSeasonLabel && ` (${selectedDbPlayer.previousSeasonLabel})`}
+                    </p>
                   </div>
                   <button
                     onClick={() => handleToggleFavorite(selectedDbPlayer)}

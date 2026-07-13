@@ -10,9 +10,9 @@ const ws = require('ws');
 const fs = require('fs');
 const path = require('path');
 
-const SEASON = '2025-2026';
+const SEASON = '2026-2027';
 const CLASSIF_URL = 'https://ffcv.es/competiciones/';
-const TARGET_TEMPORADA = '21';
+const TARGET_TEMPORADA = '22';
 
 function loadEnv() {
   const envPath = path.join(__dirname, '.env');
