@@ -1,6 +1,6 @@
 import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
-import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent, TrainingTask, TrainingSessionTask } from '../types';
+import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent, TrainingTask, TrainingSessionTask, Profile } from '../types';
 
 
 const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
