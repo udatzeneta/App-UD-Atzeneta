@@ -7,6 +7,11 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
+// Fix para Supabase en Node 20
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = require('ws');
+}
+
 const COD_EQUIPO = '18331';
 const logosMap = {};
 
@@ -199,13 +204,43 @@ async function handleCookies(page) {
     await page.waitForSelector('#team-partidos-competicion', { timeout: 20000 });
     await page.waitForTimeout(2000);
 
-    // ── 2. Leer todas las opciones del selector de competiciones ─────────────
-    const competiciones = await page.evaluate(() => {
+    // ── 2. Seleccionar Temporada y Grupo (si existen en la página) ───────────
+    try {
+      const selectTemporada = page.locator('#sel-temporada');
+      if (await selectTemporada.count() > 0) {
+        console.log('🔄 Seleccionando temporada 2026-2027...');
+        await selectTemporada.selectOption('22');
+        await page.waitForTimeout(2000);
+      }
+    } catch (e) {
+      console.log('⚠️ No se encontró #sel-temporada');
+    }
+
+    try {
+      const selectGrupo = page.locator('#sel-grupo');
+      if (await selectGrupo.count() > 0) {
+        console.log('🔄 Seleccionando Grup - 1...');
+        await selectGrupo.selectOption({ label: 'Grup - 1' });
+        await page.waitForTimeout(2000);
+      }
+    } catch (e) {
+      console.log('⚠️ No se encontró #sel-grupo');
+    }
+
+    // ── 3. Leer todas las opciones del selector de competiciones ─────────────
+    let competiciones = await page.evaluate(() => {
       const sel = document.getElementById('team-partidos-competicion');
+      if (!sel) return [];
       return Array.from(sel.options).map(o => ({ codGrupo: o.value, nombre: o.text.trim() }));
     });
 
-    console.log(`📋 Competiciones encontradas: ${competiciones.map(c => c.nombre).join(', ')}`);
+    // Filtrar para mantener solo Liga, Copa y Promoción (descartar Amistosos u otras)
+    competiciones = competiciones.filter(c => {
+      const cat = mapCompeticion(c.nombre);
+      return cat === 'Liga' || cat === 'Copa' || cat === 'Promoción';
+    });
+
+    console.log(`📋 Competiciones a sincronizar: ${competiciones.map(c => c.nombre).join(', ')}`);
 
     // Seleccionar cada competición para que la web lance la llamada API correspondiente
     for (const comp of competiciones) {
@@ -213,14 +248,19 @@ async function handleCookies(page) {
       await page.waitForTimeout(2500);
     }
 
-    // ── 3. Fetchear partidos de cada competición ─────────────────────────────
+    // ── 4. Fetchear partidos de cada competición ─────────────────────────────
     let totalInserted = 0;
     let totalUpdated = 0;
     let totalErrors = 0;
 
     for (const comp of competiciones) {
-      const apiUrl = apiCallsByGrupo[comp.codGrupo];
+      let apiUrl = apiCallsByGrupo[comp.codGrupo];
       const competicion = mapCompeticion(comp.nombre);
+
+      // FORZAR TEMPORADA 2026/2027 (cod_temporada=22) en la URL
+      if (apiUrl && apiUrl.includes('cod_temporada=')) {
+        apiUrl = apiUrl.replace(/cod_temporada=\d+/, 'cod_temporada=22');
+      }
 
       if (!apiUrl) {
         console.log(`\n⚠️  ${comp.nombre}: no se capturó URL de API, se omite.`);
@@ -250,6 +290,8 @@ async function handleCookies(page) {
 
       // Si la API devuelve vacío, parsear las tarjetas del DOM (ocurre en Copa)
       if (partidos.length === 0) {
+        await page.selectOption('#team-partidos-competicion', comp.codGrupo);
+        await page.waitForTimeout(3000); // Esperar a que el DOM se actualice con esta competición
         partidos = await page.evaluate(async (codGrupo) => {
           const sel = document.getElementById('team-partidos-competicion');
           if (sel) sel.value = codGrupo; // asegurar selección
@@ -383,15 +425,27 @@ async function handleCookies(page) {
             observations: null,
           };
         }).filter(Boolean);
+        
+        // Descartar partidos que no sean de la temporada 2026/2027 (es decir, evitar 2025)
+        const mappedMatchesFiltered = mappedMatches.filter(m => m.date.startsWith('2026') || m.date.startsWith('2027'));
+        
+        if (mappedMatchesFiltered.length === 0) {
+           console.log('   ℹ️  No se encontraron partidos válidos para la temporada 2026/2027 en pantalla.');
+           continue;
+        }
 
-        for (const match of mappedMatches) {
+        for (const match of mappedMatchesFiltered) {
           const { data: existing, error: searchError } = await supabase
-            .from('matches').select('id').eq('date', match.date).eq('competition', match.competition).ilike('rival', match.rival).maybeSingle();
+            .from('matches').select('id, status').eq('date', match.date).eq('competition', match.competition).ilike('rival', match.rival).maybeSingle();
           if (searchError) { console.error(`   ❌ ${match.date} vs ${match.rival}: ${searchError.message}`); totalErrors++; continue; }
           if (existing) {
-            const { error } = await supabase.from('matches').update(match).eq('id', existing.id);
-            if (error) { console.error(`   ❌ Update: ${error.message}`); totalErrors++; }
-            else { totalUpdated++; console.log(`   ✏️  Actualizado: ${match.date} vs ${match.rival} [${match.status}]`); }
+            if (existing.status === 'Jugado') {
+              console.log(`   ⏭️  Omitido (Ya jugado): ${match.date} vs ${match.rival}`);
+            } else {
+              const { error } = await supabase.from('matches').update(match).eq('id', existing.id);
+              if (error) { console.error(`   ❌ Update: ${error.message}`); totalErrors++; }
+              else { totalUpdated++; console.log(`   ✏️  Actualizado: ${match.date} vs ${match.rival} [${match.status}]`); }
+            }
           } else {
             const { error } = await supabase.from('matches').insert(match);
             if (error) { console.error(`   ❌ Insert: ${error.message}`); totalErrors++; }
@@ -403,10 +457,18 @@ async function handleCookies(page) {
 
       const mappedMatches = partidos.map(p => mapPartido(p, competicion)).filter(Boolean);
 
-      for (const match of mappedMatches) {
+      // Descartar partidos que no sean de la temporada 2026/2027 (es decir, evitar 2025)
+      const mappedMatchesFiltered = mappedMatches.filter(m => m.date.startsWith('2026') || m.date.startsWith('2027'));
+      
+      if (mappedMatchesFiltered.length === 0) {
+         console.log('   ℹ️  No se encontraron partidos válidos para la temporada 2026/2027 en la API.');
+         continue;
+      }
+
+      for (const match of mappedMatchesFiltered) {
         const { data: existing, error: searchError } = await supabase
           .from('matches')
-          .select('id')
+          .select('id, status')
           .eq('date', match.date)
           .eq('competition', match.competition)
           .ilike('rival', match.rival)
@@ -419,9 +481,13 @@ async function handleCookies(page) {
         }
 
         if (existing) {
-          const { error } = await supabase.from('matches').update(match).eq('id', existing.id);
-          if (error) { console.error(`   ❌ Update ${match.date} vs ${match.rival}: ${error.message}`); totalErrors++; }
-          else { totalUpdated++; console.log(`   ✏️  Actualizado: ${match.date} vs ${match.rival} [${match.status}]`); }
+          if (existing.status === 'Jugado') {
+            console.log(`   ⏭️  Omitido (Ya jugado): ${match.date} vs ${match.rival}`);
+          } else {
+            const { error } = await supabase.from('matches').update(match).eq('id', existing.id);
+            if (error) { console.error(`   ❌ Update ${match.date} vs ${match.rival}: ${error.message}`); totalErrors++; }
+            else { totalUpdated++; console.log(`   ✏️  Actualizado: ${match.date} vs ${match.rival} [${match.status}]`); }
+          }
         } else {
           const { error } = await supabase.from('matches').insert(match);
           if (error) { console.error(`   ❌ Insert ${match.date} vs ${match.rival}: ${error.message}`); totalErrors++; }

@@ -241,7 +241,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
 
             {/* Visualización Temporada Actual en Desktop */}
             <span className="hidden sm:inline-block text-xs bg-brand-black-border border border-brand-black-border/50 text-brand-gray-muted px-2.5 py-1 rounded-full font-medium">
-              Temporada: 2025/2026
+              Temporada: 2026/2027
             </span>
           </div>
 

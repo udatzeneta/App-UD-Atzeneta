@@ -60,6 +60,9 @@ export const Matches: React.FC = () => {
   // Modal de formulario
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
 
   // Campos de formulario
   const [rival, setRival] = useState('');
@@ -138,6 +141,10 @@ export const Matches: React.FC = () => {
 
   // Handlers para acciones de partido
   const handleMatchClick = (match: Match) => {
+    if (isSelectionMode) {
+      toggleMatchSelection(match.id);
+      return;
+    }
     setSelectedMatchForActions(match);
     setIsActionModalOpen(true);
   };
@@ -334,6 +341,36 @@ export const Matches: React.FC = () => {
     onError: (err) => showToast('error', 'Error', err.message)
   });
 
+  const deleteMultipleMutation = useMutation({
+    mutationFn: (ids: string[]) => dataService.deleteMatches(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      showToast('success', 'Partidos eliminados', 'Los partidos seleccionados han sido eliminados.');
+      setSelectedMatchIds([]);
+      setIsSelectionMode(false);
+    },
+    onError: (err) => showToast('error', 'Error', err.message)
+  });
+
+  const handleDeleteMultiple = () => {
+    if (selectedMatchIds.length === 0) return;
+    if (window.confirm(`¿Estás seguro de que deseas eliminar ${selectedMatchIds.length} partidos? Esta acción no se puede deshacer.`)) {
+      deleteMultipleMutation.mutate(selectedMatchIds);
+    }
+  };
+
+  const toggleMatchSelection = (id: string) => {
+    setSelectedMatchIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleAllSelection = () => {
+    if (selectedMatchIds.length === filteredMatches.length) {
+      setSelectedMatchIds([]);
+    } else {
+      setSelectedMatchIds(filteredMatches.map(m => m.id));
+    }
+  };
+
   const upsertMatchesMutation = useMutation({
     mutationFn: (items: Omit<Match, 'id'>[]) => dataService.upsertMatches(items),
     onSuccess: (data) => {
@@ -385,7 +422,17 @@ export const Matches: React.FC = () => {
       const result = await response.json();
       if (result.success) {
         queryClient.invalidateQueries({ queryKey: ['matches'] });
-        showToast('success', 'Sincronización completada', 'Los partidos de todas las competiciones se han sincronizado con Supabase.');
+        
+        // Intentar extraer el resumen del output
+        let summaryMsg = 'Los partidos de todas las competiciones se han sincronizado con Supabase.';
+        if (result.stdout) {
+          const match = result.stdout.match(/📊 Sincronización completada:[\s\S]+/);
+          if (match) {
+            summaryMsg = match[0].trim();
+          }
+        }
+        
+        showToast('success', 'Sincronización completada', summaryMsg);
       } else {
         throw new Error('No se recibió confirmación de éxito.');
       }
@@ -589,6 +636,22 @@ export const Matches: React.FC = () => {
 
         {/* Botonera de acciones superiores */}
         <div className="flex items-center gap-2 shrink-0">
+          {canDelete && isSelectionMode && selectedMatchIds.length > 0 && (
+            <button onClick={handleDeleteMultiple} className="btn-secondary py-2 text-xs font-semibold bg-brand-red-600/10 text-brand-red-600 border-brand-red-600/20 hover:bg-brand-red-600/20">
+              <Trash2 className="w-3.5 h-3.5 mr-1 inline" /> Borrar {selectedMatchIds.length}
+            </button>
+          )}
+          {canDelete && (
+            <button 
+              onClick={() => {
+                setIsSelectionMode(!isSelectionMode);
+                if (isSelectionMode) setSelectedMatchIds([]);
+              }} 
+              className={`btn-secondary py-2 text-xs font-semibold ${isSelectionMode ? 'bg-brand-black-hover border-white/20' : ''}`}
+            >
+              <Check className="w-3.5 h-3.5 mr-1 inline" /> {isSelectionMode ? 'Cancelar Selección' : 'Seleccionar'}
+            </button>
+          )}
           <Link to="/matches/stats" className="btn-secondary py-2 text-xs font-semibold flex items-center gap-1.5 hover:bg-brand-black-hover">
             <Trophy className="w-3.5 h-3.5 text-yellow-500" /> Estadísticas
           </Link>
@@ -767,6 +830,16 @@ export const Matches: React.FC = () => {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
+                  {isSelectionMode && (
+                    <th className="table-th w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 cursor-pointer"
+                        checked={filteredMatches.length > 0 && selectedMatchIds.length === filteredMatches.length}
+                        onChange={toggleAllSelection}
+                      />
+                    </th>
+                  )}
                   <th className="table-th">Fecha</th>
                   <th className="table-th text-center">Jornada</th>
                   <th className="table-th">Rival</th>
@@ -784,8 +857,18 @@ export const Matches: React.FC = () => {
                     <tr 
                       key={match.id} 
                       onClick={() => handleMatchClick(match)}
-                      className="hover:bg-brand-black-hover/20 transition-colors cursor-pointer"
+                      className={`transition-colors cursor-pointer ${selectedMatchIds.includes(match.id) ? 'bg-brand-red-600/10 hover:bg-brand-red-600/20' : 'hover:bg-brand-black-hover/20'}`}
                     >
+                      {isSelectionMode && (
+                        <td className="table-td text-center" onClick={(e) => e.stopPropagation()}>
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 cursor-pointer"
+                            checked={selectedMatchIds.includes(match.id)}
+                            onChange={() => toggleMatchSelection(match.id)}
+                          />
+                        </td>
+                      )}
                       <td className="table-td">
                         <div className="flex flex-col">
                           <span className="font-semibold text-brand-gray-light">{match.date}</span>
@@ -919,9 +1002,23 @@ export const Matches: React.FC = () => {
                 <div 
                   key={match.id} 
                   onClick={() => handleMatchClick(match)}
-                  className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3 cursor-pointer hover:border-brand-black-border/80 transition-colors"
+                  className={`bg-brand-black-card border rounded-xl p-4 shadow-premium space-y-3 cursor-pointer transition-colors relative ${
+                    selectedMatchIds.includes(match.id) 
+                      ? 'border-brand-red-600/50 bg-brand-red-600/5' 
+                      : 'border-brand-black-border hover:border-brand-black-border/80'
+                  }`}
                 >
-                  <div className="flex justify-between items-start">
+                  {isSelectionMode && (
+                    <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 scale-125 cursor-pointer"
+                        checked={selectedMatchIds.includes(match.id)}
+                        onChange={() => toggleMatchSelection(match.id)}
+                      />
+                    </div>
+                  )}
+                  <div className={`flex justify-between items-start ${isSelectionMode ? 'pr-8' : ''}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
                         <img 

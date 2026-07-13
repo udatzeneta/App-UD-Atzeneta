@@ -474,27 +474,54 @@ export const dataService = {
   },
 
   async deleteMatch(id: string): Promise<void> {
-    if (isMockMode) {
-      await delay(300);
-      let list = MockDatabase.getMatches();
-      list = list.filter(x => x.id !== id);
-      MockDatabase.setMatches(list);
-
-      let injuries = MockDatabase.getPlayerInjuries();
-      injuries = injuries.filter(x => x.match_id !== id);
-      MockDatabase.setPlayerInjuries(injuries);
-    } else {
+    try {
+      // 1. Obtener la sesión actual para RLS (Row Level Security)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No hay sesión activa. Inicia sesión de nuevo.');
+      
+      // 2. Eliminar el partido
       const { error } = await supabase
         .from('matches')
         .delete()
         .eq('id', id);
-      if (error) throw error;
 
-      // Eliminar lesiones del partido manualmente por si no hay CASCADE
+      if (error) throw error;
+      
+      // La tabla player_match_stats y player_injuries deberían tener ON DELETE CASCADE,
+      // pero por si acaso, intentamos limpiar (ignorando errores)
+      const { error: statsError } = await supabase.from('player_match_stats').delete().eq('match_id', id);
       const { error: injuryError } = await supabase.from('player_injuries').delete().eq('match_id', id);
-      if (injuryError) throw injuryError;
+      
+    } catch (err: any) {
+      console.error('Error eliminando partido:', err.message);
+      throw err;
     }
   },
+
+  async deleteMatches(ids: string[]): Promise<void> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No hay sesión activa.');
+      if (!ids.length) return;
+
+      const { error } = await supabase
+        .from('matches')
+        .delete()
+        .in('id', ids);
+
+      if (error) throw error;
+      
+      await supabase.from('player_match_stats').delete().in('match_id', ids);
+      await supabase.from('player_injuries').delete().in('match_id', ids);
+    } catch (err: any) {
+      console.error('Error eliminando múltiples partidos:', err.message);
+      throw err;
+    }
+  },
+
+  // ---------------------------------------------------------
+  // APARTADO: MULTAS (FINES)
+  // ---------------------------------------------------------},
 
   async upsertMatches(items: Omit<Match, 'id'>[]): Promise<Match[]> {
     const results: Match[] = [];
