@@ -25,13 +25,15 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
+  const isPlayerRole = roleSlug === 'player';
+
   // Definición de las secciones de navegación
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', pageKey: 'dashboard', icon: LayoutDashboard },
     { name: 'Calendario', path: '/calendar', pageKey: 'calendar', icon: Calendar },
     { name: 'Partidos', path: '/matches', pageKey: 'matches', icon: Trophy },
     { name: 'Equipo', path: '/team', pageKey: 'team', icon: Shield },
-    { name: 'Jugadores', path: '/players', pageKey: 'players', icon: Users },
+    { name: isPlayerRole ? 'Perfil Jugador' : 'Jugadores', path: '/players', pageKey: 'players', icon: Users },
     { name: 'Mejora Individual', path: '/mejora-individual', pageKey: 'individual_improvement', icon: TrendingUp },
     { name: 'Entrenamientos', path: '/trainings', pageKey: 'trainings', icon: Dumbbell },
     { name: 'Editor Sesión', path: '/training-editor', pageKey: 'training_editor', icon: ClipboardList },

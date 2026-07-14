@@ -13,6 +13,11 @@ export const authService = {
         throw new Error('Usuario no encontrado. Prueba con mister@atzeneta.com, admin@atzeneta.com o paco@atzeneta.com');
       }
       MockDatabase.setSessionUser(profile.id);
+      const linkedPlayer = MockDatabase.getPlayers().find((p: any) => p.profile_id === profile.id);
+      if (linkedPlayer) {
+        profile.full_name = linkedPlayer.full_name;
+        if (linkedPlayer.photo_url) profile.avatar_url = linkedPlayer.photo_url;
+      }
       return profile;
     } else {
       if (!password) throw new Error('Se requiere contraseña para iniciar sesión.');
@@ -41,6 +46,19 @@ export const authService = {
             created_at: new Date().toISOString()
           };
         }
+
+        // Obtener datos del jugador vinculado si existe para sobreescribir nombre y foto
+        const { data: linkedPlayers } = await supabase
+          .from('players')
+          .select('full_name, photo_url')
+          .eq('profile_id', profile.id);
+
+        if (linkedPlayers && linkedPlayers.length > 0) {
+          profile.full_name = linkedPlayers[0].full_name;
+          if (linkedPlayers[0].photo_url) {
+            profile.avatar_url = linkedPlayers[0].photo_url;
+          }
+        }
         return profile as Profile;
       } catch (err) {
         console.warn('Error al recuperar perfil de Supabase, usando perfil temporal de administrador:', err);
@@ -62,6 +80,11 @@ export const authService = {
     const profile = profiles.find(p => p.id === userId);
     if (!profile) throw new Error('Perfil no encontrado.');
     MockDatabase.setSessionUser(profile.id);
+    const linkedPlayer = MockDatabase.getPlayers().find((p: any) => p.profile_id === profile.id);
+    if (linkedPlayer) {
+      profile.full_name = linkedPlayer.full_name;
+      if (linkedPlayer.photo_url) profile.avatar_url = linkedPlayer.photo_url;
+    }
     return profile;
   },
 
@@ -101,7 +124,15 @@ export const authService = {
   // Obtener sesión actual
   async getCurrentSession(): Promise<Profile | null> {
     if (isMockMode) {
-      return MockDatabase.getSessionUser();
+      const profile = MockDatabase.getSessionUser();
+      if (profile) {
+        const linkedPlayer = MockDatabase.getPlayers().find((p: any) => p.profile_id === profile.id);
+        if (linkedPlayer) {
+          profile.full_name = linkedPlayer.full_name;
+          if (linkedPlayer.photo_url) profile.avatar_url = linkedPlayer.photo_url;
+        }
+      }
+      return profile;
     } else {
       const { data } = await supabase.auth.getSession();
       if (!data.session?.user) return null;
@@ -113,7 +144,21 @@ export const authService = {
           .eq('id', data.session.user.id)
           .single();
 
-        if (profile) return profile as Profile;
+        if (profile) {
+          // Obtener datos del jugador vinculado si existe para sobreescribir nombre y foto
+          const { data: linkedPlayers } = await supabase
+            .from('players')
+            .select('full_name, photo_url')
+            .eq('profile_id', profile.id);
+            
+          if (linkedPlayers && linkedPlayers.length > 0) {
+            profile.full_name = linkedPlayers[0].full_name;
+            if (linkedPlayers[0].photo_url) {
+              profile.avatar_url = linkedPlayers[0].photo_url;
+            }
+          }
+          return profile as Profile;
+        }
       } catch (err) {
         console.warn('Error al recuperar perfil de la base de datos, usando fallback de metadatos:', err);
       }
@@ -144,6 +189,52 @@ export const authService = {
         .order('full_name', { ascending: true });
       if (error) throw error;
       return data as Profile[];
+    }
+  },
+
+  // Solo para administrador: Obtiene usuarios reales vinculados con auth.users
+  async getAdminUsers(): Promise<Profile[]> {
+    if (isMockMode) {
+      await delay(200);
+      return MockDatabase.getProfiles();
+    } else {
+      const { data, error } = await supabase.rpc('admin_get_users');
+      if (error) throw error;
+      return data as Profile[];
+    }
+  },
+
+  async adminUpdateUser(id: string, newEmail: string, newName: string, newRole: number): Promise<void> {
+    if (isMockMode) {
+      await delay(300);
+      const profiles = MockDatabase.getProfiles();
+      const idx = profiles.findIndex(p => p.id === id);
+      if (idx !== -1) {
+        profiles[idx] = { ...profiles[idx], email: newEmail, full_name: newName, role_id: newRole };
+        MockDatabase.setProfiles(profiles);
+      }
+    } else {
+      const { error } = await supabase.rpc('admin_update_user', {
+        target_id: id,
+        new_email: newEmail,
+        new_full_name: newName,
+        new_role_id: newRole
+      });
+      if (error) throw error;
+    }
+  },
+
+  async adminDeleteUser(id: string): Promise<void> {
+    if (isMockMode) {
+      await delay(300);
+      let profiles = MockDatabase.getProfiles();
+      profiles = profiles.filter(p => p.id !== id);
+      MockDatabase.setProfiles(profiles);
+    } else {
+      const { error } = await supabase.rpc('admin_delete_user', {
+        target_id: id
+      });
+      if (error) throw error;
     }
   },
 

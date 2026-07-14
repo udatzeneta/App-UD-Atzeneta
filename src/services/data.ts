@@ -573,48 +573,172 @@ export const dataService = {
     }
   },
 
+  // Busca el jugador más parecido por nombre SIN vincularlo (para pedir confirmación al usuario)
+  // En modo Supabase real usa un RPC (SECURITY DEFINER) porque el usuario recién registrado
+  // todavía no tiene permisos RLS sobre la tabla `players`.
+  async findBestMatchingPlayer(fullName: string): Promise<{ id: string; full_name: string; photo_url?: string; similarity: number } | null> {
+    const normalize = (str: string) => str.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+    const inputNorm = normalize(fullName);
+
+    if (isMockMode) {
+      const getSimilarity = (dataService as any)._getNameSimilarity;
+      const players = MockDatabase.getPlayers().filter((p: any) => !p.profile_id);
+
+      let bestMatch: any = null;
+      let highestScore = 0;
+      players.forEach((p: any) => {
+        const score = getSimilarity(inputNorm, normalize(p.full_name));
+        if (score > highestScore && score >= 60) {
+          highestScore = score;
+          bestMatch = p;
+        }
+      });
+
+      if (!bestMatch) return null;
+      return { id: bestMatch.id, full_name: bestMatch.full_name, photo_url: bestMatch.photo_url, similarity: highestScore };
+    }
+
+    const { data, error } = await supabase.rpc('find_matching_player', { p_full_name: fullName });
+    if (error) {
+      console.warn('Error al buscar jugador coincidente vía RPC:', error);
+      return null;
+    }
+    const bestMatch = data?.[0];
+    if (!bestMatch || bestMatch.similarity < 60) return null;
+    return { id: bestMatch.id, full_name: bestMatch.full_name, photo_url: bestMatch.photo_url, similarity: bestMatch.similarity };
+  },
+
+  _getNameSimilarity(a: string, b: string): number {
+    if (a === b) return 100;
+    const matrix: number[][] = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+        }
+      }
+    }
+    const distance = matrix[b.length][a.length];
+    const maxLength = Math.max(a.length, b.length);
+    return ((maxLength - distance) / maxLength) * 100;
+  },
+
+  // Vincula explícitamente un jugador concreto (ya confirmado por el usuario) a una cuenta
+  async linkPlayerToUserById(userId: string, playerId: string): Promise<boolean> {
+    if (isMockMode) {
+      await delay(150);
+      const players = MockDatabase.getPlayers();
+      const player = players.find((p: any) => p.id === playerId);
+      if (!player) return false;
+      player.profile_id = userId;
+      MockDatabase.setPlayers(players);
+
+      const profiles = MockDatabase.getProfiles();
+      const profile = profiles.find((p: any) => p.id === userId);
+      if (profile) {
+        profile.full_name = player.full_name;
+        if (player.photo_url) profile.avatar_url = player.photo_url;
+        MockDatabase.setProfiles(profiles);
+      }
+      return true;
+    } else {
+      // RPC SECURITY DEFINER: vincula el jugador al usuario autenticado (auth.uid()),
+      // evitando el bloqueo de RLS sobre `players` en cuentas recién creadas.
+      const { data, error } = await supabase.rpc('link_player_to_own_profile', { p_player_id: playerId });
+      if (error) {
+        console.warn('Error al vincular jugador vía RPC:', error);
+        return false;
+      }
+      return !!data;
+    }
+  },
+
   async linkPlayerToUser(userId: string, fullName: string): Promise<boolean> {
+    const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const inputNorm = normalize(fullName);
+
+    // Función de cálculo de distancia Levenshtein
+    const getSimilarity = (a: string, b: string) => {
+      if (a === b) return 100;
+      const matrix = [];
+      for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+      for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+      for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+          if (b.charAt(i - 1) === a.charAt(j - 1)) {
+            matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+            matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+          }
+        }
+      }
+      const distance = matrix[b.length][a.length];
+      const maxLength = Math.max(a.length, b.length);
+      return ((maxLength - distance) / maxLength) * 100;
+    };
+
     if (isMockMode) {
       await delay(200);
       const players = MockDatabase.getPlayers();
-      // Búsqueda simple por similitud de texto (separando por palabras clave)
-      const queryParts = fullName.toLowerCase().trim().split(' ').filter(p => p.length > 2);
-      const match = players.find(p => {
-        const pName = p.full_name.toLowerCase();
-        return queryParts.some(part => pName.includes(part));
+      let bestMatch = null;
+      let highestScore = 0;
+
+      players.forEach((p: any) => {
+        const pNorm = normalize(p.full_name);
+        const score = getSimilarity(inputNorm, pNorm);
+        if (score > highestScore && score >= 85) {
+          highestScore = score;
+          bestMatch = p;
+        }
       });
-      if (match) {
-        match.profile_id = userId;
+
+      if (bestMatch) {
+        bestMatch.profile_id = userId;
         MockDatabase.setPlayers(players);
+        
+        // Update profile in mock db too
+        const profiles = MockDatabase.getProfiles();
+        const profile = profiles.find((p: any) => p.id === userId);
+        if (profile) {
+          profile.full_name = bestMatch.full_name;
+          if (bestMatch.photo_url) profile.avatar_url = bestMatch.photo_url;
+          MockDatabase.setProfiles(profiles);
+        }
         return true;
       }
       return false;
     } else {
-      // Búsqueda más flexible, coger la primera palabra del nombre/apellido
-      const queryParts = fullName.trim().split(' ').filter(p => p.length > 2);
-      if (queryParts.length === 0) return false;
+      // Obtenemos TODOS los jugadores para buscar similitud alta
+      const { data: players, error } = await supabase.from('players').select('id, full_name, photo_url');
+      if (error || !players) return false;
       
-      // Armar query OR ilike
-      const orQuery = queryParts.map(part => `full_name.ilike.%${part}%`).join(',');
+      let bestMatch: any = null;
+      let highestScore = 0;
+
+      players.forEach(p => {
+        const pNorm = normalize(p.full_name);
+        const score = getSimilarity(inputNorm, pNorm);
+        if (score > highestScore && score >= 85) { // Casi 100% = al menos 85% de similitud
+          highestScore = score;
+          bestMatch = p;
+        }
+      });
       
-      const { data: players, error } = await supabase
-        .from('players')
-        .select('id, full_name')
-        .or(orQuery);
-      
-      if (error) {
-        console.error('Error buscando jugador para enlazar:', error);
-        return false;
-      }
-      
-      if (players && players.length > 0) {
-        const playerId = players[0].id;
-        const { error: updateError } = await supabase
-          .from('players')
-          .update({ profile_id: userId })
-          .eq('id', playerId);
-          
-        if (updateError) return false;
+      if (bestMatch) {
+        // Enlazamos
+        await supabase.from('players').update({ profile_id: userId }).eq('id', bestMatch.id);
+        
+        // Actualizamos el perfil del usuario para usar foto y nombre del jugador
+        const updateData: any = { full_name: bestMatch.full_name };
+        if (bestMatch.photo_url) {
+          updateData.avatar_url = bestMatch.photo_url;
+        }
+        await supabase.from('profiles').update(updateData).eq('id', userId);
+        
         return true;
       }
       return false;

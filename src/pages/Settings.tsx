@@ -64,7 +64,7 @@ export const SettingsPage: React.FC = () => {
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
-    queryFn: () => authService.getProfiles(),
+    queryFn: () => authService.getAdminUsers(),
     enabled: isAdmin
   });
 
@@ -101,7 +101,8 @@ export const SettingsPage: React.FC = () => {
   });
 
   const updateProfileMutation = useMutation({
-    mutationFn: ({ id, item }: { id: string; item: Partial<Profile> }) => authService.updateProfile(id, item),
+    mutationFn: ({ id, item }: { id: string; item: Partial<Profile> }) => 
+      authService.adminUpdateUser(id, item.email || '', item.full_name || '', item.role_id || 3),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
       showToast('success', 'Usuario actualizado', 'Los datos del usuario han sido guardados.');
@@ -111,7 +112,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const deleteProfileMutation = useMutation({
-    mutationFn: (id: string) => authService.deleteProfile(id),
+    mutationFn: (id: string) => authService.adminDeleteUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
       showToast('success', 'Usuario eliminado', 'El usuario ha sido eliminado del sistema.');

@@ -84,10 +84,18 @@ export const Players: React.FC = () => {
   const [physioDate, setPhysioDate] = useState(new Date().toISOString().split('T')[0]);
 
   // React Query - Cargar Jugadores
-  const { data: players = [], isLoading } = useQuery({
+  const { data: rawPlayers = [], isLoading } = useQuery({
     queryKey: ['players'],
     queryFn: () => dataService.getPlayers()
   });
+
+  const { user } = useAuth();
+  const players = React.useMemo(() => {
+    if (user?.role_id === 3) {
+      return rawPlayers.filter(p => p.profile_id === user.id);
+    }
+    return rawPlayers;
+  }, [rawPlayers, user]);
 
   // React Query - Cargar Todos los Partidos
   const { data: allMatches = [] } = useQuery({

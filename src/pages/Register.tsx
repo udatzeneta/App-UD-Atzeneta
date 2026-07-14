@@ -20,6 +20,9 @@ export const Register: React.FC = () => {
   const [isRoleLocked, setIsRoleLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>('');
+  const [matchCandidate, setMatchCandidate] = useState<{ id: string; full_name: string; photo_url?: string } | null>(null);
+  const [showMatchConfirm, setShowMatchConfirm] = useState(false);
+  const [showNoMatchNotice, setShowNoMatchNotice] = useState(false);
 
   // Mapeo de slugs de roles a IDs y nombres
   const rolesMap: Record<string, { id: number; name: string }> = {
@@ -72,6 +75,9 @@ export const Register: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  // ID de la cuenta ya creada, a la espera de confirmar (o no) el vínculo con su ficha de jugador
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) {
@@ -89,70 +95,97 @@ export const Register: React.FC = () => {
 
     setLoading(true);
     try {
-      if (isMockMode) {
-        // --- MODO DEMO (LOCALSTORAGE) ---
-        const profiles = MockDatabase.getProfiles();
-        const emailExists = profiles.some(p => p.email === email.trim().toLowerCase());
-        if (emailExists) {
-          throw new Error('El correo electrónico ya está registrado en la demo.');
-        }
+      const newUserId = isMockMode ? await createMockAccount() : await createRealAccount();
 
-        const newProfileId = `mock-uuid-user-${Math.random().toString(36).substring(2, 11)}`;
-        const newProfile = {
-          id: newProfileId,
-          email: email.trim().toLowerCase(),
+      if (roleId === 3) {
+        // Buscamos su ficha más parecida (ya autenticado, para poder consultar `players` vía RPC)
+        const candidate = await dataService.findBestMatchingPlayer(fullName.trim());
+        setLoading(false);
+        if (candidate) {
+          setPendingUserId(newUserId);
+          setMatchCandidate(candidate);
+          setShowMatchConfirm(true);
+          return;
+        } else {
+          setPendingUserId(newUserId);
+          setShowNoMatchNotice(true);
+          return;
+        }
+      }
+
+      await finalizeSession();
+    } catch (err: any) {
+      console.error(err);
+      setLoading(false);
+      showToast('error', 'Error en el Registro', err.message || 'Ocurrió un error inesperado.');
+    }
+  };
+
+  // Crea la cuenta en modo Demo (localStorage) y devuelve el id del nuevo perfil
+  const createMockAccount = async (): Promise<string> => {
+    const profiles = MockDatabase.getProfiles();
+    const emailExists = profiles.some(p => p.email === email.trim().toLowerCase());
+    if (emailExists) {
+      throw new Error('El correo electrónico ya está registrado en la demo.');
+    }
+
+    const newProfileId = `mock-uuid-user-${Math.random().toString(36).substring(2, 11)}`;
+    const newProfile = {
+      id: newProfileId,
+      email: email.trim().toLowerCase(),
+      full_name: fullName.trim(),
+      role_id: roleId,
+      avatar_url: avatarDataUrl || `https://images.unsplash.com/photo-${roleId === 2 ? '1507003211169-0a1dd7228f2d' : roleId === 4 ? '1472099645785-5658abf4ff4e' : '1500648767791-00dcc994a43e'}?auto=format&fit=crop&w=100&q=80`,
+      created_at: new Date().toISOString()
+    };
+
+    MockDatabase.setProfiles([...profiles, newProfile]);
+    MockDatabase.setSessionUser(newProfile.id);
+    return newProfileId;
+  };
+
+  // Crea la cuenta en Supabase real (deja sesión activa) y devuelve el id del usuario
+  const createRealAccount = async (): Promise<string> => {
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: {
           full_name: fullName.trim(),
-          role_id: roleId,
-          avatar_url: avatarDataUrl || `https://images.unsplash.com/photo-${roleId === 2 ? '1507003211169-0a1dd7228f2d' : roleId === 4 ? '1472099645785-5658abf4ff4e' : '1500648767791-00dcc994a43e'}?auto=format&fit=crop&w=100&q=80`,
-          created_at: new Date().toISOString()
-        };
-
-        MockDatabase.setProfiles([...profiles, newProfile]);
-        MockDatabase.setSessionUser(newProfile.id);
-
-        if (roleId === 3) {
-          await dataService.linkPlayerToUser(newProfile.id, fullName.trim());
+          role_id: roleId
         }
+      }
+    });
 
+    if (error) throw error;
+    if (!data.user) throw new Error('No se pudo completar el registro en Supabase.');
+
+    // Intentamos insertar perfil en la base de datos (si las políticas RLS lo permiten;
+    // si ya existe por un trigger de auth.users, este insert fallará y lo ignoramos)
+    try {
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        email: email.trim().toLowerCase(),
+        full_name: fullName.trim(),
+        role_id: roleId,
+        avatar_url: avatarDataUrl || null
+      });
+    } catch (dbErr) {
+      console.warn('Inserción directa de perfil no disponible. Se usará el trigger o el fallback.', dbErr);
+    }
+
+    return data.user.id;
+  };
+
+  // Vincula (si procede) y finaliza el alta: inicia sesión en la app y navega al dashboard
+  const finalizeSession = async () => {
+    setLoading(true);
+    try {
+      if (isMockMode) {
         showToast('success', 'Registro Exitoso (Demo)', 'Tu perfil de pruebas se ha creado correctamente.');
-        // Forzar recarga rápida de sesión
         window.location.href = '/dashboard';
       } else {
-        // --- MODO SUPABASE REAL ---
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: {
-              full_name: fullName.trim(),
-              role_id: roleId
-            }
-          }
-        });
-
-        if (error) throw error;
-        if (!data.user) throw new Error('No se pudo completar el registro en Supabase.');
-
-        // Intentamos insertar perfil en la base de datos (si las políticas RLS lo permiten)
-        try {
-          await supabase.from('profiles').insert({
-            id: data.user.id,
-            email: email.trim().toLowerCase(),
-            full_name: fullName.trim(),
-            role_id: roleId,
-            avatar_url: avatarDataUrl || null
-          });
-          
-          if (roleId === 3) {
-            await dataService.linkPlayerToUser(data.user.id, fullName.trim());
-          }
-        } catch (dbErr) {
-          console.warn('Inserción directa de perfil no disponible. Se usará el trigger o el fallback.', dbErr);
-        }
-
         showToast('success', 'Cuenta Creada', 'Registrado con éxito. Iniciando sesión...');
-        
-        // Loguearse directamente para inicializar la sesión en el React context
         await login(email.trim(), password);
         navigate('/dashboard');
       }
@@ -162,6 +195,30 @@ export const Register: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConfirmMatch = async () => {
+    if (!pendingUserId || !matchCandidate) return;
+    setShowMatchConfirm(false);
+    setLoading(true);
+    try {
+      await dataService.linkPlayerToUserById(pendingUserId, matchCandidate.id);
+      showToast('success', 'Jugador Vinculado', 'Tu cuenta se ha vinculado a tu ficha oficial.');
+    } catch (err: any) {
+      showToast('error', 'Error de Vinculación', err.message || 'No se pudo vincular tu ficha de jugador.');
+    }
+    await finalizeSession();
+  };
+
+  const handleRejectMatch = () => {
+    setShowMatchConfirm(false);
+    setShowNoMatchNotice(true);
+  };
+
+  const handleCloseNoMatchNotice = async () => {
+    setShowNoMatchNotice(false);
+    setMatchCandidate(null);
+    await finalizeSession();
   };
 
   return (
@@ -313,6 +370,66 @@ export const Register: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Modal de confirmación de jugador más parecido */}
+      {showMatchConfirm && matchCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-brand-black border border-brand-black-border rounded-2xl shadow-premium p-6 text-center">
+            <h3 className="text-base font-bold text-brand-gray-light mb-1">¿Eres tú?</h3>
+            <p className="text-xs text-brand-gray-muted mb-4">
+              Hemos encontrado una ficha de jugador con un nombre muy parecido al tuyo.
+            </p>
+            <div className="flex flex-col items-center gap-2 mb-5">
+              <div className="w-16 h-16 rounded-full border border-brand-black-border bg-brand-black-card overflow-hidden flex items-center justify-center">
+                {matchCandidate.photo_url ? (
+                  <img src={matchCandidate.photo_url} alt={matchCandidate.full_name} className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-7 h-7 text-brand-gray-dark" />
+                )}
+              </div>
+              <span className="text-sm font-semibold text-brand-gray-light">{matchCandidate.full_name}</span>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                className="flex-1 py-2 rounded-lg text-sm font-semibold border border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-hover transition-colors"
+                onClick={handleRejectMatch}
+                disabled={loading}
+              >
+                No soy yo
+              </button>
+              <button
+                type="button"
+                className="btn-primary flex-1 py-2 font-semibold justify-center"
+                onClick={handleConfirmMatch}
+                disabled={loading}
+              >
+                Sí, soy yo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Aviso cuando no se confirma o no se encuentra ficha coincidente */}
+      {showNoMatchNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-brand-black border border-brand-black-border rounded-2xl shadow-premium p-6 text-center">
+            <h3 className="text-base font-bold text-brand-gray-light mb-2">No hemos podido vincular tu ficha</h3>
+            <p className="text-xs text-brand-gray-muted mb-5">
+              No hemos podido confirmar tu ficha de jugador automáticamente. Habla con tu entrenador para que revise y solucione tu registro antes de continuar.
+            </p>
+            <button
+              type="button"
+              className="btn-primary w-full py-2 font-semibold justify-center"
+              onClick={handleCloseNoMatchNotice}
+              disabled={loading}
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
