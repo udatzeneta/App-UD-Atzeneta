@@ -226,9 +226,14 @@ export const SettingsPage: React.FC = () => {
     exportToCSV('usuarios_ud_atzeneta', headers, rows);
   };
 
-  const handleExportUsersPDF = () => {
-    const { headers, rows } = usersExportData();
-    exportToPDF('Usuarios Registrados - UD Atzeneta', 'usuarios_ud_atzeneta', headers, rows);
+  const handleExportUsersPDF = async () => {
+    try {
+      const { headers, rows } = usersExportData();
+      await exportToPDF('Usuarios Registrados - UD Atzeneta', `usuarios_ud_atzeneta_${Date.now()}`, headers, rows);
+    } catch (err: any) {
+      console.error('Error al exportar usuarios a PDF:', err);
+      showToast('error', 'Error al exportar', err?.message || 'No se pudo generar el PDF de usuarios.');
+    }
   };
 
   const handleDeleteProfile = (id: string) => {
