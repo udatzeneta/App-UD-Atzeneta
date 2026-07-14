@@ -7,11 +7,12 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Settings as SettingsType } from '../types';
-import { 
+import {
   Settings as SettingsIcon, ShieldCheck, UserCog, Users, Edit2, Trash2,
-  Save, CheckSquare, Square, QrCode, Copy, Download, Link as LinkIcon 
+  Save, CheckSquare, Square, QrCode, Copy, Download, Link as LinkIcon, FileText
 } from 'lucide-react';
 import { Profile } from '../types';
+import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 
 export const SettingsPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -201,6 +202,35 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const getRoleName = (roleId: number) => {
+    switch (roleId) {
+      case 1: return 'Administrador';
+      case 2: return 'Entrenador (Míster)';
+      case 4: return 'Directivo';
+      default: return 'Jugador';
+    }
+  };
+
+  const usersExportData = (): { headers: string[]; rows: ExportCell[][] } => ({
+    headers: ['Nombre', 'Email', 'Rol', 'Fecha de Alta'],
+    rows: profiles.map(p => [
+      p.full_name,
+      p.email,
+      getRoleName(p.role_id),
+      p.created_at ? new Date(p.created_at).toLocaleDateString('es-ES') : ''
+    ])
+  });
+
+  const handleExportUsersCSV = () => {
+    const { headers, rows } = usersExportData();
+    exportToCSV('usuarios_ud_atzeneta', headers, rows);
+  };
+
+  const handleExportUsersPDF = () => {
+    const { headers, rows } = usersExportData();
+    exportToPDF('Usuarios Registrados - UD Atzeneta', 'usuarios_ud_atzeneta', headers, rows);
+  };
+
   const handleDeleteProfile = (id: string) => {
     if (window.confirm('¿Estás seguro de que quieres eliminar este usuario permanentemente?')) {
       deleteProfileMutation.mutate(id);
@@ -334,11 +364,27 @@ export const SettingsPage: React.FC = () => {
           ===================================================================== */}
       {activeTab === 'members' && isAdmin && (
         <div className="space-y-6">
-          <div className="bg-brand-black border border-brand-black-border p-4 rounded-xl">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-brand-red-600 mb-1">Directorio de Usuarios</h4>
-            <p className="text-xs text-brand-gray-muted leading-relaxed">
-              Administra los miembros registrados en la plataforma. Puedes modificar su rol, nombre y correo, o eliminarlos del sistema por completo.
-            </p>
+          <div className="bg-brand-black border border-brand-black-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-brand-red-600 mb-1">Directorio de Usuarios</h4>
+              <p className="text-xs text-brand-gray-muted leading-relaxed">
+                Administra los miembros registrados en la plataforma. Puedes modificar su rol, nombre y correo, o eliminarlos del sistema por completo.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleExportUsersCSV}
+                className="btn-secondary py-2 px-3 text-xs font-semibold flex items-center gap-1.5 bg-brand-black-card text-brand-gray-light hover:bg-brand-black-hover"
+              >
+                <Download className="w-3.5 h-3.5" /> CSV
+              </button>
+              <button
+                onClick={handleExportUsersPDF}
+                className="btn-secondary py-2 px-3 text-xs font-semibold flex items-center gap-1.5 bg-brand-black-card text-brand-gray-light hover:bg-brand-black-hover"
+              >
+                <FileText className="w-3.5 h-3.5" /> PDF
+              </button>
+            </div>
           </div>
 
           <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
