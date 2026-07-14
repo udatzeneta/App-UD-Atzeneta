@@ -702,9 +702,9 @@ const AnalysisDetail: React.FC<{
                     {a.description && <p className="text-sm text-brand-gray-light">{a.description}</p>}
                     
                     {/* Mensajes sin leer mostrados directamente debajo de la jugada */}
-                    {a.messages?.filter(m => !m.read_at && m.sender_id !== currentUserId).length > 0 && (
+                    {(a.messages || []).filter(m => !m.read_at && m.sender_id !== currentUserId).length > 0 && (
                       <div className="mt-2 space-y-1.5">
-                        {a.messages.filter(m => !m.read_at && m.sender_id !== currentUserId).map(m => (
+                        {(a.messages || []).filter(m => !m.read_at && m.sender_id !== currentUserId).map(m => (
                           <div key={m.id} className="p-2.5 bg-brand-black-bg border border-brand-black-border rounded-lg border-l-2 border-l-brand-red-600 relative cursor-pointer hover:bg-brand-black-hover transition-colors" onClick={() => openEditAction(a)}>
                             <div className="text-[11px] font-bold text-brand-red-500 mb-0.5">Respuesta nueva del entrenador:</div>
                             <p className="text-sm text-brand-gray-light whitespace-pre-wrap">{m.body}</p>

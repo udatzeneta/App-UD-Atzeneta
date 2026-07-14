@@ -961,7 +961,7 @@ export const MatchReport: React.FC = () => {
         player_id: p.player_id,
         is_called_up: p.is_called_up,
         is_starter: p.is_starter,
-        position: p.position || null,
+        position: p.position || undefined,
         minutes_played: p.minutes_played,
         goals: p.goals,
         conceded_goals: p.conceded_goals,
@@ -969,11 +969,11 @@ export const MatchReport: React.FC = () => {
         assists: p.assists,
         yellow_cards: p.yellow_cards,
         red_card: p.red_card,
-        positive_aspects: p.positive_aspects.trim() || null,
-        improve_aspects: p.improve_aspects.trim() || null,
-        comments: p.comments?.trim() || null,
-        substituted_for: p.substituted_for || null,
-        substituted_minute: p.substituted_minute || null,
+        positive_aspects: p.positive_aspects.trim() || undefined,
+        improve_aspects: p.improve_aspects.trim() || undefined,
+        comments: p.comments?.trim() || undefined,
+        substituted_for: p.substituted_for || undefined,
+        substituted_minute: p.substituted_minute || undefined,
         event_minutes: p.event_minutes
       }));
 
