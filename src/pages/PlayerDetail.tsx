@@ -761,15 +761,15 @@ export const PlayerDetail: React.FC = () => {
           <div className="grid grid-cols-3 gap-3 sm:gap-2 shrink-0">
             <div className="text-center">
               <span className="text-[8px] text-brand-gray-muted uppercase font-bold block">PJ</span>
-              <span className="text-lg font-extrabold text-brand-gray-light block">{player.matches_played}</span>
+              <span className="text-lg font-extrabold text-brand-gray-light block">{dynMatchesPlayed}</span>
             </div>
             <div className="text-center">
               <span className="text-[8px] text-brand-gray-muted uppercase font-bold block">Goles</span>
-              <span className="text-lg font-extrabold text-emerald-500 block">{player.goals}</span>
+              <span className="text-lg font-extrabold text-emerald-500 block">{dynGoals}</span>
             </div>
             <div className="text-center">
               <span className="text-[8px] text-brand-gray-muted uppercase font-bold block">Asist.</span>
-              <span className="text-lg font-extrabold text-indigo-400 block">{player.assists}</span>
+              <span className="text-lg font-extrabold text-indigo-400 block">{dynAssists}</span>
             </div>
           </div>
         </div>

@@ -251,14 +251,14 @@ export const Players: React.FC = () => {
 
   // Filtros
   const filteredPlayers = React.useMemo(() => {
-    return players.filter(p => {
+    return rankings.filter((p: any) => {
       const matchesSearch = p.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         (p.position && p.position.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesPosition = filterPosition === 'Todos' || p.position === filterPosition;
       const matchesStatus = filterStatus === 'Todos' || p.physical_status === filterStatus;
       return matchesSearch && matchesPosition && matchesStatus;
     });
-  }, [players, searchTerm, filterPosition, filterStatus]);
+  }, [rankings, searchTerm, filterPosition, filterStatus]);
 
   // Reset del formulario de jugador
   const handleOpenCreateModal = () => {
@@ -1063,7 +1063,7 @@ export const Players: React.FC = () => {
 
                       {/* Métricas breves */}
                       <span className="text-[10px] text-brand-gray-muted">
-                        <span className="font-bold text-brand-gray-light">{player.goals}</span> G / <span className="font-bold text-brand-gray-light">{player.assists}</span> A
+                        <span className="font-bold text-brand-gray-light">{player.stats?.goals || 0}</span> G / <span className="font-bold text-brand-gray-light">{player.stats?.assists || 0}</span> A
                       </span>
                     </div>
 
@@ -1160,7 +1160,7 @@ export const Players: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-center">
-                          <span className="font-bold text-brand-gray-light">{player.goals}</span> <span className="text-brand-gray-muted">G</span> / <span className="font-bold text-brand-gray-light">{player.assists}</span> <span className="text-brand-gray-muted">A</span>
+                          <span className="font-bold text-brand-gray-light">{player.stats?.goals || 0}</span> G / <span className="font-bold text-brand-gray-light">{player.stats?.assists || 0}</span> A
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>

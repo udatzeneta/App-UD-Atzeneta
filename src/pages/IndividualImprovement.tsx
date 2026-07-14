@@ -190,6 +190,7 @@ export const IndividualImprovement: React.FC = () => {
               analyses={analyses}
               onOpenPlayer={openPlayer}
               onOpenAnalysis={(id) => openAnalysis(id, 'list')}
+              currentUserId={user?.id || ''}
             />
           ) : (
             <CoachStats players={players} analyses={analyses} />
@@ -577,9 +578,9 @@ const AnalysisDetail: React.FC<{
       }
       setShowActionModal(false);
       setEditingAction(null);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      showToast('error', 'Error', 'No se pudo guardar la acción.');
+      showToast('error', 'Error', `No se pudo guardar la acción: ${e.message || 'Error desconocido'}`);
     }
   };
 
@@ -699,11 +700,35 @@ const AnalysisDetail: React.FC<{
                       {a.video_url && <Film className="w-3.5 h-3.5 text-brand-gray-muted" />}
                     </div>
                     {a.description && <p className="text-sm text-brand-gray-light">{a.description}</p>}
+                    
+                    {/* Mensajes sin leer mostrados directamente debajo de la jugada */}
+                    {a.messages?.filter(m => !m.read_at && m.sender_id !== currentUserId).length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {a.messages.filter(m => !m.read_at && m.sender_id !== currentUserId).map(m => (
+                          <div key={m.id} className="p-2.5 bg-brand-black-bg border border-brand-black-border rounded-lg border-l-2 border-l-brand-red-600 relative cursor-pointer hover:bg-brand-black-hover transition-colors" onClick={() => openEditAction(a)}>
+                            <div className="text-[11px] font-bold text-brand-red-500 mb-0.5">Respuesta nueva del entrenador:</div>
+                            <p className="text-sm text-brand-gray-light whitespace-pre-wrap">{m.body}</p>
+                            <div className="absolute top-2.5 right-2.5 text-[10px] text-brand-gray-dark">Clic para abrir chat</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => openEditAction(a)} title="Ver / editar"
-                      className="p-1.5 rounded-md text-brand-gray-muted hover:text-white hover:bg-brand-black-hover">
+                      className="relative p-1.5 rounded-md text-brand-gray-muted hover:text-white hover:bg-brand-black-hover">
                       <MessageSquare className="w-4 h-4" />
+                      {(() => {
+                        const unreadCount = a.messages?.filter(m => !m.read_at && m.sender_id !== currentUserId).length || 0;
+                        if (unreadCount > 0) {
+                          return (
+                            <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-brand-red-600 text-white text-[9px] font-bold flex items-center justify-center">
+                              {unreadCount > 9 ? '9+' : unreadCount}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </button>
                     {!readOnly && (
                       <button onClick={() => removeAction(a.id)} title="Eliminar"
@@ -922,12 +947,14 @@ const ChatPanel: React.FC<{
       setText('');
       // Optimista (la suscripción también lo traerá, pero evitamos parpadeo en local)
       setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, msg]));
-      // Si responde el entrenador, notificar al jugador dueño del análisis
       if (isStaff) {
         improvementService.notifyAnalysisOwner('coach_replied', {
           analysisId, actionId, actorId: currentUserId, message: body.slice(0, 120),
         }).catch(() => {});
       }
+    } catch (e: any) {
+      console.error(e);
+      alert(`No se pudo enviar el mensaje: ${e.message || 'Error desconocido'}`);
     } finally {
       setSending(false);
     }
@@ -1100,16 +1127,18 @@ type PlayerRow = {
   player: Player;
   count: number;
   pending: number;
+  unread_messages: number;
   last?: ImprovementAnalysis;
 };
-type SortKey = 'player' | 'position' | 'date' | 'status' | 'count' | 'pending';
+type SortKey = 'player' | 'position' | 'date' | 'status' | 'count' | 'pending' | 'unread';
 
 const CoachPanel: React.FC<{
   players: Player[];
   analyses: ImprovementAnalysis[];
   onOpenPlayer: (p: Player) => void;
   onOpenAnalysis: (id: string) => void;
-}> = ({ players, analyses, onOpenPlayer, onOpenAnalysis }) => {
+  currentUserId: string;
+}> = ({ players, analyses, onOpenPlayer, onOpenAnalysis, currentUserId }) => {
   const [q, setQ] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [asc, setAsc] = useState(false);
@@ -1120,9 +1149,19 @@ const CoachPanel: React.FC<{
         .filter(a => a.player_id === player.id)
         .sort((x, y) => new Date(y.match?.date || y.created_at || 0).getTime() - new Date(x.match?.date || x.created_at || 0).getTime());
       const pending = mine.filter(a => a.status === 'Enviado').length;
-      return { player, count: mine.length, pending, last: mine[0] };
+      let unread_messages = 0;
+      mine.forEach(a => {
+        (a.actions || []).forEach(ac => {
+          (ac.messages || []).forEach(m => {
+            if (!m.read_at && m.sender_id !== currentUserId) {
+              unread_messages++;
+            }
+          });
+        });
+      });
+      return { player, count: mine.length, pending, unread_messages, last: mine[0] };
     });
-  }, [players, analyses]);
+  }, [players, analyses, currentUserId]);
 
   const filtered = useMemo(() => {
     const list = rows.filter(r => {
@@ -1137,6 +1176,7 @@ const CoachPanel: React.FC<{
         case 'status': return dir * (a.last?.status || '').localeCompare(b.last?.status || '');
         case 'count': return dir * (a.count - b.count);
         case 'pending': return dir * (a.pending - b.pending);
+        case 'unread': return dir * (a.unread_messages - b.unread_messages);
         case 'date':
         default: {
           const da = new Date(a.last?.match?.date || a.last?.created_at || 0).getTime();
@@ -1186,6 +1226,7 @@ const CoachPanel: React.FC<{
               <Th k="status">Estado</Th>
               <Th k="count" className="text-center">Acciones</Th>
               <Th k="pending" className="text-center">Pendientes</Th>
+              <Th k="unread" className="text-center">Respuestas sin leer</Th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -1219,6 +1260,11 @@ const CoachPanel: React.FC<{
                 <td className="px-3 py-2.5 text-center">
                   {r.pending > 0
                     ? <span className="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-amber-500/15 text-amber-400 text-[11px] font-bold">{r.pending}</span>
+                    : <span className="text-brand-gray-dark">0</span>}
+                </td>
+                <td className="px-3 py-2.5 text-center">
+                  {r.unread_messages > 0
+                    ? <span className="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-brand-red-600 text-white text-[11px] font-bold">{r.unread_messages}</span>
                     : <span className="text-brand-gray-dark">0</span>}
                 </td>
                 <td className="px-3 py-2.5 text-right">

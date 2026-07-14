@@ -250,7 +250,7 @@ CREATE POLICY ii_messages_select ON public.improvement_messages FOR SELECT
         public.is_ii_staff() OR EXISTS (
             SELECT 1 FROM public.improvement_actions ac
             JOIN public.improvement_analyses a ON a.id = ac.analysis_id
-            WHERE ac.id = action_id AND a.player_id = public.current_player_id()
+            WHERE ac.id = improvement_messages.action_id AND a.player_id = public.current_player_id()
         )
     );
 
@@ -261,7 +261,7 @@ CREATE POLICY ii_messages_insert ON public.improvement_messages FOR INSERT
             public.is_ii_staff() OR EXISTS (
                 SELECT 1 FROM public.improvement_actions ac
                 JOIN public.improvement_analyses a ON a.id = ac.analysis_id
-                WHERE ac.id = action_id AND a.player_id = public.current_player_id()
+                WHERE ac.id = improvement_messages.action_id AND a.player_id = public.current_player_id()
             )
         )
     );

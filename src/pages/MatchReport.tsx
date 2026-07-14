@@ -119,7 +119,7 @@ export const MatchReport: React.FC = () => {
 
   const canEdit = hasPermission('matches', 'editar');
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [teamPositiveAspects, setTeamPositiveAspects] = useState('');
   const [teamImproveAspects, setTeamImproveAspects] = useState('');
@@ -288,9 +288,16 @@ export const MatchReport: React.FC = () => {
     }
   }, [matchData]);
 
+  const statsInitializedRef = useRef(false);
+
   // Inicializar estadísticas e XI Inicial
   useEffect(() => {
-    if (dbPlayers.length > 0 && initialStats) {
+    if (statsInitializedRef.current) return;
+    if (dbPlayers.length === 0 || isLoadingStats || isLoadingPlayers || !matchData) return;
+    
+    statsInitializedRef.current = true;
+
+    if (initialStats) {
       const statsMap: Record<string, LocalPlayerStats> = {};
       
       dbPlayers.forEach(p => {
@@ -330,23 +337,46 @@ export const MatchReport: React.FC = () => {
 
       // Reconstruir el XI Inicial (lineup) asociando los jugadores marcados como titulares
       // a sus posiciones en la formación actual
-      const slots = FORMATIONS_SLOTS[tacticalSystem] || FORMATIONS_SLOTS['4-3-3'];
+      const initialTacticalSystem = matchData.tactical_system || '4-3-3';
+      const slots = FORMATIONS_SLOTS[initialTacticalSystem] || FORMATIONS_SLOTS['4-3-3'];
       const builtLineup: Record<number, string> = {};
       let needsUpdate = false;
       const updatedStats = { ...statsMap };
 
       const starterStats = initialStats.filter(s => s.is_starter && s.is_called_up);
       starterStats.forEach(stat => {
-        // Encontrar un slot compatible libre (por rol exacto o por la etiqueta antigua/abreviatura)
-        const slotIdx = slots.findIndex((slot, idx) => 
-          (slot.role === stat.position || slot.label === stat.position) && !builtLineup[idx]
-        );
+        let exactSlotIdx = -1;
+        let actualRole = stat.position || '';
         
+        // Extract slotIdx if it exists (e.g. "2:Defensa Central")
+        const match = actualRole.match(/^(\d+):(.*)$/);
+        if (match) {
+           exactSlotIdx = parseInt(match[1], 10);
+           actualRole = match[2];
+        }
+
+        let slotIdx = -1;
+        
+        // Try to place in the exact slot index first (if it's free and role matches)
+        if (exactSlotIdx !== -1 && !builtLineup[exactSlotIdx]) {
+           const targetSlot = slots[exactSlotIdx];
+           if (targetSlot && (targetSlot.role === actualRole || targetSlot.label === actualRole)) {
+             slotIdx = exactSlotIdx;
+           }
+        }
+        
+        // Fallback: Find first compatible free slot
+        if (slotIdx === -1) {
+          slotIdx = slots.findIndex((slot, idx) => 
+            (slot.role === actualRole || slot.label === actualRole) && !builtLineup[idx]
+          );
+        }
+
         if (slotIdx !== -1) {
           builtLineup[slotIdx] = stat.player_id;
-          // Actualizar al nuevo nombre específico si venía con el antiguo
-          if (updatedStats[stat.player_id] && updatedStats[stat.player_id].position !== slots[slotIdx].role) {
-            updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: slots[slotIdx].role };
+          const expectedPos = `${slotIdx}:${slots[slotIdx].role}`;
+          if (updatedStats[stat.player_id] && updatedStats[stat.player_id].position !== expectedPos) {
+            updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: expectedPos };
             needsUpdate = true;
           }
         } else {
@@ -354,9 +384,9 @@ export const MatchReport: React.FC = () => {
           const firstEmpty = slots.findIndex((_, idx) => !builtLineup[idx]);
           if (firstEmpty !== -1) {
             builtLineup[firstEmpty] = stat.player_id;
-            // Corregir posición local para que coincida con el slot
+            const expectedPos = `${firstEmpty}:${slots[firstEmpty].role}`;
             if (updatedStats[stat.player_id]) {
-              updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: slots[firstEmpty].role };
+              updatedStats[stat.player_id] = { ...updatedStats[stat.player_id], position: expectedPos };
               needsUpdate = true;
             }
           }
@@ -430,7 +460,7 @@ export const MatchReport: React.FC = () => {
         next[playerId] = {
           ...next[playerId],
           is_starter: true,
-          position: currentSlots[slotIdx].role
+          position: `${slotIdx}:${currentSlots[slotIdx].role}`
         };
       }
       return recalculateAllMinutes(next);
@@ -931,7 +961,7 @@ export const MatchReport: React.FC = () => {
         player_id: p.player_id,
         is_called_up: p.is_called_up,
         is_starter: p.is_starter,
-        position: p.position || undefined,
+        position: p.position || null,
         minutes_played: p.minutes_played,
         goals: p.goals,
         conceded_goals: p.conceded_goals,
@@ -941,9 +971,9 @@ export const MatchReport: React.FC = () => {
         red_card: p.red_card,
         positive_aspects: p.positive_aspects.trim() || null,
         improve_aspects: p.improve_aspects.trim() || null,
-        comments: p.comments?.trim() || undefined,
-        substituted_for: p.substituted_for || undefined,
-        substituted_minute: p.substituted_minute || undefined,
+        comments: p.comments?.trim() || null,
+        substituted_for: p.substituted_for || null,
+        substituted_minute: p.substituted_minute || null,
         event_minutes: p.event_minutes
       }));
 
@@ -982,6 +1012,7 @@ export const MatchReport: React.FC = () => {
       setLineup({});
       setPlayerStats({});
       setHasUnsavedChanges(false);
+      statsInitializedRef.current = false; // Permitir re-inicialización al recargar o entrar a otro partido
 
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['playerMatchStats', matchId] });
@@ -1117,13 +1148,20 @@ export const MatchReport: React.FC = () => {
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => {
-              if (hasUnsavedChanges && !window.confirm('Tienes cambios guardándose en el acta. ¿Seguro que quieres salir?')) return;
+            onClick={async () => {
+              if (hasUnsavedChanges) {
+                await saveMutation.mutateAsync();
+              }
               navigate('/matches');
             }}
-            className="w-8 h-8 rounded-full bg-brand-black-card border border-brand-black-border flex items-center justify-center text-brand-gray-light hover:text-white hover:border-brand-gray-muted transition-colors hover:shadow-glow-sm"
+            disabled={saveMutation.isPending}
+            className={`w-8 h-8 rounded-full bg-brand-black-card border border-brand-black-border flex items-center justify-center text-brand-gray-light hover:text-white hover:border-brand-gray-muted transition-colors hover:shadow-glow-sm ${saveMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <ArrowLeft className="w-4 h-4" />
+            {saveMutation.isPending ? (
+              <div className="w-3 h-3 rounded-full border-2 border-brand-gray-muted border-t-transparent animate-spin" />
+            ) : (
+              <ArrowLeft className="w-4 h-4" />
+            )}
           </button>
           <div>
             <h2 className="text-2xl font-bold text-brand-gray-light">Acta y Rendimiento del Partido</h2>
@@ -1180,15 +1218,16 @@ export const MatchReport: React.FC = () => {
               </button>
 
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (hasUnsavedChanges) {
-                    saveMutation.mutate();
+                    await saveMutation.mutateAsync();
                   }
                   setIsEditing(false);
                 }}
-                className="btn-primary py-2 px-4 text-xs font-bold bg-brand-gray-dark border border-brand-gray-muted text-white hover:bg-brand-gray-light"
+                disabled={saveMutation.isPending}
+                className={`btn-primary py-2 px-4 text-xs font-bold bg-brand-gray-dark border border-brand-gray-muted text-white hover:bg-brand-gray-light ${saveMutation.isPending ? 'opacity-50 cursor-wait' : ''}`}
               >
-                Terminar Edición
+                {saveMutation.isPending ? 'Guardando...' : 'Terminar Edición'}
               </button>
             </div>
           )}
@@ -1285,7 +1324,6 @@ export const MatchReport: React.FC = () => {
                 <p className="text-[10px] text-brand-gray-muted mt-0.5">Posiciona a los 11 jugadores en el sistema {tacticalSystem}</p>
               </div>
               <div className="flex items-center gap-3">
-                {isEditing && (
                   <button
                     type="button"
                     onClick={() => setIsEventWizardOpen(true)}
@@ -1294,7 +1332,6 @@ export const MatchReport: React.FC = () => {
                   >
                     <Plus className="w-3.5 h-3.5" /> INCIDENCIA
                   </button>
-                )}
                 <span className="text-[10px] font-mono font-black text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded border border-brand-red-600/20">
                   {Object.keys(lineup).length}/11 Titulares
                 </span>
@@ -1498,6 +1535,18 @@ export const MatchReport: React.FC = () => {
                         <div className="text-[9px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-1.5 mb-1.5 text-center">
                           Demarcación: {slot.role}
                         </div>
+                        {lineup[idx] && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleRemovePlayerFromLineup(idx);
+                              setActiveSlotForSelection(null);
+                            }}
+                            className="w-full text-center p-1.5 mb-2 rounded bg-brand-red-600/20 hover:bg-brand-red-600/40 border border-brand-red-600/30 text-[11px] font-bold text-brand-red-500 transition-colors"
+                          >
+                            Quitar Titular
+                          </button>
+                        )}
                         {availableSubstitutes.length === 0 ? (
                           <div className="text-[10px] text-brand-gray-muted text-center py-2.5 italic">
                             No quedan suplentes en convocatoria.
@@ -1621,7 +1670,7 @@ export const MatchReport: React.FC = () => {
                           </div>
                         ) : list.map(player => {
                           const stats = playerStats[player.id];
-                          const isGK = player.position === 'Portero' || stats.position === 'GK';
+                          const isGK = player.position === 'Portero' || stats.position?.includes('GK');
                           const hasEvents = stats.goals > 0 || (stats.conceded_goals || 0) > 0 || (stats.own_goals || 0) > 0 || stats.assists > 0 || stats.yellow_cards > 0 || stats.red_card;
                           const isExpanded = expandedPlayerId === player.id;
 
@@ -1659,7 +1708,7 @@ export const MatchReport: React.FC = () => {
                                     </div>
                                     <div className="text-[8px] text-brand-gray-muted mt-0.5 flex items-center gap-1 overflow-hidden">
                                       {stats.is_starter ? (
-                                        <span className="text-yellow-500 font-semibold truncate shrink-0">Titular ({stats.position})</span>
+                                        <span className="text-yellow-500 font-semibold truncate shrink-0">Titular ({stats.position?.replace(/^\d+:/, '')})</span>
                                       ) : (
                                         <span className="text-brand-gray-muted font-medium truncate shrink-0">Suplente</span>
                                       )}

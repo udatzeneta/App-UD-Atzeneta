@@ -87,8 +87,8 @@ export const improvementService = {
     }
     const { data, error } = await supabase
       .from('improvement_analyses')
-      // actions:...(id) trae solo ids para poder contar acciones sin cargar todo
-      .select('*, match:matches(*), player:players(id, full_name, nickname, photo_url, position, dorsal), actions:improvement_actions(id)')
+      // traemos messages para contar respuestas sin leer
+      .select('*, match:matches(*), player:players(id, full_name, nickname, photo_url, position, dorsal), actions:improvement_actions(id, messages:improvement_messages(id, read_at, sender_id))')
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data as ImprovementAnalysis[]) ?? [];
@@ -108,7 +108,7 @@ export const improvementService = {
     }
     const { data, error } = await supabase
       .from('improvement_analyses')
-      .select('*, match:matches(*), actions:improvement_actions(*)')
+      .select('*, match:matches(*), actions:improvement_actions(*, messages:improvement_messages(id, read_at, sender_id))')
       .eq('id', id)
       .single();
     if (error) throw error;
@@ -144,7 +144,7 @@ export const improvementService = {
     // Real: intentar leer; si no existe, insertar.
     const { data: existing } = await supabase
       .from('improvement_analyses')
-      .select('*, match:matches(*), actions:improvement_actions(*)')
+      .select('*, match:matches(*), actions:improvement_actions(*, messages:improvement_messages(id, read_at, sender_id))')
       .eq('player_id', playerId)
       .eq('match_id', match.id)
       .maybeSingle();
@@ -331,7 +331,7 @@ export const improvementService = {
     }
     const { data, error } = await supabase
       .from('improvement_messages')
-      .select('*, sender:profiles(id, full_name, nickname, avatar_url, role_id)')
+      .select('*, sender:profiles(id, full_name, avatar_url, role_id)')
       .eq('action_id', actionId)
       .order('created_at', { ascending: true });
     if (error) throw error;
@@ -356,7 +356,7 @@ export const improvementService = {
     const { data, error } = await supabase
       .from('improvement_messages')
       .insert({ action_id: actionId, sender_id: senderId, body })
-      .select('*, sender:profiles(id, full_name, nickname, avatar_url, role_id)')
+      .select('*, sender:profiles(id, full_name, avatar_url, role_id)')
       .single();
     if (error) throw error;
     return data as ImprovementMessage;
@@ -529,18 +529,21 @@ export const improvementService = {
     if (!analysisId) return;
 
     // análisis -> jugador -> profile_id
-    const { data: a } = await supabase
+    const { data: a, error: aErr } = await supabase
       .from('improvement_analyses')
       .select('id, player:players(profile_id)')
       .eq('id', analysisId)
       .single();
-    const recipientId = (a as any)?.player?.profile_id;
+    if (aErr) console.warn('Error fetching analysis for notif:', aErr);
+    
+    const recipientId = (a as any)?.player?.profile_id || (a as any)?.players?.profile_id;
+    console.log('notifyAnalysisOwner => analysisId:', analysisId, 'a:', a, 'recipientId:', recipientId, 'actorId:', opts.actorId);
     if (!recipientId) return;
 
     // No notificarse a uno mismo
     if (recipientId === opts.actorId) return;
 
-    await supabase.from('improvement_notifications').insert({
+    const { error: notifErr } = await supabase.from('improvement_notifications').insert({
       recipient_id: recipientId,
       actor_id: opts.actorId ?? null,
       type,
@@ -548,6 +551,7 @@ export const improvementService = {
       action_id: opts.actionId ?? null,
       message: opts.message ?? null,
     });
+    if (notifErr) console.error('Error inserting notif:', notifErr);
   },
 
   async markNotificationRead(id: string): Promise<void> {

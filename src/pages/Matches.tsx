@@ -246,9 +246,10 @@ export const Matches: React.FC = () => {
         kit_socks_color: kitSocksColor
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['playerMatchStats', variables.matchId] });
       showToast('success', 'Convocatoria guardada', 'La convocatoria y equipación del partido se han guardado correctamente.');
       setIsSquadModalOpen(false);
     },

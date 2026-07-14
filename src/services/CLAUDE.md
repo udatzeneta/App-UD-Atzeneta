@@ -7,6 +7,6 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3076 | 7:34 PM | 🔴 | Mock Permission Cache Invalidation for Schema Changes | ~342 |
-| #3054 | 6:35 PM | 🟣 | Complete Mock Data System and Full-Featured CRUD Pages Implemented | ~840 |
+| #3018 | 6:03 PM | 🔵 | Existing Infrastructure for Permissions Management UI | ~441 |
+| #3005 | 5:58 PM | 🔵 | Permission System and Data Services Already Implemented | ~440 |
 </claude-mem-context>
