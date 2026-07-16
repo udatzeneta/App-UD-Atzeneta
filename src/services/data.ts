@@ -348,6 +348,57 @@ export const dataService = {
     }
   },
 
+  async savePlayerMatchIntent(matchId: string, playerId: string, intent: boolean, reason: string): Promise<PlayerMatchStats> {
+    if (isMockMode) {
+      await delay(200);
+      let data = localStorage.getItem('ud_atzeneta_player_match_stats');
+      let list: PlayerMatchStats[] = data ? JSON.parse(data) : [];
+      const idx = list.findIndex(x => x.match_id === matchId && x.player_id === playerId);
+      let updatedItem: PlayerMatchStats;
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], player_intent: intent, player_reason: reason };
+        updatedItem = list[idx];
+      } else {
+        updatedItem = {
+          id: `pms-${Date.now()}`,
+          player_id: playerId,
+          match_id: matchId,
+          is_called_up: false,
+          minutes_played: 0,
+          goals: 0,
+          assists: 0,
+          yellow_cards: 0,
+          red_card: false,
+          player_intent: intent,
+          player_reason: reason
+        };
+        list.push(updatedItem);
+      }
+      localStorage.setItem('ud_atzeneta_player_match_stats', JSON.stringify(list));
+      return updatedItem;
+    } else {
+      const { data: existing } = await supabase
+        .from('player_match_stats')
+        .select('*')
+        .eq('match_id', matchId)
+        .eq('player_id', playerId)
+        .maybeSingle();
+
+      const itemToSave = existing 
+        ? { ...existing, player_intent: intent, player_reason: reason }
+        : { match_id: matchId, player_id: playerId, is_called_up: false, minutes_played: 0, goals: 0, assists: 0, yellow_cards: 0, red_card: false, player_intent: intent, player_reason: reason };
+
+      const { data, error } = await supabase
+        .from('player_match_stats')
+        .upsert(itemToSave, { onConflict: 'player_id,match_id' })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data as PlayerMatchStats;
+    }
+  },
+
   async createMatch(item: Omit<Match, 'id'>): Promise<Match> {
     if (isMockMode) {
       await delay(300);
@@ -1258,20 +1309,22 @@ export const dataService = {
   },
 
   async savePlayerAttendanceIntent(trainingId: string, playerId: string, intent: boolean, reason: string): Promise<TrainingAttendance> {
+    const newStatus = intent ? 'ENT' : 'A';
+    
     if (isMockMode) {
       await delay(200);
       const attendance = MockDatabase.getTrainingAttendance();
       const idx = attendance.findIndex(x => x.training_id === trainingId && x.player_id === playerId);
       let updatedItem: TrainingAttendance;
       if (idx !== -1) {
-        attendance[idx] = { ...attendance[idx], player_intent: intent, player_reason: reason };
+        attendance[idx] = { ...attendance[idx], player_intent: intent, player_reason: reason, status: newStatus };
         updatedItem = attendance[idx];
       } else {
         updatedItem = {
           id: `att-${Date.now()}`,
           training_id: trainingId,
           player_id: playerId,
-          status: '-', // or 'Pendiente'
+          status: newStatus,
           player_intent: intent,
           player_reason: reason
         };
@@ -1289,14 +1342,15 @@ export const dataService = {
         .maybeSingle();
 
       const itemToSave = existing 
-        ? { ...existing, player_intent: intent, player_reason: reason }
-        : { training_id: trainingId, player_id: playerId, status: '-', player_intent: intent, player_reason: reason };
+        ? { ...existing, player_intent: intent, player_reason: reason, status: newStatus }
+        : { training_id: trainingId, player_id: playerId, status: newStatus, player_intent: intent, player_reason: reason };
 
       const { data, error } = await supabase
         .from('training_attendance')
         .upsert(itemToSave, { onConflict: 'training_id,player_id' })
         .select('*')
         .single();
+
 
       if (error) throw error;
       return data as TrainingAttendance;

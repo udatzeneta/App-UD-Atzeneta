@@ -44,6 +44,7 @@ interface TaskBoardEditorProps {
   printMode?: boolean;
   rotateFullField?: boolean;
   printWidth?: number;
+  limitedTools?: boolean;
 }
 
 const TiroLeagueBall = ({ size = "100%", style = {} }: { size?: string | number, style?: React.CSSProperties }) => (
@@ -95,7 +96,7 @@ const TiroLeagueBall = ({ size = "100%", style = {} }: { size?: string | number,
   </svg>
 );
 
-export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChange, initialData, readOnly, hideToolbar, printMode, rotateFullField, printWidth }) => {
+export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChange, initialData, readOnly, hideToolbar, printMode, rotateFullField, printWidth, limitedTools }) => {
   const [fieldType, setFieldType] = useState<FieldType>('half');
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [lines, setLines] = useState<BoardLine[]>([]);
@@ -1294,65 +1295,73 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
             {openSections.elements ? <ChevronUp className="w-3 h-3 hidden lg:block" /> : <ChevronDown className="w-3 h-3 hidden lg:block" />}
           </button>
           {openSections.elements && (
-            <div className="grid grid-cols-2 lg:grid-cols-2 gap-1">
+            <div className={`grid ${limitedTools ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-2'} gap-1`}>
               <ToolButton tool="player" label="Jugador" bg={true} icon={<div className="w-5 h-5 rounded-full border border-white/50" style={{ background: `radial-gradient(circle at 30% 30%, ${activeColor}, #333)` }} />}/>
-              <ToolButton tool="ball" label="Balón" bg={true} icon={<div className="w-4 h-4 flex items-center justify-center"><TiroLeagueBall /></div>}/>
-              <ToolButton tool="cone" label="Chino" bg={true} icon={
-                 <svg width="16" height="16" viewBox="0 0 20 20">
-                   <path d="M 1 10 A 9 9 0 1 0 19 10 A 9 9 0 1 0 1 10 Z M 8 10 A 2 2 0 1 1 12 10 A 2 2 0 1 1 8 10 Z" fill={activeColor} fillRule="evenodd" />
-                   <circle cx="10" cy="10" r="9" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
-                   <circle cx="10" cy="10" r="2" fill="none" stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
-                 </svg>
-              }/>
-              <ToolButton tool="cone-tall" label="Cono" bg={true} icon={
-                 <svg width="16" height="19.2" viewBox="0 0 20 24">
-                   <rect x="1" y="20" width="18" height="3" rx="1" fill={activeColor} filter="brightness(0.8)" />
-                   <ellipse cx="10" cy="20" rx="7" ry="2" fill={activeColor} filter="brightness(0.9)" />
-                   <path d="M 4 20 L 8 2 L 12 2 L 16 20 Z" fill={activeColor} />
-                   <ellipse cx="10" cy="2" rx="2" ry="1" fill={activeColor} filter="brightness(1.2)" />
-                 </svg>
-              }/>
-              <ToolButton tool="pole" label="Pica" bg={true} icon={
-                <div className="flex flex-col items-center justify-end h-5">
-                  <div className="w-[2px] flex-1 rounded-t-sm" style={{ background: `linear-gradient(90deg, #fff, ${activeColor} 50%, #333)` }} />
-                  <div className="w-3 h-1 rounded-t-full bg-black border-b border-gray-700" />
+              {!limitedTools && (
+                <>
+                  <ToolButton tool="ball" label="Balón" bg={true} icon={<div className="w-4 h-4 flex items-center justify-center"><TiroLeagueBall /></div>}/>
+                  <ToolButton tool="cone" label="Chino" bg={true} icon={
+                     <svg width="16" height="16" viewBox="0 0 20 20">
+                       <path d="M 1 10 A 9 9 0 1 0 19 10 A 9 9 0 1 0 1 10 Z M 8 10 A 2 2 0 1 1 12 10 A 2 2 0 1 1 8 10 Z" fill={activeColor} fillRule="evenodd" />
+                       <circle cx="10" cy="10" r="9" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                       <circle cx="10" cy="10" r="2" fill="none" stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
+                     </svg>
+                  }/>
+                  <ToolButton tool="cone-tall" label="Cono" bg={true} icon={
+                     <svg width="16" height="19.2" viewBox="0 0 20 24">
+                       <rect x="1" y="20" width="18" height="3" rx="1" fill={activeColor} filter="brightness(0.8)" />
+                       <ellipse cx="10" cy="20" rx="7" ry="2" fill={activeColor} filter="brightness(0.9)" />
+                       <path d="M 4 20 L 8 2 L 12 2 L 16 20 Z" fill={activeColor} />
+                       <ellipse cx="10" cy="2" rx="2" ry="1" fill={activeColor} filter="brightness(1.2)" />
+                     </svg>
+                  }/>
+                  <ToolButton tool="pole" label="Pica" bg={true} icon={
+                    <div className="flex flex-col items-center justify-end h-5">
+                      <div className="w-[2px] flex-1 rounded-t-sm" style={{ background: `linear-gradient(90deg, #fff, ${activeColor} 50%, #333)` }} />
+                      <div className="w-3 h-1 rounded-t-full bg-black border-b border-gray-700" />
+                    </div>
+                  }/>
+                  <ToolButton tool="hurdle" label="Valla Baja" bg={true} icon={<div className="w-5 h-2 border-t border-l border-r border-current" style={{ color: activeColor }} />}/>
+                  <ToolButton tool="hurdle-high" label="Valla Alta" bg={true} icon={<div className="w-5 h-4 border-t border-l border-r border-current" style={{ color: activeColor }} />}/>
+                  <ToolButton tool="ring" label="Aro" bg={true} icon={<div className="w-4 h-4 rounded-full border-2" style={{ borderColor: activeColor }} />}/>
+                  <ToolButton tool="ladder" label="Escalera" bg={true} icon={
+                     <div className="flex flex-col gap-0.5 w-3" style={{ color: activeColor }}>
+                       <div className="w-full h-0.5 bg-current" />
+                       <div className="w-full h-0.5 bg-current" />
+                       <div className="w-full h-0.5 bg-current" />
+                       <div className="w-full h-0.5 bg-current" />
+                       <div className="w-full h-0.5 bg-current" />
+                     </div>
+                  }/>
+                  <ToolButton tool="bosu" label="Bosu" bg={true} icon={<div className="w-4 h-4 rounded-full border border-white/20" style={{ background: `radial-gradient(circle at 30% 30%, ${activeColor}, #111)` }} />}/>
+                  <ToolButton tool="bosu-profile" label="Bosu Perfil" bg={true} icon={<div className="w-5 h-2.5 rounded-t-full border-b border-black" style={{ background: `radial-gradient(circle at top, ${activeColor}, #222)` }} />}/>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {!limitedTools && (
+          <>
+            <hr className="border-brand-black-border" />
+
+            {/* Section: Goals */}
+            <div>
+              <button onClick={() => toggleSection('goals')} className="flex items-center justify-between w-full text-[10px] font-bold text-brand-gray-muted uppercase mb-1 hover:text-white transition-colors">
+                <span className="hidden lg:block">Porterías</span>
+                <span className="lg:hidden mx-auto">Porterías</span>
+                {openSections.goals ? <ChevronUp className="w-3 h-3 hidden lg:block" /> : <ChevronDown className="w-3 h-3 hidden lg:block" />}
+              </button>
+              {openSections.goals && (
+                <div className="grid grid-cols-3 gap-1">
+                  <ToolButton tool="goal-f11" label="Portería F11" bg={true} hideLabel={true} icon={<div className="w-8 h-2 border-t-2 border-l-2 border-r-2 border-white" />}/>
+                  <ToolButton tool="goal-f8" label="Portería F8" bg={true} hideLabel={true} icon={<div className="w-6 h-2 border-t-2 border-l-2 border-r-2 border-white" />}/>
+                  <ToolButton tool="goal-f5" label="Portería F5" bg={true} hideLabel={true} icon={<div className="w-4 h-1.5 border-t-2 border-l-2 border-r-2 border-white" />}/>
                 </div>
-              }/>
-              <ToolButton tool="hurdle" label="Valla Baja" bg={true} icon={<div className="w-5 h-2 border-t border-l border-r border-current" style={{ color: activeColor }} />}/>
-              <ToolButton tool="hurdle-high" label="Valla Alta" bg={true} icon={<div className="w-5 h-4 border-t border-l border-r border-current" style={{ color: activeColor }} />}/>
-              <ToolButton tool="ring" label="Aro" bg={true} icon={<div className="w-4 h-4 rounded-full border-2" style={{ borderColor: activeColor }} />}/>
-              <ToolButton tool="ladder" label="Escalera" bg={true} icon={
-                 <div className="flex flex-col gap-0.5 w-3" style={{ color: activeColor }}>
-                   <div className="w-full h-0.5 bg-current" />
-                   <div className="w-full h-0.5 bg-current" />
-                   <div className="w-full h-0.5 bg-current" />
-                   <div className="w-full h-0.5 bg-current" />
-                   <div className="w-full h-0.5 bg-current" />
-                 </div>
-              }/>
-              <ToolButton tool="bosu" label="Bosu" bg={true} icon={<div className="w-4 h-4 rounded-full border border-white/20" style={{ background: `radial-gradient(circle at 30% 30%, ${activeColor}, #111)` }} />}/>
-              <ToolButton tool="bosu-profile" label="Bosu Perfil" bg={true} icon={<div className="w-5 h-2.5 rounded-t-full border-b border-black" style={{ background: `radial-gradient(circle at top, ${activeColor}, #222)` }} />}/>
+              )}
             </div>
-          )}
-        </div>
-
-        <hr className="border-brand-black-border" />
-
-        {/* Section: Goals */}
-        <div>
-          <button onClick={() => toggleSection('goals')} className="flex items-center justify-between w-full text-[10px] font-bold text-brand-gray-muted uppercase mb-1 hover:text-white transition-colors">
-            <span className="hidden lg:block">Porterías</span>
-            <span className="lg:hidden mx-auto">Porterías</span>
-            {openSections.goals ? <ChevronUp className="w-3 h-3 hidden lg:block" /> : <ChevronDown className="w-3 h-3 hidden lg:block" />}
-          </button>
-          {openSections.goals && (
-            <div className="grid grid-cols-3 gap-1">
-              <ToolButton tool="goal-f11" label="Portería F11" bg={true} hideLabel={true} icon={<div className="w-8 h-2 border-t-2 border-l-2 border-r-2 border-white" />}/>
-              <ToolButton tool="goal-f8" label="Portería F8" bg={true} hideLabel={true} icon={<div className="w-6 h-2 border-t-2 border-l-2 border-r-2 border-white" />}/>
-              <ToolButton tool="goal-f5" label="Portería F5" bg={true} hideLabel={true} icon={<div className="w-4 h-1.5 border-t-2 border-l-2 border-r-2 border-white" />}/>
-            </div>
-          )}
-        </div>
+          </>
+        )}
 
         <hr className="border-brand-black-border" />
 

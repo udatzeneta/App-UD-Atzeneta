@@ -9,7 +9,7 @@ import { Training } from '../types';
 import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 import {
   Dumbbell, Search, Download, FileText, Plus, Edit2, Trash2,
-  Clock, MapPin, Calendar
+  Clock, MapPin, Calendar, Users
 } from 'lucide-react';
 
 export const Trainings: React.FC = () => {
@@ -42,6 +42,30 @@ export const Trainings: React.FC = () => {
     queryKey: ['trainings'],
     queryFn: () => dataService.getTrainings()
   });
+
+  const { data: attendanceList = [] } = useQuery({
+    queryKey: ['training_attendance'],
+    queryFn: () => dataService.getAllAttendance()
+  });
+
+  const { data: players = [] } = useQuery({
+    queryKey: ['players'],
+    queryFn: () => dataService.getPlayers()
+  });
+
+  const getAttendanceStats = (trainingId: string) => {
+    const sessionAtt = attendanceList.filter(a => a.training_id === trainingId && (a.status === 'ENT' || a.player_intent === true));
+    let gkCount = 0;
+    let fieldCount = 0;
+    sessionAtt.forEach(att => {
+      const p = players.find(x => x.id === att.player_id);
+      if (p) {
+        if (p.position === 'Portero') gkCount++;
+        else fieldCount++;
+      }
+    });
+    return { total: sessionAtt.length, gkCount, fieldCount };
+  };
 
   // Mutaciones
   const createMutation = useMutation({
@@ -301,6 +325,7 @@ export const Trainings: React.FC = () => {
                   <th className="table-th">Objetivo</th>
                   <th className="table-th">Lugar</th>
                   <th className="table-th">Duración</th>
+                  <th className="table-th">Asistencia</th>
                   {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
                 </tr>
               </thead>
@@ -337,7 +362,18 @@ export const Trainings: React.FC = () => {
                         <span>{t.location}</span>
                       </a>
                     </td>
-                    <td className="table-td text-brand-gray-muted font-medium">{t.duration} minutos</td>
+                    <td className="table-td text-brand-gray-muted font-medium">{t.duration} min</td>
+                    <td className="table-td">
+                      {(() => {
+                        const stats = getAttendanceStats(t.id);
+                        return (
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-brand-gray-light">{stats.total} asistentes</span>
+                            {stats.total > 0 && <span className="text-[11px] text-brand-gray-muted mt-0.5">{stats.gkCount} Porteros, {stats.fieldCount} Jugadores</span>}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     {(canEdit || canDelete) && (
                       <td className="table-td text-right">
                         <div className="flex gap-2 justify-end">
@@ -391,6 +427,15 @@ export const Trainings: React.FC = () => {
                     <span>{t.location}</span>
                   </a>
                   <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-brand-red-600" /> {t.duration} minutos de duración</span>
+                  {(() => {
+                    const stats = getAttendanceStats(t.id);
+                    return (
+                      <span className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-brand-red-600" /> 
+                        {stats.total} asistentes {stats.total > 0 ? `(${stats.gkCount} PT, ${stats.fieldCount} JUG)` : ''}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {t.observations && (

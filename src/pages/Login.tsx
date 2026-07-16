@@ -86,7 +86,9 @@ export const Login: React.FC = () => {
               <Mail className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
               <input
                 id="email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 className="form-input pl-10"
                 placeholder="mister@atzeneta.com"
                 value={email}
@@ -112,7 +114,9 @@ export const Login: React.FC = () => {
                 <Lock className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
                 <input
                   id="password"
+                  name="password"
                   type="password"
+                  autoComplete="current-password"
                   className="form-input pl-10"
                   placeholder="••••••••"
                   value={password}

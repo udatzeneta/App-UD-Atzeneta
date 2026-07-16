@@ -25,10 +25,10 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessi
   };
 
   return (
-    <div className="w-[210mm] mx-auto text-black bg-white font-sans p-4 flex flex-col box-border print-container">
+    <div className="w-[210mm] h-[290mm] mx-auto text-black bg-white font-sans pt-2 px-3 pb-2 flex flex-col box-border print-container">
       
       {/* Header section */}
-      <div className="flex justify-between items-end border-b-2 border-black pb-2 mb-2 shrink-0">
+      <div className="flex justify-between items-end border-b-2 border-black pb-1 mb-1 shrink-0">
         <div className="flex flex-col">
           <div className="flex items-center gap-2 mb-1">
              <img src="/club-logo.png" className="h-10 object-contain" alt="Escudo" />
@@ -44,19 +44,19 @@ export const SessionPrintView: React.FC<Props> = ({ session, sessionTasks, sessi
       </div>
 
       {/* Objective section */}
-      <div className="bg-gray-100 border border-black p-1.5 mb-3 shrink-0 flex items-center">
+      <div className="bg-gray-100 border border-black p-1.5 mb-1.5 shrink-0 flex items-center">
         <span className="font-bold uppercase text-[11px] mr-2 shrink-0">OBJETIVO:</span>
         <span className="text-[11px] font-semibold leading-tight">{session.objective || 'Sin objetivo definido'}</span>
       </div>
       
       {/* Tasks List */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1 flex-1 min-h-0">
         {sessionTasks.map((st, i) => {
           const t = st.task;
           if (!t) return null;
 
           return (
-            <div key={st.id} className="pdf-task border border-black flex flex-col overflow-hidden bg-white" style={{ height: '82mm', breakInside: 'avoid' }}>
+            <div key={st.id} className="pdf-task border border-black flex flex-col overflow-hidden bg-white flex-1" style={{ breakInside: 'avoid' }}>
               
               {/* Task Header */}
               <div className={`${getCategoryColor(t.category)} px-2 py-1.5 flex justify-between items-center shrink-0`}>

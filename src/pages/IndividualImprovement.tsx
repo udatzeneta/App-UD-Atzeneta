@@ -686,7 +686,7 @@ const AnalysisDetail: React.FC<{
         ) : (
           <div className="grid gap-2">
             {actions.map((a, i) => (
-              <div key={a.id} className="p-3.5 rounded-lg bg-brand-black-bg border border-brand-black-border">
+              <div key={a.id} className="p-3.5 rounded-lg bg-brand-black-bg hover:bg-brand-black-hover border border-brand-black-border cursor-pointer transition-colors" onClick={() => openEditAction(a)}>
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-md bg-brand-black-card border border-brand-black-border flex items-center justify-center text-xs font-bold text-brand-gray-muted shrink-0">
                     {a.minute != null ? `${a.minute}'` : i + 1}
@@ -731,7 +731,7 @@ const AnalysisDetail: React.FC<{
                       })()}
                     </button>
                     {!readOnly && (
-                      <button onClick={() => removeAction(a.id)} title="Eliminar"
+                      <button onClick={(e) => { e.stopPropagation(); removeAction(a.id); }} title="Eliminar"
                         className="p-1.5 rounded-md text-brand-gray-muted hover:text-brand-red-400 hover:bg-brand-black-hover">
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -870,6 +870,7 @@ const ActionEditor: React.FC<{
               value={f.board_data ?? undefined}
               onChange={readOnly ? undefined : (v: string) => upd({ board_data: v })}
               readOnly={readOnly}
+              limitedTools={true}
             />
           </div>
         </div>

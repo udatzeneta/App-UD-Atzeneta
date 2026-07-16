@@ -23,6 +23,7 @@ export const SessionEditor: React.FC = () => {
   const [libraryTasks, setLibraryTasks] = useState<TrainingTask[]>([]);
   const [sessionTasks, setSessionTasks] = useState<TrainingSessionTask[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [attendanceList, setAttendanceList] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -41,6 +42,16 @@ export const SessionEditor: React.FC = () => {
 
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [showTeamsInPdf, setShowTeamsInPdf] = useState(true);
+
+  const attendingPlayers = React.useMemo(() => {
+    return players.filter(p => {
+      const att = attendanceList.find(a => a.player_id === p.id);
+      return att && (att.status === 'ENT' || att.player_intent === true);
+    });
+  }, [players, attendanceList]);
+
+  const confirmedGks = attendingPlayers.filter(p => p.position === 'Portero').length;
+  const confirmedField = attendingPlayers.length - confirmedGks;
 
   useEffect(() => {
     loadInitialData();
@@ -84,8 +95,12 @@ export const SessionEditor: React.FC = () => {
 
   const loadSessionTasks = async (trainingId: string) => {
     try {
-      const data = await dataService.getSessionTasksByTraining(trainingId);
+      const [data, attData] = await Promise.all([
+        dataService.getSessionTasksByTraining(trainingId),
+        dataService.getAttendanceByTraining(trainingId)
+      ]);
       setSessionTasks(data);
+      setAttendanceList(attData);
     } catch (error) {
       showToast('error', 'Error', 'Error cargando las tareas de la sesión.');
     }
@@ -342,6 +357,7 @@ export const SessionEditor: React.FC = () => {
                 <span className="bg-brand-black px-2 py-1 rounded">🗓 {new Date(selectedTraining.date).toLocaleDateString()}</span>
                 <span className="bg-brand-black px-2 py-1 rounded">📍 {selectedTraining.location}</span>
                 <span className="bg-brand-black px-2 py-1 rounded">⏱ Planificado: {selectedTraining.duration}'</span>
+                <span className="bg-brand-black px-2 py-1 rounded text-brand-red-400">👥 {attendingPlayers.length} Asistentes ({confirmedGks} POR / {confirmedField} JUG)</span>
                 <span className={`px-2 py-1 rounded font-bold ${sessionTasks.reduce((acc, curr) => acc + (curr.duration || 0), 0) > selectedTraining.duration ? 'text-brand-red-600 bg-brand-red-600/10' : 'text-green-500 bg-green-500/10'}`}>
                    ⏱ Tareas: {sessionTasks.reduce((acc, curr) => acc + (curr.duration || 0), 0)}'
                 </span>
@@ -591,7 +607,7 @@ export const SessionEditor: React.FC = () => {
                      <TeamsBoardEditor
                         value={editingTask.teams_board_data || ''}
                         onChange={(val) => setEditingTask(prev => ({ ...prev, teams_board_data: val }))}
-                        players={players}
+                        players={attendingPlayers}
                      />
                    )}
                  </div>

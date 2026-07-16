@@ -53,7 +53,7 @@ export const Dashboard: React.FC = () => {
   const { data: matchStats = [] } = useQuery({
     queryKey: ['player_match_stats'],
     queryFn: () => dataService.getAllPlayerMatchStats(),
-    enabled: canManageMatches || canManageFines || canManageTrainings
+    enabled: canManageMatches || canManageFines || canManageTrainings || isPlayer
   });
 
   const sortedMatches = React.useMemo(() => {
@@ -64,6 +64,12 @@ export const Dashboard: React.FC = () => {
       return diffA - diffB;
     });
   }, [matches]);
+
+  const { data: attendanceList = [] } = useQuery({
+    queryKey: ['training_attendance'],
+    queryFn: () => dataService.getAllAttendance(),
+    enabled: isPlayer
+  });
 
   // 1. Extraer Jugadores de la tabla `players`
   const combinedPlayers = dbPlayers.map(p => ({
@@ -266,40 +272,78 @@ export const Dashboard: React.FC = () => {
   };
 
   // ==========================================
-  // PLAYER INTENT STATE & LOGIC
+  // PLAYER CONFIRM INTENT STATE & LOGIC
   // ==========================================
-  const [pSelectedTrainingId, setPSelectedTrainingId] = useState<string>('');
-  const [pIntent, setPIntent] = useState<boolean | null>(null);
-  const [pReason, setPReason] = useState<string>('');
-
-  const saveIntentMutation = useMutation({
+  const saveTrainingIntentMutation = useMutation({
     mutationFn: async (payload: { training_id: string, player_id: string, intent: boolean, reason: string }) => {
       return dataService.savePlayerAttendanceIntent(payload.training_id, payload.player_id, payload.intent, payload.reason);
     },
     onSuccess: () => {
-      showToast('success', 'Confirmación enviada', 'Tu asistencia ha sido registrada.');
-      setActiveForm(null);
+      queryClient.invalidateQueries({ queryKey: ['training_attendance'] });
+      showToast('success', 'Confirmación guardada', 'Tu asistencia al entrenamiento ha sido registrada.');
     },
     onError: (err: any) => {
       showToast('error', 'Error', err.message || 'No se pudo guardar la confirmación');
     }
   });
 
-  const handleSaveIntent = () => {
-    if (!pSelectedTrainingId || pIntent === null || !user) return;
-    if (!pIntent && !pReason.trim()) {
-      showToast('error', 'Motivo requerido', 'Debes indicar el motivo de tu ausencia.');
-      return;
+  const saveMatchIntentMutation = useMutation({
+    mutationFn: async (payload: { match_id: string, player_id: string, intent: boolean, reason: string }) => {
+      return dataService.savePlayerMatchIntent(payload.match_id, payload.player_id, payload.intent, payload.reason);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['player_match_stats'] });
+      showToast('success', 'Confirmación guardada', 'Tu asistencia al partido ha sido registrada.');
+    },
+    onError: (err: any) => {
+      showToast('error', 'Error', err.message || 'No se pudo guardar la confirmación');
     }
+  });
+
+  const [confirmReason, setConfirmReason] = useState<{ id: string, reason: string }>({ id: '', reason: '' });
+
+  const handleConfirmEvent = (eventId: string, eventType: 'training' | 'match', intent: boolean, reason?: string) => {
+    if (!user) return;
     const player = dbPlayers.find(p => p.profile_id === user.id);
     const targetPlayerId = player ? player.id : user.id;
 
-    saveIntentMutation.mutate({
-      training_id: pSelectedTrainingId,
-      player_id: targetPlayerId,
-      intent: pIntent,
-      reason: pReason.trim()
+    if (eventType === 'training') {
+      saveTrainingIntentMutation.mutate({ training_id: eventId, player_id: targetPlayerId, intent, reason: reason || '' });
+    } else {
+      saveMatchIntentMutation.mutate({ match_id: eventId, player_id: targetPlayerId, intent, reason: reason || '' });
+    }
+    setConfirmReason({ id: '', reason: '' });
+  };
+
+  const upcomingEvents = React.useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+
+    const todayStr = today.toISOString().split('T')[0];
+    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+
+    const upcomingT = trainings
+      .filter(t => t.date >= todayStr && t.date <= nextWeekStr)
+      .map(t => ({ ...t, eventType: 'training' as const }));
+
+    const upcomingM = matches
+      .filter(m => m.date >= todayStr && m.date <= nextWeekStr)
+      .map(m => ({ ...m, eventType: 'match' as const }));
+
+    return [...upcomingT, ...upcomingM].sort((a, b) => {
+      const dateA = new Date(`${a.date}T${a.time || '00:00'}`);
+      const dateB = new Date(`${b.date}T${b.time || '00:00'}`);
+      return dateA.getTime() - dateB.getTime();
     });
+  }, [trainings, matches]);
+
+  const formatDateSpanish = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const dayName = new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(d);
+    const dateFormatted = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+    return { dayName, dateFormatted };
   };
 
   const futureTrainings = React.useMemo(() => {
@@ -881,105 +925,116 @@ export const Dashboard: React.FC = () => {
           </div>
 
           <div className="p-6">
-            {!pSelectedTrainingId ? (
-              <div className="py-4">
-                <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-4 text-center">
-                  1. Seleccionar Entrenamiento Próximo
-                </h4>
-                <div className="space-y-3">
-                  {futureTrainings.slice(0, 5).map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        setPSelectedTrainingId(t.id);
-                        setPIntent(null);
-                        setPReason('');
-                      }}
-                      className="w-full bg-brand-black/40 border border-brand-black-border hover:border-emerald-500/40 p-4 rounded-xl flex items-center justify-between group transition-all"
-                    >
-                      <div className="flex flex-col text-left">
-                        <span className="text-sm font-bold text-brand-gray-light">{t.date}</span>
-                        <span className="text-xs text-brand-gray-muted mt-1">{t.objective || 'Entrenamiento Regular'} • {t.time}</span>
+            <h4 className="text-sm font-semibold text-brand-gray-muted uppercase tracking-wider mb-6 text-center">
+              Eventos de los próximos 7 días
+            </h4>
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto no-scrollbar">
+              {upcomingEvents.map(ev => {
+                const isTraining = ev.eventType === 'training';
+                const { dayName, dateFormatted } = formatDateSpanish(ev.date);
+                
+                const targetPlayerId = dbPlayers.find(p => p.profile_id === user?.id)?.id || user?.id;
+                let currentIntent: boolean | null = null;
+                
+                if (isTraining) {
+                  const att = attendanceList.find(a => a.training_id === ev.id && a.player_id === targetPlayerId);
+                  currentIntent = att?.player_intent ?? null;
+                } else {
+                  const stat = matchStats.find(s => s.match_id === ev.id && s.player_id === targetPlayerId);
+                  currentIntent = stat?.player_intent ?? null;
+                }
+
+                const isConfirmingNo = confirmReason.id === ev.id;
+
+                return (
+                  <div key={ev.id} className="bg-brand-black/40 border border-brand-black-border rounded-xl p-4 flex flex-col gap-4 transition-all hover:border-brand-black-border/80">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        {isTraining ? (
+                          <>
+                            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-1 block">Entrenamiento</span>
+                            <h5 className="text-sm font-bold text-brand-gray-light capitalize">{dayName}, {dateFormatted}</h5>
+                            <span className="text-xs text-brand-gray-muted mt-1.5 flex items-center gap-2">
+                              <Clock className="w-3 h-3" /> {ev.time} hs
+                            </span>
+                            <span className="text-xs text-brand-gray-muted mt-1 flex items-center gap-2">
+                              <MapPin className="w-3 h-3" /> {ev.location}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1 block">
+                              Partido {ev.competition === 'Liga' && (ev as Match).matchday ? `- Jornada ${(ev as Match).matchday}` : `- ${ev.competition}`}
+                            </span>
+                            <h5 className="text-sm font-bold text-brand-gray-light capitalize">{dayName}, {dateFormatted}</h5>
+                            <span className="text-xs text-brand-gray-muted mt-1.5 flex items-center gap-2">
+                              <Clock className="w-3 h-3" /> {ev.time} hs
+                            </span>
+                            <span className="text-xs text-brand-gray-muted mt-1 flex items-center gap-2">
+                              <MapPin className="w-3 h-3" /> {ev.location}
+                            </span>
+                          </>
+                        )}
                       </div>
-                      <ChevronRight className="w-5 h-5 text-brand-gray-dark group-hover:text-emerald-500 transition-colors" />
-                    </button>
-                  ))}
-                  {futureTrainings.length === 0 && (
-                    <p className="text-center text-brand-gray-muted text-sm py-4">No hay próximos entrenamientos programados.</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="animate-fade-in py-4">
-                <div className="flex justify-between items-center mb-6 bg-brand-black/30 border border-brand-black-border p-4 rounded-xl">
-                  <div>
-                    <h4 className="text-xs font-semibold text-brand-gray-muted uppercase tracking-wider mb-1">
-                      2. Tu Confirmación
-                    </h4>
-                    <p className="text-sm font-bold text-brand-gray-light">
-                      Para el {futureTrainings.find(t => t.id === pSelectedTrainingId)?.date}
-                    </p>
-                  </div>
-                  <button 
-                    onClick={() => setPSelectedTrainingId('')}
-                    className="text-xs text-brand-gray-muted hover:text-brand-gray-light underline"
-                  >
-                    Cambiar
-                  </button>
-                </div>
-
-                <div className="flex flex-col gap-4 mb-6">
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => { setPIntent(true); setPReason(''); }}
-                      className={`p-4 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                        pIntent === true 
-                          ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' 
-                          : 'bg-brand-black/40 border-brand-black-border text-brand-gray-muted hover:border-emerald-500/50 hover:text-emerald-400'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-8 h-8 mb-2" />
-                      <span className="font-bold text-sm">Voy a asistir</span>
-                    </button>
-                    <button
-                      onClick={() => setPIntent(false)}
-                      className={`p-4 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                        pIntent === false 
-                          ? 'bg-brand-red-600/20 border-brand-red-500 text-brand-red-400' 
-                          : 'bg-brand-black/40 border-brand-black-border text-brand-gray-muted hover:border-brand-red-500/50 hover:text-brand-red-400'
-                      }`}
-                    >
-                      <X className="w-8 h-8 mb-2" />
-                      <span className="font-bold text-sm">No voy a asistir</span>
-                    </button>
-                  </div>
-
-                  {pIntent === false && (
-                    <div className="animate-fade-in space-y-2 mt-2">
-                      <label className="text-xs font-bold text-brand-gray-light block">Motivo de la ausencia *</label>
-                      <textarea
-                        className="w-full bg-brand-black/50 border border-brand-black-border rounded-lg p-3 text-sm text-brand-gray-light focus:ring-1 focus:ring-brand-red-500"
-                        placeholder="Explica brevemente por qué no puedes asistir..."
-                        rows={3}
-                        value={pReason}
-                        onChange={e => setPReason(e.target.value)}
-                        required
-                      />
                     </div>
-                  )}
-                </div>
 
-                <div className="border-t border-brand-black-border pt-6 flex justify-end">
-                  <button
-                    onClick={handleSaveIntent}
-                    disabled={saveIntentMutation.isPending || pIntent === null || (pIntent === false && !pReason.trim())}
-                    className="btn-primary py-3 px-8 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 shadow-[0_0_12px_rgba(16,185,129,0.2)] disabled:opacity-50"
-                  >
-                    {saveIntentMutation.isPending ? 'Guardando...' : 'Confirmar'}
-                  </button>
-                </div>
-              </div>
-            )}
+                    {isConfirmingNo ? (
+                      <div className="bg-brand-black/50 p-3 rounded-lg border border-brand-red-500/30 animate-fade-in">
+                        <label className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider block mb-2">Motivo de la ausencia *</label>
+                        <textarea
+                          className="w-full bg-brand-black/50 border border-brand-black-border rounded-lg p-2.5 text-xs text-brand-gray-light mb-3 focus:ring-1 focus:ring-brand-red-500"
+                          rows={2}
+                          placeholder="Indica el motivo..."
+                          value={confirmReason.reason}
+                          onChange={e => setConfirmReason({ ...confirmReason, reason: e.target.value })}
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => setConfirmReason({ id: '', reason: '' })} className="btn-secondary py-1.5 px-3 text-xs">Cancelar</button>
+                          <button 
+                            onClick={() => handleConfirmEvent(ev.id, ev.eventType, false, confirmReason.reason)}
+                            disabled={!confirmReason.reason.trim() || (isTraining ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending)}
+                            className="btn-primary bg-brand-red-600 hover:bg-brand-red-700 py-1.5 px-3 text-xs font-bold shadow-[0_0_10px_rgba(239,68,68,0.2)] disabled:opacity-50"
+                          >
+                            {(isTraining ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending) ? 'Guardando...' : 'Confirmar Ausencia'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 mt-1">
+                        <button
+                          onClick={() => handleConfirmEvent(ev.id, ev.eventType, true)}
+                          disabled={isTraining ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending}
+                          className={`py-2.5 rounded-lg border transition-all flex items-center justify-center gap-2 text-xs font-bold disabled:opacity-50 ${
+                            currentIntent === true
+                              ? 'bg-emerald-500 text-white border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
+                              : 'bg-brand-black/40 border-brand-black-border text-brand-gray-muted hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/10'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> {(isTraining ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending) && currentIntent !== true ? '...' : 'Voy'}
+                        </button>
+                        <button
+                          onClick={() => setConfirmReason({ id: ev.id, reason: '' })}
+                          disabled={isTraining ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending}
+                          className={`py-2.5 rounded-lg border transition-all flex items-center justify-center gap-2 text-xs font-bold disabled:opacity-50 ${
+                            currentIntent === false
+                              ? 'bg-brand-red-500 text-white border-brand-red-500 shadow-[0_0_12px_rgba(239,68,68,0.25)]'
+                              : 'bg-brand-black/40 border-brand-black-border text-brand-gray-muted hover:border-brand-red-500/50 hover:text-brand-red-400 hover:bg-brand-red-500/10'
+                          }`}
+                        >
+                          <X className="w-4 h-4" /> {(isTraining ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending) && currentIntent !== false ? '...' : 'No Voy'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {upcomingEvents.length === 0 && (
+                <p className="text-center text-brand-gray-muted text-sm py-10 bg-brand-black/20 rounded-xl border border-brand-black-border">
+                  No hay entrenamientos ni partidos programados en los próximos 7 días.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}

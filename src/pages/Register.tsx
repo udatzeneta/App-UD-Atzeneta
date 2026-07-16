@@ -248,7 +248,9 @@ export const Register: React.FC = () => {
               <User className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
               <input
                 id="fullName"
+                name="fullName"
                 type="text"
+                autoComplete="name"
                 className="form-input pl-10"
                 placeholder="Ej. Juan Pérez"
                 value={fullName}
@@ -265,7 +267,9 @@ export const Register: React.FC = () => {
               <Mail className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
               <input
                 id="email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 className="form-input pl-10"
                 placeholder="nombre@atzeneta.com"
                 value={email}
@@ -282,7 +286,9 @@ export const Register: React.FC = () => {
               <Lock className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
               <input
                 id="password"
+                name="password"
                 type="password"
+                autoComplete="new-password"
                 className="form-input pl-10"
                 placeholder="Mínimo 6 caracteres"
                 value={password}
