@@ -476,9 +476,6 @@ export const Dashboard: React.FC = () => {
             <div 
               onClick={() => {
                 setActiveForm('player_confirm');
-                setPSelectedTrainingId('');
-                setPIntent(null);
-                setPReason('');
               }}
               className="bg-brand-black-card border border-brand-black-border hover:border-emerald-500/50 rounded-2xl p-6 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-premium group flex flex-col items-center text-center gap-4"
             >
