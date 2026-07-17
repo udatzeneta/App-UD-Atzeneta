@@ -25,6 +25,7 @@ export const SettingsPage: React.FC = () => {
   const [editProfileName, setEditProfileName] = useState('');
   const [editProfileEmail, setEditProfileEmail] = useState('');
   const [editProfileRole, setEditProfileRole] = useState(3);
+  const [editProfileTeam, setEditProfileTeam] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
   const [customDomain, setCustomDomain] = useState<string>(
     () => localStorage.getItem('ud_atzeneta_custom_domain') || window.location.origin
   );
@@ -187,6 +188,7 @@ export const SettingsPage: React.FC = () => {
     setEditProfileName(profile.full_name);
     setEditProfileEmail(profile.email);
     setEditProfileRole(profile.role_id);
+    setEditProfileTeam(profile.team_category as 'Primer Equipo' | 'Juvenil' || 'Primer Equipo');
   };
 
   const handleSaveProfile = () => {
@@ -196,7 +198,8 @@ export const SettingsPage: React.FC = () => {
         item: {
           full_name: editProfileName,
           email: editProfileEmail,
-          role_id: editProfileRole
+          role_id: editProfileRole,
+          team_category: editProfileTeam
         }
       });
     }
@@ -436,17 +439,30 @@ export const SettingsPage: React.FC = () => {
                         </td>
                         <td className="table-td">
                           {isEditing ? (
-                            <select
-                              value={editProfileRole}
-                              onChange={(e) => setEditProfileRole(Number(e.target.value))}
-                              className="form-input text-xs py-1 px-2 bg-brand-black-bg"
-                              disabled={isSystemAdmin}
-                            >
-                              <option value={1}>Administrador</option>
-                              <option value={2}>Entrenador</option>
-                              <option value={3}>Jugador</option>
-                              <option value={4}>Directivo</option>
-                            </select>
+                            <div className="flex flex-col gap-2">
+                              <select
+                                value={editProfileRole}
+                                onChange={(e) => setEditProfileRole(Number(e.target.value))}
+                                className="form-input text-xs py-1 px-2 bg-brand-black-bg"
+                                disabled={isSystemAdmin}
+                              >
+                                <option value={1}>Administrador</option>
+                                <option value={2}>Entrenador</option>
+                                <option value={3}>Jugador</option>
+                                <option value={4}>Directivo</option>
+                              </select>
+                              {/* Selector de Equipo para entrenadores y jugadores */}
+                              {(editProfileRole === 2 || editProfileRole === 3) && (
+                                <select
+                                  value={editProfileTeam}
+                                  onChange={(e) => setEditProfileTeam(e.target.value as 'Primer Equipo' | 'Juvenil')}
+                                  className="form-input text-xs py-1 px-2 bg-brand-black-bg"
+                                >
+                                  <option value="Primer Equipo">Primer Equipo</option>
+                                  <option value="Juvenil">Juvenil</option>
+                                </select>
+                              )}
+                            </div>
                           ) : (
                             <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
                               p.role_id === 1 ? 'bg-brand-red-950/30 text-brand-red-500' :
@@ -454,7 +470,10 @@ export const SettingsPage: React.FC = () => {
                               p.role_id === 4 ? 'bg-indigo-950/30 text-indigo-400' :
                               'bg-brand-black-bg text-brand-gray-muted'
                             }`}>
-                              {p.role_id === 1 ? 'Admin' : p.role_id === 2 ? 'Míster' : p.role_id === 4 ? 'Directivo' : 'Jugador'}
+                              {p.role_id === 1 ? 'Admin' : 
+                               p.role_id === 2 ? (p.team_category === 'Juvenil' ? 'Míster Juvenil' : 'Míster') : 
+                               p.role_id === 4 ? 'Directivo' : 
+                               (p.team_category === 'Juvenil' ? 'Jugador Juvenil' : 'Jugador')}
                             </span>
                           )}
                         </td>
