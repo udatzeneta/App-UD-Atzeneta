@@ -204,13 +204,13 @@ export const authService = {
     }
   },
 
-  async adminUpdateUser(id: string, newEmail: string, newName: string, newRole: number): Promise<void> {
+  async adminUpdateUser(id: string, newEmail: string, newName: string, roleParams: { role_id: number; team_category?: string; secondary_role_id?: number; secondary_team_category?: string }): Promise<void> {
     if (isMockMode) {
       await delay(300);
       const profiles = MockDatabase.getProfiles();
       const idx = profiles.findIndex(p => p.id === id);
       if (idx !== -1) {
-        profiles[idx] = { ...profiles[idx], email: newEmail, full_name: newName, role_id: newRole };
+        profiles[idx] = { ...profiles[idx], email: newEmail, full_name: newName, role_id: roleParams.role_id, team_category: roleParams.team_category };
         MockDatabase.setProfiles(profiles);
       }
     } else {
@@ -218,7 +218,10 @@ export const authService = {
         target_id: id,
         new_email: newEmail,
         new_full_name: newName,
-        new_role_id: newRole
+        new_role_id: roleParams.role_id,
+        new_team_category: roleParams.team_category || null,
+        secondary_role_id: roleParams.secondary_role_id || null,
+        secondary_team_category: roleParams.secondary_team_category || null
       });
       if (error) throw error;
     }

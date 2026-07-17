@@ -65,7 +65,7 @@ export const SettingsPage: React.FC = () => {
   });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ['profiles'],
+    queryKey: ['admin_users'],
     queryFn: () => authService.getAdminUsers(),
     enabled: isAdmin
   });
@@ -103,10 +103,10 @@ export const SettingsPage: React.FC = () => {
   });
 
   const updateProfileMutation = useMutation({
-    mutationFn: ({ id, item }: { id: string; item: Partial<Profile> }) => 
-      authService.adminUpdateUser(id, item.email || '', item.full_name || '', item.role_id || 3),
+    mutationFn: ({ id, item, roleParams }: { id: string; item: Partial<Profile>; roleParams: any }) => 
+      authService.adminUpdateUser(id, item.email || '', item.full_name || '', roleParams),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_users'] });
       showToast('success', 'Usuario actualizado', 'Los datos del usuario han sido guardados.');
       setEditingProfile(null);
     },
@@ -116,7 +116,7 @@ export const SettingsPage: React.FC = () => {
   const deleteProfileMutation = useMutation({
     mutationFn: (id: string) => authService.adminDeleteUser(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_users'] });
       showToast('success', 'Usuario eliminado', 'El usuario ha sido eliminado del sistema.');
     },
     onError: (err) => showToast('error', 'Error', err.message)
@@ -183,24 +183,69 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const [editProfileCombinedRole, setEditProfileCombinedRole] = useState<string>('jugador_pe');
+
   const handleEditProfile = (profile: Profile) => {
     setEditingProfile(profile);
     setEditProfileName(profile.full_name);
     setEditProfileEmail(profile.email);
-    setEditProfileRole(profile.role_id);
-    setEditProfileTeam(profile.team_category as 'Primer Equipo' | 'Juvenil' || 'Primer Equipo');
+    
+    let combined = 'jugador_pe';
+    const isPlayer = profile.role_id === 3;
+    const isTrainer = profile.role_id === 2;
+    const isAdmin = profile.role_id === 1;
+    const isBoard = profile.role_id === 4;
+    const teamCat = profile.team_category || 'Primer Equipo';
+    
+    const hasTrainerContext = profile.availableContexts?.some(c => c.role_id === 2);
+    const trainerContextCat = profile.availableContexts?.find(c => c.role_id === 2)?.team_category;
+
+    if (isAdmin) combined = 'admin';
+    else if (isBoard) combined = 'directivo';
+    else if (isTrainer) {
+      if (hasTrainerContext && trainerContextCat !== teamCat) combined = 'mister_ambos';
+      else if (teamCat === 'Juvenil') combined = 'mister_juv';
+      else combined = 'mister_pe';
+    } else if (isPlayer) {
+      if (hasTrainerContext && trainerContextCat === 'Juvenil') combined = 'jugador_pe_entrenador_juv';
+      else if (teamCat === 'Juvenil') combined = 'jugador_juv';
+      else combined = 'jugador_pe';
+    }
+    
+    setEditProfileCombinedRole(combined);
   };
 
   const handleSaveProfile = () => {
     if (editingProfile) {
+      let role_id = 3;
+      let team_category: string | undefined;
+      let secondary_role_id: number | undefined;
+      let secondary_team_category: string | undefined;
+
+      switch (editProfileCombinedRole) {
+        case 'admin': role_id = 1; break;
+        case 'directivo': role_id = 4; break;
+        case 'mister_pe': role_id = 2; team_category = 'Primer Equipo'; break;
+        case 'mister_juv': role_id = 2; team_category = 'Juvenil'; break;
+        case 'mister_ambos': 
+          role_id = 2; team_category = 'Primer Equipo'; 
+          secondary_role_id = 2; secondary_team_category = 'Juvenil';
+          break;
+        case 'jugador_pe': role_id = 3; team_category = 'Primer Equipo'; break;
+        case 'jugador_juv': role_id = 3; team_category = 'Juvenil'; break;
+        case 'jugador_pe_entrenador_juv': 
+          role_id = 3; team_category = 'Primer Equipo'; 
+          secondary_role_id = 2; secondary_team_category = 'Juvenil';
+          break;
+      }
+
       updateProfileMutation.mutate({
         id: editingProfile.id,
         item: {
           full_name: editProfileName,
-          email: editProfileEmail,
-          role_id: editProfileRole,
-          team_category: editProfileTeam
-        }
+          email: editProfileEmail
+        },
+        roleParams: { role_id, team_category, secondary_role_id, secondary_team_category }
       });
     }
   };
@@ -441,27 +486,20 @@ export const SettingsPage: React.FC = () => {
                           {isEditing ? (
                             <div className="flex flex-col gap-2">
                               <select
-                                value={editProfileRole}
-                                onChange={(e) => setEditProfileRole(Number(e.target.value))}
+                                value={editProfileCombinedRole}
+                                onChange={(e) => setEditProfileCombinedRole(e.target.value)}
                                 className="form-input text-xs py-1 px-2 bg-brand-black-bg"
                                 disabled={isSystemAdmin}
                               >
-                                <option value={1}>Administrador</option>
-                                <option value={2}>Entrenador</option>
-                                <option value={3}>Jugador</option>
-                                <option value={4}>Directivo</option>
+                                <option value="admin">Administrador</option>
+                                <option value="directivo">Directivo</option>
+                                <option value="mister_pe">Míster PE</option>
+                                <option value="mister_juv">Míster Juvenil</option>
+                                <option value="mister_ambos">Míster Ambos Equipos</option>
+                                <option value="jugador_pe">Jugador PE</option>
+                                <option value="jugador_juv">Jugador Juvenil</option>
+                                <option value="jugador_pe_entrenador_juv">Jugador PE + Míster Juv</option>
                               </select>
-                              {/* Selector de Equipo para entrenadores y jugadores */}
-                              {(editProfileRole === 2 || editProfileRole === 3) && (
-                                <select
-                                  value={editProfileTeam}
-                                  onChange={(e) => setEditProfileTeam(e.target.value as 'Primer Equipo' | 'Juvenil')}
-                                  className="form-input text-xs py-1 px-2 bg-brand-black-bg"
-                                >
-                                  <option value="Primer Equipo">Primer Equipo</option>
-                                  <option value="Juvenil">Juvenil</option>
-                                </select>
-                              )}
                             </div>
                           ) : (
                             <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
@@ -471,9 +509,15 @@ export const SettingsPage: React.FC = () => {
                               'bg-brand-black-bg text-brand-gray-muted'
                             }`}>
                               {p.role_id === 1 ? 'Admin' : 
-                               p.role_id === 2 ? (p.team_category === 'Juvenil' ? 'Míster Juvenil' : 'Míster') : 
                                p.role_id === 4 ? 'Directivo' : 
-                               (p.team_category === 'Juvenil' ? 'Jugador Juvenil' : 'Jugador')}
+                               p.role_id === 2 ? (
+                                 p.availableContexts && p.availableContexts.length > 1 ? 'Míster Ambos' :
+                                 p.team_category === 'Juvenil' ? 'Míster Juvenil' : 'Míster PE'
+                               ) : (
+                                 p.availableContexts && p.availableContexts.some(c => c.role_id === 2) ? 'Jug PE + Míster Juv' :
+                                 p.team_category === 'Juvenil' ? 'Jugador Juvenil' : 'Jugador PE'
+                               )
+                              }
                             </span>
                           )}
                         </td>
