@@ -32,6 +32,16 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 2.5 TABLA DE CONTEXTOS SECUNDARIOS (Multi-rol)
+CREATE TABLE IF NOT EXISTS public.user_contexts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    role_id INT REFERENCES public.roles(id),
+    team_category TEXT CHECK (team_category IN ('Primer Equipo', 'Juvenil')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, role_id, team_category)
+);
+
 -- 3. TABLA DE PERMISOS (Página + Acción)
 CREATE TABLE IF NOT EXISTS public.permissions (
     id SERIAL PRIMARY KEY,

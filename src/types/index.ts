@@ -21,7 +21,16 @@ export interface Profile {
   birth_date?: string;
   created_at?: string;
   team_category?: string; // 'Primer Equipo' | 'Juvenil'
-  // Estos campos se populan desde la tabla players si existe
+  
+  // Novedad: Contextos disponibles (multi-rol)
+  availableContexts?: UserContext[];
+}
+
+export interface UserContext {
+  id?: string;
+  user_id?: string;
+  role_id: number;
+  team_category: string;
 }
 
 export interface Permission {

@@ -721,6 +721,20 @@ export const SettingsPage: React.FC = () => {
                 borderColor: 'border-amber-950/30'
               },
               {
+                slug: 'trainer_both',
+                name: 'Entrenador (Ambos Equipos)',
+                desc: 'Permite el registro de miembros del cuerpo técnico en ambos equipos (Primer Equipo y Juvenil).',
+                color: 'text-amber-400',
+                borderColor: 'border-amber-950/30'
+              },
+              {
+                slug: 'player_trainer',
+                name: 'Jugador (PE) y Entrenador (Juv)',
+                desc: 'Permite el registro de un miembro que actúa como jugador en el Primer Equipo y como entrenador en el Juvenil.',
+                color: 'text-brand-gray-light',
+                borderColor: 'border-brand-black-border'
+              },
+              {
                 slug: 'board',
                 name: 'Directivo / Comisión',
                 desc: 'Permite el registro de miembros de la comisión directiva del club. Tendrán acceso general de lectura y exportación en todas las áreas de gestión.',

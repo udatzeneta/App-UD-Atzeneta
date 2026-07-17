@@ -18,12 +18,17 @@ interface AuthContextType {
   allPermissions: Permission[];
   rolePermissions: RolePermission[];
   userPermissions: UserPermission[];
+  
+  // Contextos (Multi-rol)
+  originalProfile: Profile | null;
+  switchContext: (role_id: number, team_category: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<Profile | null>(null);
+  const [originalProfile, setOriginalProfile] = useState<Profile | null>(null);
   const [roleSlug, setRoleSlug] = useState<UserRoleSlug | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -32,14 +37,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [rolePermissions, setRolePermissions] = useState<RolePermission[]>([]);
   const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
 
+  const setupUserProfile = async (profile: Profile) => {
+    try {
+      const secondaryContexts = await dataService.getUserContexts(profile.id);
+      
+      const availableContexts = [
+        { role_id: profile.role_id, team_category: profile.team_category || 'Primer Equipo' },
+        ...secondaryContexts.map(c => ({ role_id: c.role_id, team_category: c.team_category }))
+      ];
+
+      const profileWithContexts = {
+        ...profile,
+        availableContexts
+      };
+
+      setOriginalProfile(profileWithContexts);
+
+      const savedContextStr = localStorage.getItem('ud_atzeneta_active_context');
+      let activeProfile = profileWithContexts;
+
+      if (savedContextStr) {
+        try {
+          const savedContext = JSON.parse(savedContextStr);
+          const isValid = availableContexts.some(c => c.role_id === savedContext.role_id && c.team_category === savedContext.team_category);
+          if (isValid) {
+            activeProfile = { ...profileWithContexts, role_id: savedContext.role_id, team_category: savedContext.team_category };
+          }
+        } catch (e) {}
+      }
+
+      setUser(activeProfile);
+      await loadPermissionsData(activeProfile);
+      return activeProfile;
+    } catch (err) {
+      console.error('Error al configurar el perfil del usuario:', err);
+      setUser(profile);
+      await loadPermissionsData(profile);
+      return profile;
+    }
+  };
+
   // Cargar sesión al iniciar
   useEffect(() => {
     const initSession = async () => {
       try {
         const currentUser = await authService.getCurrentSession();
         if (currentUser) {
-          setUser(currentUser);
-          await loadPermissionsData(currentUser);
+          await setupUserProfile(currentUser);
         } else {
           setLoading(false);
         }
@@ -117,9 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const profile = await authService.login(email, password);
-      setUser(profile);
-      await loadPermissionsData(profile);
-      return profile;
+      return await setupUserProfile(profile);
     } catch (err) {
       setLoading(false);
       throw err;
@@ -131,13 +173,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const profile = await authService.loginAsMock(userId);
-      setUser(profile);
-      await loadPermissionsData(profile);
-      return profile;
+      return await setupUserProfile(profile);
     } catch (err) {
       setLoading(false);
       throw err;
     }
+  };
+
+  // Cambiar el contexto de usuario (Multi-rol)
+  const switchContext = async (role_id: number, team_category: string) => {
+    if (!originalProfile) return;
+    
+    localStorage.setItem('ud_atzeneta_active_context', JSON.stringify({ role_id, team_category }));
+
+    const overriddenUser = {
+      ...originalProfile,
+      role_id,
+      team_category
+    };
+    
+    setUser(overriddenUser);
+    await loadPermissionsData(overriddenUser);
   };
 
   // Cerrar sesión
@@ -146,7 +202,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await authService.logout();
       dataService.setCurrentUserContext(0, '');
+      localStorage.removeItem('ud_atzeneta_active_context');
       setUser(null);
+      setOriginalProfile(null);
       setRoleSlug(null);
       setAllPermissions([]);
       setRolePermissions([]);
@@ -185,7 +243,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshPermissions,
     allPermissions,
     rolePermissions,
-    userPermissions
+    userPermissions,
+    originalProfile,
+    switchContext
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

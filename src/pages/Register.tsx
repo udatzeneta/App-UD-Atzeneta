@@ -27,22 +27,45 @@ export const Register: React.FC = () => {
   const [showNoMatchNotice, setShowNoMatchNotice] = useState(false);
 
   // Mapeo de slugs de roles a IDs y nombres
-  const rolesMap: Record<string, { id: number; name: string }> = {
+  const rolesMap: Record<string, { id: number; name: string; team?: string; secondary?: { role_id: number; team_category: string } }> = {
     trainer: { id: 2, name: 'Entrenador (Míster)' },
     player: { id: 3, name: 'Jugador' },
     board: { id: 4, name: 'Directivo / Comisión' },
+    trainer_both: { 
+      id: 2, 
+      name: 'Entrenador (Míster)', 
+      team: 'Primer Equipo',
+      secondary: { role_id: 2, team_category: 'Juvenil' }
+    },
+    player_trainer: { 
+      id: 3, 
+      name: 'Jugador', 
+      team: 'Primer Equipo',
+      secondary: { role_id: 2, team_category: 'Juvenil' }
+    }
   };
+
+  const [secondaryContextToCreate, setSecondaryContextToCreate] = useState<{role_id: number, team_category: string} | null>(null);
 
   useEffect(() => {
     const roleParam = searchParams.get('role');
     if (roleParam && rolesMap[roleParam]) {
       setRoleId(rolesMap[roleParam].id);
       setIsRoleLocked(true);
+      if (rolesMap[roleParam].team) {
+        setTeamCategory(rolesMap[roleParam].team as any);
+        setIsTeamLocked(true);
+      }
+      if (rolesMap[roleParam].secondary) {
+        setSecondaryContextToCreate(rolesMap[roleParam].secondary);
+      }
     }
     const teamParam = searchParams.get('team');
     if (teamParam === 'Primer Equipo' || teamParam === 'Juvenil') {
-      setTeamCategory(teamParam);
-      setIsTeamLocked(true);
+      if (!rolesMap[roleParam || '']?.team) {
+        setTeamCategory(teamParam);
+        setIsTeamLocked(true);
+      }
     }
   }, [searchParams]);
 
@@ -103,6 +126,21 @@ export const Register: React.FC = () => {
     setLoading(true);
     try {
       const newUserId = isMockMode ? await createMockAccount() : await createRealAccount();
+
+      // CREAR CONTEXTO SECUNDARIO SI APLICA
+      if (secondaryContextToCreate) {
+        if (!isMockMode) {
+          try {
+            await dataService.addUserContext({
+              user_id: newUserId,
+              role_id: secondaryContextToCreate.role_id,
+              team_category: secondaryContextToCreate.team_category
+            });
+          } catch (e) {
+            console.warn('Error al crear contexto secundario:', e);
+          }
+        }
+      }
 
       if (roleId === 3) {
         // Buscamos su ficha más parecida (ya autenticado, para poder consultar `players` vía RPC)

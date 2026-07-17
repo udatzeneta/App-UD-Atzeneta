@@ -659,6 +659,40 @@ export const dataService = {
     }
   },
 
+  // =====================================================================
+  // CONTEXTOS MULTI-ROL (User Contexts)
+  // =====================================================================
+  async getUserContexts(userId: string): Promise<import('../types').UserContext[]> {
+    if (isMockMode) {
+      await delay(200);
+      return []; // Por ahora en modo mock no hay contextos secundarios
+    } else {
+      const { data, error } = await supabase
+        .from('user_contexts')
+        .select('*')
+        .eq('user_id', userId);
+      if (error) {
+        console.warn('Error al cargar contextos secundarios:', error);
+        return [];
+      }
+      return data as import('../types').UserContext[];
+    }
+  },
+
+  async addUserContext(context: Omit<import('../types').UserContext, 'id'>): Promise<void> {
+    if (!isMockMode) {
+      const { error } = await supabase.from('user_contexts').insert(context);
+      if (error) throw error;
+    }
+  },
+
+  async removeUserContext(id: string): Promise<void> {
+    if (!isMockMode) {
+      const { error } = await supabase.from('user_contexts').delete().eq('id', id);
+      if (error) throw error;
+    }
+  },
+
   // Busca el jugador más parecido por nombre SIN vincularlo (para pedir confirmación al usuario)
   // En modo Supabase real usa un RPC (SECURITY DEFINER) porque el usuario recién registrado
   // todavía no tiene permisos RLS sobre la tabla `players`.
@@ -898,13 +932,34 @@ export const dataService = {
           profiles: profiles.find(pr => pr.id === p.user_id)
         })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
-      let query = supabase.from('points').select('*, profiles!inner(*)').order('date', { ascending: false });
+      // Query 1: Obtener puntos
+      const { data: pointsData, error: pointsError } = await supabase
+        .from('points')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (pointsError) throw pointsError;
+
+      // Query 2: Obtener perfiles
+      let profilesQuery = supabase.from('profiles').select('*');
       if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
-        query = query.eq('profiles.team_category', currentUserContext.team_category);
+        profilesQuery = profilesQuery.eq('team_category', currentUserContext.team_category);
       }
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as PointLog[];
+      const { data: profilesData, error: profilesError } = await profilesQuery;
+      
+      if (profilesError) throw profilesError;
+
+      const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+
+      const result = pointsData?.map(p => {
+        const profile = profilesMap.get(p.user_id);
+        return {
+          ...p,
+          profiles: profile
+        };
+      }).filter(p => p.profiles !== undefined);
+
+      return result as PointLog[];
     }
   },
 

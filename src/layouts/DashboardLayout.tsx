@@ -252,6 +252,33 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            {/* Context Switcher (Multi-rol) */}
+            {user?.availableContexts && user.availableContexts.length > 1 && (
+              <div className="hidden sm:flex items-center bg-brand-black border border-brand-black-border rounded-lg px-2.5 py-1 transition-colors hover:border-brand-gray-dark">
+                <Users className="w-3 h-3 text-brand-gray-muted mr-2" />
+                <select
+                  value={`${user.role_id}-${user.team_category}`}
+                  onChange={(e) => {
+                    const [rId, tCat] = e.target.value.split('-');
+                    switchContext(Number(rId), tCat);
+                  }}
+                  className="bg-transparent text-[11px] text-brand-gray-light font-semibold focus:ring-0 border-none p-0 cursor-pointer uppercase tracking-wide"
+                >
+                  {user.availableContexts.map((ctx, i) => {
+                    let roleName = 'Jugador';
+                    if (ctx.role_id === 1) roleName = 'Admin';
+                    if (ctx.role_id === 2) roleName = 'Entrenador';
+                    if (ctx.role_id === 4) roleName = 'Directivo';
+                    return (
+                      <option key={`${ctx.role_id}-${ctx.team_category}-${i}`} value={`${ctx.role_id}-${ctx.team_category}`} className="bg-brand-black-card text-brand-gray-light uppercase">
+                        {roleName} {ctx.team_category ? `· ${ctx.team_category}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
             {/* Estado de conexión */}
             <span className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full font-medium border ${
               isMockMode
