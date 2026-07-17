@@ -20,7 +20,7 @@ import { exportToCSV, exportToPDF, exportSquadToPDF } from '../utils/export';
 export const Players: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
 
   // Permisos
@@ -33,7 +33,15 @@ export const Players: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPosition, setFilterPosition] = useState('Todos');
   const [filterStatus, setFilterStatus] = useState('Todos');
-  const [filterTeam, setFilterTeam] = useState('Primer Equipo');
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+  
+  // Sincronizar el equipo si el user carga asíncronamente
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
   type StatKey = 'minutes' | 'called' | 'starter' | 'goals' | 'assists' | 'conceded' | 'yellow' | 'red';
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [detailTab, setDetailTab] = useState<'ficha' | 'stats' | 'peso' | 'fisio'>('ficha');
@@ -91,7 +99,6 @@ export const Players: React.FC = () => {
     queryFn: () => dataService.getPlayers()
   });
 
-  const { user } = useAuth();
   const players = React.useMemo(() => {
     if (user?.role_id === 3) {
       return rawPlayers.filter(p => p.profile_id === user.id);
@@ -794,20 +801,22 @@ export const Players: React.FC = () => {
       </div>
 
       {/* Pestañas de Equipo */}
-      <div className="flex border-b border-brand-black-border mb-4">
-        <button
-          className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
-          onClick={() => { setFilterTeam('Primer Equipo'); setSelectedPlayer(null); }}
-        >
-          Primer Equipo
-        </button>
-        <button
-          className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
-          onClick={() => { setFilterTeam('Juvenil'); setSelectedPlayer(null); }}
-        >
-          Filial (Juvenil)
-        </button>
-      </div>
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex border-b border-brand-black-border mb-4">
+          <button
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => { setFilterTeam('Primer Equipo'); setSelectedPlayer(null); }}
+          >
+            Primer Equipo
+          </button>
+          <button
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => { setFilterTeam('Juvenil'); setSelectedPlayer(null); }}
+          >
+            Filial (Juvenil)
+          </button>
+        </div>
+      )}
 
       {/* Buscador y Filtros */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-brand-black border border-brand-black-border p-4 rounded-xl">

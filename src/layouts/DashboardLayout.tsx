@@ -59,8 +59,8 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const getRoleLabel = () => {
     switch (roleSlug) {
       case 'admin': return 'Administrador';
-      case 'trainer': return 'Entrenador (Míster)';
-      case 'player': return 'Jugador';
+      case 'trainer': return `Entrenador${user?.team_category === 'Juvenil' ? ' (Juvenil)' : ' (Míster)'}`;
+      case 'player': return `Jugador${user?.team_category === 'Juvenil' ? ' (Juvenil)' : ''}`;
       case 'board': return 'Directivo';
       default: return 'Usuario';
     }
@@ -82,7 +82,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           />
           <div>
             <h1 className="text-sm font-bold tracking-wider text-brand-gray-light leading-none">UD ATZENETA</h1>
-            <span className="text-[10px] text-brand-red-600 font-semibold tracking-wider">ERP DEPORTIVO</span>
+            <span className="text-[10px] text-brand-red-600 font-semibold tracking-wider">
+              ERP DEPORTIVO {user?.team_category === 'Juvenil' ? '· JUVENIL' : ''}
+            </span>
           </div>
         </div>
 
@@ -153,7 +155,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                 />
                 <div>
                   <h1 className="text-sm font-bold tracking-wider text-brand-gray-light leading-none">UD ATZENETA</h1>
-                  <span className="text-[10px] text-brand-red-600 font-semibold tracking-wider">ERP DEPORTIVO</span>
+                  <span className="text-[10px] text-brand-red-600 font-semibold tracking-wider">
+                    ERP DEPORTIVO {user?.team_category ? `· ${user.team_category.toUpperCase()}` : ''}
+                  </span>
                 </div>
               </div>
               <button

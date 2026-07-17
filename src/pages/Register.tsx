@@ -172,16 +172,24 @@ export const Register: React.FC = () => {
     // Intentamos insertar perfil en la base de datos (si las políticas RLS lo permiten;
     // si ya existe por un trigger de auth.users, este insert fallará y lo ignoramos)
     try {
-      await supabase.from('profiles').insert({
+      const profilePayload = {
         id: data.user.id,
         email: email.trim().toLowerCase(),
         full_name: fullName.trim(),
         role_id: roleId,
         team_category: teamCategory,
         avatar_url: avatarDataUrl || null
-      });
+      };
+
+      const { error: insErr } = await supabase.from('profiles').insert(profilePayload);
+      
+      // Si falla (probablemente porque el trigger antiguo ya lo creó con rol Jugador),
+      // forzamos una actualización con los datos correctos para asegurar el rol y avatar.
+      if (insErr) {
+        await supabase.from('profiles').update(profilePayload).eq('id', data.user.id);
+      }
     } catch (dbErr) {
-      console.warn('Inserción directa de perfil no disponible. Se usará el trigger o el fallback.', dbErr);
+      console.warn('No se pudo establecer el perfil completamente.', dbErr);
     }
 
     return data.user.id;
