@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, roleSlug, logout, hasPermission } = useAuth();
+  const { user, roleSlug, logout, hasPermission, switchContext } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
