@@ -151,17 +151,20 @@ export const dataService = {
   },
 
   async createTraining(item: Omit<Training, 'id'>): Promise<Training> {
+    const teamCat = currentUserContext?.team_category || 'Primer Equipo';
+    const itemWithTeam = { ...item, team_category: item.team_category || teamCat };
+
     if (isMockMode) {
       await delay(300);
       const list = MockDatabase.getTrainings();
-      const newItem: Training = { ...item, id: `t-${Date.now()}` };
+      const newItem: Training = { ...itemWithTeam, id: `t-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setTrainings(list);
       return newItem;
     } else {
       const { data, error } = await supabase
         .from('trainings')
-        .insert(item)
+        .insert(itemWithTeam)
         .select()
         .single();
       if (error) throw error;
@@ -424,17 +427,20 @@ export const dataService = {
   },
 
   async createMatch(item: Omit<Match, 'id'>): Promise<Match> {
+    const teamCat = currentUserContext?.team_category || 'Primer Equipo';
+    const itemWithTeam = { ...item, team_category: item.team_category || teamCat };
+
     if (isMockMode) {
       await delay(300);
       const list = MockDatabase.getMatches();
-      const newItem: Match = { ...item, id: `m-${Date.now()}` };
+      const newItem: Match = { ...itemWithTeam, id: `m-${Date.now()}` };
       list.push(newItem);
       MockDatabase.setMatches(list);
       return newItem;
     } else {
       const { data, error } = await supabase
         .from('matches')
-        .insert(item)
+        .insert(itemWithTeam)
         .select()
         .single();
       if (error) throw error;
@@ -637,12 +643,17 @@ export const dataService = {
   async getProfilesByRoles(roleIds: number[]): Promise<Profile[]> {
     if (isMockMode) {
       await delay(200);
-      return MockDatabase.getProfiles().filter((p: any) => roleIds.includes(p.role_id));
+      let list = MockDatabase.getProfiles().filter((p: any) => roleIds.includes(p.role_id));
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        list = list.filter((p: any) => p.team_category === currentUserContext?.team_category || (!p.team_category && currentUserContext?.team_category === 'Primer Equipo'));
+      }
+      return list;
     } else {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('role_id', roleIds);
+      let query = supabase.from('profiles').select('*').in('role_id', roleIds);
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        query = query.eq('team_category', currentUserContext.team_category);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return data as Profile[];
     }
@@ -960,9 +971,10 @@ export const dataService = {
   // SCOUTING
   // =====================================================================
   async getScouting(): Promise<ScoutingPlayer[]> {
+    let teamCategory = currentUserContext?.team_category || 'Primer Equipo';
     if (isMockMode) {
       await delay(300);
-      return MockDatabase.getScouting();
+      return MockDatabase.getScouting().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
       const allData: ScoutingPlayer[] = [];
       const pageSize = 1000;
@@ -975,6 +987,7 @@ export const dataService = {
         const { data, error } = await supabase
           .from('scouting')
           .select('*')
+          .eq('team_category', teamCategory)
           .order('created_at', { ascending: false })
           .range(start, end);
 
@@ -994,9 +1007,10 @@ export const dataService = {
   },
 
   async getScoutingWithHistory(): Promise<ScoutingPlayer[]> {
+    let teamCategory = currentUserContext?.team_category || 'Primer Equipo';
     if (isMockMode) {
       await delay(300);
-      return MockDatabase.getScouting();
+      return MockDatabase.getScouting().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
       const allData: ScoutingPlayer[] = [];
       const pageSize = 500;
@@ -1009,6 +1023,7 @@ export const dataService = {
         const { data, error } = await supabase
           .from('scouting')
           .select('*, scouting_player_history(*)')
+          .eq('team_category', teamCategory)
           .order('created_at', { ascending: false })
           .range(start, end);
 
@@ -1028,10 +1043,13 @@ export const dataService = {
   },
 
   async createScouting(item: Omit<ScoutingPlayer, 'id'>): Promise<ScoutingPlayer> {
+    const teamCat = currentUserContext?.team_category || 'Primer Equipo';
+    const itemWithTeam = { ...item, team_category: item.team_category || teamCat };
+
     if (isMockMode) {
       await delay(300);
       const list = MockDatabase.getScouting();
-      const newItem: ScoutingPlayer = { ...item, id: `s-${Date.now()}`, created_at: new Date().toISOString() };
+      const newItem: ScoutingPlayer = { ...itemWithTeam, id: `s-${Date.now()}`, created_at: new Date().toISOString() };
       list.push(newItem);
       MockDatabase.setScouting(list);
       return newItem;
@@ -1040,7 +1058,7 @@ export const dataService = {
       const userId = sessionData.session?.user?.id;
       const { data, error } = await supabase
         .from('scouting')
-        .insert({ ...item, created_by: userId })
+        .insert({ ...itemWithTeam, created_by: userId })
         .select()
         .single();
       if (error) throw error;
@@ -1088,13 +1106,15 @@ export const dataService = {
   // ANÁLISIS DE RIVALES (OPPONENT ANALYSIS)
   // =====================================================================
   async getOpponentAnalysis(): Promise<OpponentAnalysis[]> {
+    let teamCategory = currentUserContext?.team_category || 'Primer Equipo';
     if (isMockMode) {
       await delay(300);
-      return MockDatabase.getOpponentAnalysis();
+      return MockDatabase.getOpponentAnalysis().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
       const { data, error } = await supabase
         .from('opponent_analysis')
         .select('*')
+        .eq('team_category', teamCategory)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as OpponentAnalysis[];
@@ -1102,17 +1122,20 @@ export const dataService = {
   },
 
   async createOpponentAnalysis(item: Omit<OpponentAnalysis, 'id'>): Promise<OpponentAnalysis> {
+    const teamCat = currentUserContext?.team_category || 'Primer Equipo';
+    const itemWithTeam = { ...item, team_category: item.team_category || teamCat };
+
     if (isMockMode) {
       await delay(300);
       const list = MockDatabase.getOpponentAnalysis();
-      const newItem: OpponentAnalysis = { ...item, id: `oa-${Date.now()}`, created_at: new Date().toISOString() };
+      const newItem: OpponentAnalysis = { ...itemWithTeam, id: `oa-${Date.now()}`, created_at: new Date().toISOString() };
       list.push(newItem);
       MockDatabase.setOpponentAnalysis(list);
       return newItem;
     } else {
       const { data, error } = await supabase
         .from('opponent_analysis')
-        .insert(item)
+        .insert(itemWithTeam)
         .select()
         .single();
       if (error) throw error;

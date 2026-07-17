@@ -197,6 +197,7 @@ export interface ScoutingPlayer {
   rating: number; // 1-5
   notes: string;
   created_by?: string;
+  team_category?: string;
   created_at?: string;
 
   // FFCV data fields
@@ -246,6 +247,7 @@ export interface OpponentAnalysis {
   key_players: string[];
   observations: string;
   created_by?: string;
+  team_category?: string;
   created_at?: string;
 }
 

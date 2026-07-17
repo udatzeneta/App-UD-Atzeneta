@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS public.scouting (
     position TEXT NOT NULL,
     rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
     notes TEXT,
+    team_category TEXT DEFAULT 'Primer Equipo' CHECK (team_category IN ('Primer Equipo', 'Juvenil')),
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -226,6 +227,7 @@ CREATE TABLE IF NOT EXISTS public.opponent_analysis (
     weaknesses TEXT[] DEFAULT '{}',
     key_players TEXT[] DEFAULT '{}',
     observations TEXT,
+    team_category TEXT DEFAULT 'Primer Equipo' CHECK (team_category IN ('Primer Equipo', 'Juvenil')),
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
