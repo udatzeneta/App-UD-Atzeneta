@@ -24,10 +24,19 @@ BEGIN
     p.id,
     p.full_name,
     p.photo_url,
-    (similarity(input_norm, lower(trim(unaccent(p.full_name)))) * 100)::numeric AS similarity
+    (
+      similarity(
+        input_norm, 
+        CASE 
+          WHEN lower(trim(unaccent(p.full_name))) LIKE '%,%' 
+          THEN trim(split_part(lower(trim(unaccent(p.full_name))), ',', 2)) || ' ' || trim(split_part(lower(trim(unaccent(p.full_name))), ',', 1))
+          ELSE lower(trim(unaccent(p.full_name)))
+        END
+      ) * 100
+    )::numeric AS similarity
   FROM public.players p
-  WHERE p.profile_id IS NULL
-  ORDER BY similarity(input_norm, lower(trim(unaccent(p.full_name)))) DESC
+  WHERE p.profile_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.profiles pr WHERE pr.id = p.profile_id)
+  ORDER BY similarity DESC
   LIMIT 1;
 END;
 $$;

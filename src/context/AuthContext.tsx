@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { authService } from '../services/auth';
 import { permissionsService } from '../services/permissions';
 import { dataService } from '../services/data';
@@ -27,6 +28,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<Profile | null>(null);
   const [originalProfile, setOriginalProfile] = useState<Profile | null>(null);
   const [roleSlug, setRoleSlug] = useState<UserRoleSlug | null>(null);
@@ -192,8 +194,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       team_category
     };
     
+    dataService.setCurrentUserContext(role_id, team_category || 'Primer Equipo');
     setUser(overriddenUser);
     await loadPermissionsData(overriddenUser);
+    
+    // Forzar la recarga de todos los datos al cambiar de contexto
+    queryClient.invalidateQueries();
   };
 
   // Cerrar sesión

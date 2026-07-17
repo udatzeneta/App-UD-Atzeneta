@@ -17,7 +17,7 @@ ON public.user_contexts FOR SELECT
 TO authenticated 
 USING (true);
 
--- Permitir escritura solo al admin (role_id = 1) - simplificado para propósitos prácticos
+-- Permitir escritura (ALL) al admin (role_id = 1)
 CREATE POLICY "user_contexts_admin_policy"
 ON public.user_contexts FOR ALL
 TO authenticated
@@ -27,3 +27,9 @@ USING (
     WHERE profiles.id = auth.uid() AND profiles.role_id = 1
   )
 );
+
+-- Permitir al propio usuario insertar y borrar sus contextos (necesario durante el registro)
+CREATE POLICY "user_contexts_self_policy"
+ON public.user_contexts FOR INSERT
+TO authenticated
+WITH CHECK (user_id = auth.uid());

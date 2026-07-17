@@ -127,21 +127,6 @@ export const Register: React.FC = () => {
     try {
       const newUserId = isMockMode ? await createMockAccount() : await createRealAccount();
 
-      // CREAR CONTEXTO SECUNDARIO SI APLICA
-      if (secondaryContextToCreate) {
-        if (!isMockMode) {
-          try {
-            await dataService.addUserContext({
-              user_id: newUserId,
-              role_id: secondaryContextToCreate.role_id,
-              team_category: secondaryContextToCreate.team_category
-            });
-          } catch (e) {
-            console.warn('Error al crear contexto secundario:', e);
-          }
-        }
-      }
-
       if (roleId === 3) {
         // Buscamos su ficha más parecida (ya autenticado, para poder consultar `players` vía RPC)
         const candidate = await dataService.findBestMatchingPlayer(fullName.trim());
@@ -158,7 +143,7 @@ export const Register: React.FC = () => {
         }
       }
 
-      await finalizeSession();
+      await finalizeSession(newUserId);
     } catch (err: any) {
       console.error(err);
       setLoading(false);
@@ -234,7 +219,7 @@ export const Register: React.FC = () => {
   };
 
   // Vincula (si procede) y finaliza el alta: inicia sesión en la app y navega al dashboard
-  const finalizeSession = async () => {
+  const finalizeSession = async (overrideUserId?: string) => {
     setLoading(true);
     try {
       if (isMockMode) {
@@ -242,7 +227,23 @@ export const Register: React.FC = () => {
         window.location.href = '/dashboard';
       } else {
         showToast('success', 'Cuenta Creada', 'Registrado con éxito. Iniciando sesión...');
-        await login(email.trim(), password);
+        const loggedUser = await login(email.trim(), password);
+        
+        // CREAR CONTEXTO SECUNDARIO SI APLICA (Ahora que estamos autenticados al 100%)
+        if (secondaryContextToCreate) {
+          try {
+            await dataService.addUserContext({
+              user_id: overrideUserId || loggedUser.id,
+              role_id: secondaryContextToCreate.role_id,
+              team_category: secondaryContextToCreate.team_category
+            });
+            // Refrescar el perfil para cargar los contextos que acabamos de insertar
+            await login(email.trim(), password);
+          } catch (e) {
+            console.warn('Error al crear contexto secundario:', e);
+          }
+        }
+        
         navigate('/dashboard');
       }
     } catch (err: any) {
@@ -263,7 +264,7 @@ export const Register: React.FC = () => {
     } catch (err: any) {
       showToast('error', 'Error de Vinculación', err.message || 'No se pudo vincular tu ficha de jugador.');
     }
-    await finalizeSession();
+    await finalizeSession(pendingUserId);
   };
 
   const handleRejectMatch = () => {
@@ -274,7 +275,7 @@ export const Register: React.FC = () => {
   const handleCloseNoMatchNotice = async () => {
     setShowNoMatchNotice(false);
     setMatchCandidate(null);
-    await finalizeSession();
+    await finalizeSession(pendingUserId || undefined);
   };
 
   return (

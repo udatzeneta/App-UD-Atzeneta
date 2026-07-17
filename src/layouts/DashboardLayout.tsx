@@ -251,18 +251,18 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             </span>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Context Switcher (Multi-rol) */}
             {user?.availableContexts && user.availableContexts.length > 1 && (
-              <div className="hidden sm:flex items-center bg-brand-black border border-brand-black-border rounded-lg px-2.5 py-1 transition-colors hover:border-brand-gray-dark">
-                <Users className="w-3 h-3 text-brand-gray-muted mr-2" />
+              <div className="flex items-center bg-brand-black border border-brand-black-border rounded-lg px-2 sm:px-2.5 py-1 transition-colors hover:border-brand-gray-dark max-w-[130px] sm:max-w-none overflow-hidden">
+                <Users className="hidden sm:block w-3 h-3 text-brand-gray-muted mr-2 shrink-0" />
                 <select
                   value={`${user.role_id}-${user.team_category}`}
                   onChange={(e) => {
                     const [rId, tCat] = e.target.value.split('-');
                     switchContext(Number(rId), tCat);
                   }}
-                  className="bg-transparent text-[11px] text-brand-gray-light font-semibold focus:ring-0 border-none p-0 cursor-pointer uppercase tracking-wide"
+                  className="bg-transparent text-[10px] sm:text-[11px] text-brand-gray-light font-semibold focus:ring-0 border-none p-0 cursor-pointer uppercase tracking-wide truncate w-full"
                 >
                   {user.availableContexts.map((ctx, i) => {
                     let roleName = 'Jugador';

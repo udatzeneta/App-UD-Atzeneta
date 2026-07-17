@@ -127,6 +127,9 @@ BEGIN
     RAISE EXCEPTION 'Acceso denegado. Solo administradores pueden eliminar usuarios.';
   END IF;
 
+  -- Desvincular cualquier jugador asociado a esta cuenta
+  UPDATE public.players SET profile_id = NULL WHERE profile_id = target_id;
+
   -- Eliminar de auth.users (la FK con DELETE SET NULL o CASCADE hará su trabajo, pero borramos de profiles por si acaso)
   DELETE FROM public.profiles WHERE id = target_id;
   DELETE FROM auth.users WHERE id = target_id;

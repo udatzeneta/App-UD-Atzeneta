@@ -719,12 +719,19 @@ export const dataService = {
     }
 
     const { data, error } = await supabase.rpc('find_matching_player', { p_full_name: fullName });
+    console.log("RPC find_matching_player result:", data, error);
+    
     if (error) {
       console.warn('Error al buscar jugador coincidente vía RPC:', error);
       return null;
     }
     const bestMatch = data?.[0];
-    if (!bestMatch || bestMatch.similarity < 60) return null;
+    console.log("Best match candidate:", bestMatch);
+    
+    if (!bestMatch || bestMatch.similarity < 60) {
+      console.log("Match rejected because it is less than 60% similar or null.");
+      return null;
+    }
     return { id: bestMatch.id, full_name: bestMatch.full_name, photo_url: bestMatch.photo_url, similarity: bestMatch.similarity };
   },
 
