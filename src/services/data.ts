@@ -117,11 +117,21 @@ const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
   }
 };
 
+let currentUserContext: { role_id: number, team_category: string } | null = null;
+
 export const dataService = {
+  setCurrentUserContext(role_id: number, team_category: string) {
+    currentUserContext = { role_id, team_category };
+  },
+
   // =====================================================================
   // ENTRENAMIENTOS (TRAININGS)
   // =====================================================================
   async getTrainings(teamCategory?: string): Promise<Training[]> {
+    if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      teamCategory = currentUserContext.team_category;
+    }
+    
     if (isMockMode) {
       await delay(300);
       let list = MockDatabase.getTrainings();
@@ -229,6 +239,10 @@ export const dataService = {
   },
 
   async getMatches(teamCategory?: string): Promise<Match[]> {
+    if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      teamCategory = currentUserContext.team_category;
+    }
+    
     if (isMockMode) {
       await delay(200);
       let list = MockDatabase.getMatches();
@@ -726,20 +740,27 @@ export const dataService = {
     if (isMockMode) {
       await delay(300);
       const fines = MockDatabase.getFines();
-      const profiles = MockDatabase.getProfiles();
+      let profiles = MockDatabase.getProfiles();
       const players = MockDatabase.getPlayers();
-      return fines.map(f => {
-        const profile = profiles.find(p => p.id === f.user_id);
-        const player = players.find(p => p.profile_id === f.user_id);
-        return {
-          ...f,
-          profiles: profile ? {
-            ...profile,
-            nickname: player?.nickname || profile.full_name,
-            dorsal: player?.dorsal
-          } : undefined
-        };
-      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        profiles = profiles.filter(p => p.team_category === currentUserContext?.team_category || (!p.team_category && currentUserContext?.team_category === 'Primer Equipo'));
+      }
+
+      return fines
+        .filter(f => profiles.some(p => p.id === f.user_id))
+        .map(f => {
+          const profile = profiles.find(p => p.id === f.user_id);
+          const player = players.find(p => p.profile_id === f.user_id);
+          return {
+            ...f,
+            profiles: profile ? {
+              ...profile,
+              nickname: player?.nickname || profile.full_name,
+              dorsal: player?.dorsal
+            } : undefined
+          };
+        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
       // Query 1: Obtener multas
       const { data: finesData, error: finesError } = await supabase
@@ -750,9 +771,11 @@ export const dataService = {
       if (finesError) throw finesError;
 
       // Query 2: Obtener perfiles
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*');
+      let profilesQuery = supabase.from('profiles').select('*');
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        profilesQuery = profilesQuery.eq('team_category', currentUserContext.team_category);
+      }
+      const { data: profilesData, error: profilesError } = await profilesQuery;
 
       if (profilesError) throw profilesError;
 
@@ -778,7 +801,7 @@ export const dataService = {
             dorsal: player?.dorsal
           } : undefined
         };
-      }) || [];
+      }).filter(f => f.profiles !== undefined);
 
       return result as Fine[];
     }
@@ -851,16 +874,24 @@ export const dataService = {
     if (isMockMode) {
       await delay(300);
       const points = MockDatabase.getPoints();
-      const profiles = MockDatabase.getProfiles();
-      return points.map(p => ({
-        ...p,
-        profiles: profiles.find(pr => pr.id === p.user_id)
-      })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      let profiles = MockDatabase.getProfiles();
+
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        profiles = profiles.filter(p => p.team_category === currentUserContext?.team_category || (!p.team_category && currentUserContext?.team_category === 'Primer Equipo'));
+      }
+
+      return points
+        .filter(p => profiles.some(pr => pr.id === p.user_id))
+        .map(p => ({
+          ...p,
+          profiles: profiles.find(pr => pr.id === p.user_id)
+        })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
-      const { data, error } = await supabase
-        .from('points')
-        .select('*, profiles(*)')
-        .order('date', { ascending: false });
+      let query = supabase.from('points').select('*, profiles!inner(*)').order('date', { ascending: false });
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        query = query.eq('profiles.team_category', currentUserContext.team_category);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return data as PointLog[];
     }
@@ -1228,11 +1259,17 @@ export const dataService = {
       const end = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
       // 1. Obtener entrenamientos del mes
-      const { data: trainings, error: tError } = await supabase
+      let tQuery = supabase
         .from('trainings')
         .select('id')
         .gte('date', start)
         .lte('date', end);
+        
+      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+        tQuery = tQuery.eq('team_category', currentUserContext.team_category);
+      }
+      
+      const { data: trainings, error: tError } = await tQuery;
 
       if (tError) throw tError;
       if (!trainings || trainings.length === 0) return [];
@@ -1422,15 +1459,24 @@ export const dataService = {
   // =====================================================================
   // JUGADORES (PLAYERS)
   // =====================================================================
-  async getPlayers(): Promise<Player[]> {
+  async getPlayers(teamCategory?: string): Promise<Player[]> {
+    if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      teamCategory = currentUserContext.team_category;
+    }
+    
     if (isMockMode) {
       await delay(300);
-      return MockDatabase.getPlayers();
+      let list = MockDatabase.getPlayers();
+      if (teamCategory) {
+        list = list.filter(p => p.team_category === teamCategory || (!p.team_category && teamCategory === 'Primer Equipo'));
+      }
+      return list;
     } else {
-      const { data, error } = await supabase
-        .from('players')
-        .select('*')
-        .order('dorsal', { ascending: true });
+      let query = supabase.from('players').select('*').order('dorsal', { ascending: true });
+      if (teamCategory) {
+        query = query.eq('team_category', teamCategory);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return data as Player[];
     }

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/auth';
 import { permissionsService } from '../services/permissions';
+import { dataService } from '../services/data';
 import { Profile, Permission, RolePermission, UserPermission, UserRoleSlug } from '../types';
 
 interface AuthContextType {
@@ -54,6 +55,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadPermissionsData = async (profile: Profile) => {
     try {
       console.log('🔐 [DEBUG] Cargando permisos para perfil:', profile);
+      
+      // Registrar contexto de equipo para el filtrado global de datos
+      dataService.setCurrentUserContext(profile.role_id, profile.team_category || 'Primer Equipo');
+
       // 1. Obtener lista completa de permisos, permisos de rol e individuales
       const [perms, rolePerms, userPerms] = await Promise.all([
         permissionsService.getPermissions(),
@@ -140,6 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       await authService.logout();
+      dataService.setCurrentUserContext(0, '');
       setUser(null);
       setRoleSlug(null);
       setAllPermissions([]);
