@@ -150,7 +150,7 @@ export const PhotoCropUpload: React.FC<PhotoCropUploadProps> = ({ value, onChang
           </div>
 
           <p className="text-[11px] text-brand-gray-muted">
-            Al guardar, se quitará automáticamente el fondo de la foto y se pondrá blanco.
+            Al guardar, se quitará automáticamente el fondo de la foto dejando solo la silueta sin fondo.
           </p>
 
           <div className="flex items-center justify-end gap-2 pt-2">

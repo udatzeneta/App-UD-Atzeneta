@@ -33,6 +33,7 @@ export const Players: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPosition, setFilterPosition] = useState('Todos');
   const [filterStatus, setFilterStatus] = useState('Todos');
+  const [filterTeam, setFilterTeam] = useState('Primer Equipo');
   type StatKey = 'minutes' | 'called' | 'starter' | 'goals' | 'assists' | 'conceded' | 'yellow' | 'red';
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [detailTab, setDetailTab] = useState<'ficha' | 'stats' | 'peso' | 'fisio'>('ficha');
@@ -56,6 +57,7 @@ export const Players: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [nickname, setNickname] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
+  const [teamCategory, setTeamCategory] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
   const [dorsal, setDorsal] = useState('');
   const [position, setPosition] = useState('Defensa Central');
   const [dominantFoot, setDominantFoot] = useState<'Derecho' | 'Izquierdo' | 'Ambidiestro'>('Derecho');
@@ -256,9 +258,10 @@ export const Players: React.FC = () => {
         (p.position && p.position.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesPosition = filterPosition === 'Todos' || p.position === filterPosition;
       const matchesStatus = filterStatus === 'Todos' || p.physical_status === filterStatus;
-      return matchesSearch && matchesPosition && matchesStatus;
+      const matchesTeam = (p.team_category || 'Primer Equipo') === filterTeam;
+      return matchesSearch && matchesPosition && matchesStatus && matchesTeam;
     });
-  }, [rankings, searchTerm, filterPosition, filterStatus]);
+  }, [rankings, searchTerm, filterPosition, filterStatus, filterTeam]);
 
   // Reset del formulario de jugador
   const handleOpenCreateModal = () => {
@@ -266,6 +269,7 @@ export const Players: React.FC = () => {
     setFullName('');
     setNickname('');
     setPhotoUrl('');
+    setTeamCategory('Primer Equipo');
     setDorsal('');
     setPosition('Defensa Central');
     setDominantFoot('Derecho');
@@ -308,6 +312,7 @@ export const Players: React.FC = () => {
     setFullName(scoutingPlayer.player_name);
     setNickname('');
     setPhotoUrl(scoutingPlayer.photo_url || '');
+    setTeamCategory('Primer Equipo');
     setDorsal('');
     setPosition(positionMap[scoutingPlayer.position] || 'Defensa Central');
     setDominantFoot('Derecho');
@@ -332,6 +337,7 @@ export const Players: React.FC = () => {
     setFullName(p.full_name);
     setNickname(p.nickname || '');
     setPhotoUrl(p.photo_url || '');
+    setTeamCategory((p.team_category as 'Primer Equipo' | 'Juvenil') || 'Primer Equipo');
     setDorsal(p.dorsal?.toString() || '');
     setPosition(p.position || 'Defensa Central');
     setDominantFoot(p.dominant_foot || 'Derecho');
@@ -379,6 +385,7 @@ export const Players: React.FC = () => {
       assists: parseInt(assists) || 0,
       yellow_cards: parseInt(yellowCards) || 0,
       red_cards: parseInt(redCards) || 0,
+      team_category: teamCategory,
       ...(editingPlayer ? {} : { physical_status: 'Disponible' as const })
     };
 
@@ -784,6 +791,22 @@ export const Players: React.FC = () => {
             </>
           )}
         </div>
+      </div>
+
+      {/* Pestañas de Equipo */}
+      <div className="flex border-b border-brand-black-border mb-4">
+        <button
+          className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+          onClick={() => { setFilterTeam('Primer Equipo'); setSelectedPlayer(null); }}
+        >
+          Primer Equipo
+        </button>
+        <button
+          className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+          onClick={() => { setFilterTeam('Juvenil'); setSelectedPlayer(null); }}
+        >
+          Filial (Juvenil)
+        </button>
       </div>
 
       {/* Buscador y Filtros */}
@@ -1548,7 +1571,7 @@ export const Players: React.FC = () => {
           />
 
           {/* Nombre y Apellidos y Nombre Futbolístico */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="form-label">Nombre y Apellidos</label>
               <input
@@ -1569,6 +1592,17 @@ export const Players: React.FC = () => {
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
               />
+            </div>
+            <div>
+              <label className="form-label">Equipo actual</label>
+              <select
+                className="form-input bg-brand-black"
+                value={teamCategory}
+                onChange={(e) => setTeamCategory(e.target.value as any)}
+              >
+                <option value="Primer Equipo">Primer Equipo</option>
+                <option value="Juvenil">Filial (Juvenil)</option>
+              </select>
             </div>
           </div>
 

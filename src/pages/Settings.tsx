@@ -671,19 +671,33 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
-                slug: 'player',
-                name: 'Jugador',
+                slug: 'player&team=Primer Equipo',
+                name: 'Jugador (Primer Equipo)',
                 desc: 'Permite el registro de nuevos jugadores del primer equipo. Tendrán acceso de lectura a sus puntos, multas, entrenamientos y convocatorias.',
                 color: 'text-brand-gray-light',
                 borderColor: 'border-brand-black-border'
               },
               {
-                slug: 'trainer',
-                name: 'Entrenador (Míster)',
-                desc: 'Permite el registro de miembros del cuerpo técnico. Tendrán permisos de edición en entrenamientos, multas, convocatorias y análisis táctico.',
+                slug: 'player&team=Juvenil',
+                name: 'Jugador (Juvenil)',
+                desc: 'Permite el registro de nuevos jugadores del filial juvenil. Tendrán acceso de lectura a su entorno.',
+                color: 'text-brand-gray-light',
+                borderColor: 'border-brand-black-border'
+              },
+              {
+                slug: 'trainer&team=Primer Equipo',
+                name: 'Entrenador (Primer Equipo)',
+                desc: 'Permite el registro de miembros del cuerpo técnico del primer equipo. Podrán editar y gestionar su plantilla.',
+                color: 'text-amber-400',
+                borderColor: 'border-amber-950/30'
+              },
+              {
+                slug: 'trainer&team=Juvenil',
+                name: 'Entrenador (Juvenil)',
+                desc: 'Permite el registro de miembros del cuerpo técnico del juvenil. Podrán editar y gestionar su filial.',
                 color: 'text-amber-400',
                 borderColor: 'border-amber-950/30'
               },

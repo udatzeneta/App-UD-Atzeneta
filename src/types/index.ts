@@ -20,6 +20,7 @@ export interface Profile {
   dorsal?: number;
   birth_date?: string;
   created_at?: string;
+  team_category?: string; // 'Primer Equipo' | 'Juvenil'
   // Estos campos se populan desde la tabla players si existe
 }
 
@@ -49,6 +50,7 @@ export interface Training {
   duration: number; // en minutos
   objective: string;
   observations: string;
+  team_category?: string; // 'Primer Equipo' | 'Juvenil'
   created_at?: string;
 }
 
@@ -122,6 +124,7 @@ export interface Match {
       defensiva?: number;
     };
   } | null;
+  team_category?: string; // 'Primer Equipo' | 'Juvenil'
   created_at?: string;
 }
 
@@ -328,6 +331,7 @@ export interface Player {
   yellow_cards: number;
   red_cards: number;
   
+  team_category?: string; // 'Primer Equipo' | 'Juvenil'
   created_at?: string;
   updated_at?: string;
 }

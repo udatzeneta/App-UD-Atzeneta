@@ -17,7 +17,9 @@ export const Register: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [roleId, setRoleId] = useState<number>(3); // Por defecto: Jugador
+  const [teamCategory, setTeamCategory] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
   const [isRoleLocked, setIsRoleLocked] = useState(false);
+  const [isTeamLocked, setIsTeamLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>('');
   const [matchCandidate, setMatchCandidate] = useState<{ id: string; full_name: string; photo_url?: string } | null>(null);
@@ -36,6 +38,11 @@ export const Register: React.FC = () => {
     if (roleParam && rolesMap[roleParam]) {
       setRoleId(rolesMap[roleParam].id);
       setIsRoleLocked(true);
+    }
+    const teamParam = searchParams.get('team');
+    if (teamParam === 'Primer Equipo' || teamParam === 'Juvenil') {
+      setTeamCategory(teamParam);
+      setIsTeamLocked(true);
     }
   }, [searchParams]);
 
@@ -135,6 +142,7 @@ export const Register: React.FC = () => {
       email: email.trim().toLowerCase(),
       full_name: fullName.trim(),
       role_id: roleId,
+      team_category: teamCategory,
       avatar_url: avatarDataUrl || `https://images.unsplash.com/photo-${roleId === 2 ? '1507003211169-0a1dd7228f2d' : roleId === 4 ? '1472099645785-5658abf4ff4e' : '1500648767791-00dcc994a43e'}?auto=format&fit=crop&w=100&q=80`,
       created_at: new Date().toISOString()
     };
@@ -152,7 +160,8 @@ export const Register: React.FC = () => {
       options: {
         data: {
           full_name: fullName.trim(),
-          role_id: roleId
+          role_id: roleId,
+          team_category: teamCategory
         }
       }
     });
@@ -168,6 +177,7 @@ export const Register: React.FC = () => {
         email: email.trim().toLowerCase(),
         full_name: fullName.trim(),
         role_id: roleId,
+        team_category: teamCategory,
         avatar_url: avatarDataUrl || null
       });
     } catch (dbErr) {
@@ -318,6 +328,29 @@ export const Register: React.FC = () => {
             {isRoleLocked && (
               <p className="text-[10px] text-brand-red-500 font-semibold mt-1">
                 * Tu rol ha sido pre-establecido de forma segura mediante el enlace de invitación.
+              </p>
+            )}
+          </div>
+
+          {/* Campo Equipo */}
+          <div>
+            <label className="form-label" htmlFor="teamCategory">Equipo</label>
+            <div className="relative">
+              <ShieldCheck className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
+              <select
+                id="teamCategory"
+                className="form-input pl-10 bg-brand-black cursor-pointer text-brand-gray-light disabled:opacity-50 disabled:cursor-not-allowed"
+                value={teamCategory}
+                onChange={(e) => setTeamCategory(e.target.value as 'Primer Equipo' | 'Juvenil')}
+                disabled={loading || isTeamLocked}
+              >
+                <option value="Primer Equipo" className="bg-brand-black-card">Primer Equipo</option>
+                <option value="Juvenil" className="bg-brand-black-card">Juvenil</option>
+              </select>
+            </div>
+            {isTeamLocked && (
+              <p className="text-[10px] text-brand-red-500 font-semibold mt-1">
+                * El equipo ha sido pre-establecido de forma segura mediante el enlace de invitación.
               </p>
             )}
           </div>

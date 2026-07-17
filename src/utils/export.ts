@@ -69,24 +69,32 @@ export const exportToPDF = async (
   // Añadir escudo del club en la esquina superior derecha con tonos rojos y negros
   try {
     const logoResponse = await fetch(CLUB_LOGO_URL);
-    const logoBlob = await logoResponse.blob();
-    const logoReader = new FileReader();
+    if (logoResponse.ok) {
+      const logoBlob = await logoResponse.blob();
+      const logoReader = new FileReader();
 
-    await new Promise<void>((resolve, reject) => {
-      logoReader.onload = () => {
-        const logoData = logoReader.result as string;
-        // Escudo de 20x20 mm en la esquina superior derecha
-        doc.addImage(logoData, 'PNG', doc.internal.pageSize.width - 26, 10, 20, 20, undefined, 'FAST');
+      await new Promise<void>((resolve, reject) => {
+        logoReader.onload = () => {
+          try {
+            const logoData = logoReader.result as string;
+            if (logoData.startsWith('data:image/')) {
+              // Escudo de 20x20 mm en la esquina superior derecha
+              doc.addImage(logoData, 'PNG', doc.internal.pageSize.width - 26, 10, 20, 20, undefined, 'FAST');
 
-        // Añadir filtro de color rojo/negro sobre el escudo (rectángulo semitransparente)
-        doc.setFillColor(BRAND_RED[0], BRAND_RED[1], BRAND_RED[2]);
-        doc.setGState({ gs: { STRA: 0.3 } }); // Transparencia al 30%
-        doc.rect(doc.internal.pageSize.width - 26, 10, 20, 20, 'F');
-        resolve();
-      };
-      logoReader.onerror = reject;
-      logoReader.readAsDataURL(logoBlob);
-    });
+              // Añadir filtro de color rojo/negro sobre el escudo (rectángulo semitransparente)
+              doc.setFillColor(BRAND_RED[0], BRAND_RED[1], BRAND_RED[2]);
+              doc.setGState({ gs: { STRA: 0.3 } }); // Transparencia al 30%
+              doc.rect(doc.internal.pageSize.width - 26, 10, 20, 20, 'F');
+            }
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        logoReader.onerror = reject;
+        logoReader.readAsDataURL(logoBlob);
+      });
+    }
   } catch (error) {
     // Si falla la carga del logo, continuar sin él
     console.warn('No se pudo cargar el logo del club para el PDF:', error);

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
@@ -15,6 +16,7 @@ import {
 export const Trainings: React.FC = () => {
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   const { showToast } = useToast();
 
   const canCreate = hasPermission('trainings', 'crear');
@@ -29,6 +31,10 @@ export const Trainings: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTraining, setEditingTraining] = useState<Training | null>(null);
 
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+
   // Campos del formulario
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -38,9 +44,11 @@ export const Trainings: React.FC = () => {
   const [observations, setObservations] = useState('');
 
   // Query
+  const teamFilter = user?.role_id === 2 || user?.role_id === 3 ? user?.team_category : undefined;
+  
   const { data: trainings = [], isLoading } = useQuery({
-    queryKey: ['trainings'],
-    queryFn: () => dataService.getTrainings()
+    queryKey: ['trainings', teamFilter],
+    queryFn: () => dataService.getTrainings(teamFilter)
   });
 
   const { data: attendanceList = [] } = useQuery({
@@ -141,7 +149,8 @@ export const Trainings: React.FC = () => {
       location: location.trim(),
       duration: Number(duration),
       objective: objective.trim(),
-      observations: observations.trim()
+      observations: observations.trim(),
+      team_category: user?.team_category || 'Primer Equipo'
     };
 
     if (editingTraining) {
@@ -179,8 +188,22 @@ export const Trainings: React.FC = () => {
 
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
   const exportHeaders = ['Fecha', 'Hora', 'Lugar', 'Duración (Mins)', 'Objetivo', 'Observaciones'];
-  const buildExportRows = (): ExportCell[][] =>
-    filteredTrainings.map(t => [
+  
+  const handleExport = async (type: 'pdf' | 'csv') => {
+    let dataToExport = filteredTrainings;
+    if (exportStartDate) {
+      dataToExport = dataToExport.filter(t => t.date >= exportStartDate);
+    }
+    if (exportEndDate) {
+      dataToExport = dataToExport.filter(t => t.date <= exportEndDate);
+    }
+
+    if (dataToExport.length === 0) {
+      showToast('info', 'Exportar', 'No hay entrenamientos en ese rango de fechas.');
+      return;
+    }
+
+    const rows: ExportCell[][] = dataToExport.map(t => [
       t.date,
       t.time,
       t.location,
@@ -189,22 +212,20 @@ export const Trainings: React.FC = () => {
       t.observations,
     ]);
 
-  const handleExportCSV = () => {
-    if (filteredTrainings.length === 0) {
-      showToast('info', 'Exportar', 'No hay entrenamientos para exportar.');
-      return;
+    try {
+      if (type === 'pdf') {
+        await exportToPDF('Entrenamientos UD Atzeneta', `entrenamientos_atzeneta_${Date.now()}`, exportHeaders, rows);
+        showToast('success', 'PDF Descargado', 'Exportado el histórico de entrenamientos en PDF.');
+      } else {
+        exportToCSV(`entrenamientos_atzeneta_${Date.now()}`, exportHeaders, rows);
+        showToast('success', 'CSV Descargado', 'Exportado el histórico de entrenamientos.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast('error', 'Error al exportar', err.message || 'Ha ocurrido un error al generar el archivo.');
+    } finally {
+      setIsExportModalOpen(false);
     }
-    exportToCSV(`entrenamientos_atzeneta_${Date.now()}`, exportHeaders, buildExportRows());
-    showToast('success', 'CSV Descargado', 'Exportado el histórico de entrenamientos.');
-  };
-
-  const handleExportPDF = async () => {
-    if (filteredTrainings.length === 0) {
-      showToast('info', 'Exportar', 'No hay entrenamientos para exportar.');
-      return;
-    }
-    await exportToPDF('Entrenamientos UD Atzeneta', `entrenamientos_atzeneta_${Date.now()}`, exportHeaders, buildExportRows());
-    showToast('success', 'PDF Descargado', 'Exportado el histórico de entrenamientos en PDF.');
   };
 
   const months = [
@@ -227,14 +248,9 @@ export const Trainings: React.FC = () => {
 
         <div className="flex items-center gap-2 shrink-0">
           {canExport && (
-            <>
-              <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs">
-                <Download className="w-3.5 h-3.5" /> CSV
-              </button>
-              <button onClick={handleExportPDF} className="btn-secondary py-2 text-xs">
-                <FileText className="w-3.5 h-3.5" /> PDF
-              </button>
-            </>
+            <button onClick={() => { setExportStartDate(''); setExportEndDate(''); setIsExportModalOpen(true); }} className="btn-secondary py-2 text-xs">
+              <Download className="w-3.5 h-3.5" /> Exportar
+            </button>
           )}
           {canCreate && (
             <button onClick={handleOpenCreateModal} className="btn-primary py-2 text-xs font-semibold">
@@ -331,7 +347,11 @@ export const Trainings: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
                 {filteredTrainings.map((t) => (
-                  <tr key={t.id} className="hover:bg-brand-black-hover/20 transition-colors">
+                  <tr 
+                    key={t.id} 
+                    className={`hover:bg-brand-black-hover/20 transition-colors ${canEdit ? 'cursor-pointer' : ''}`}
+                    onClick={() => canEdit && handleOpenEditModal(t)}
+                  >
                     <td className="table-td">
                       <div className="flex flex-col">
                         <span className="font-semibold text-brand-gray-light">Sesión {getTrainingNumber(t.id)}</span>
@@ -355,6 +375,7 @@ export const Trainings: React.FC = () => {
                         href={t.location.startsWith('http') ? t.location : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.location)}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="inline-flex items-center gap-1.5 hover:text-brand-red-600 hover:underline transition-colors"
                         title="Ver ubicación en Google Maps"
                       >
@@ -379,7 +400,7 @@ export const Trainings: React.FC = () => {
                         <div className="flex gap-2 justify-end">
                           {canEdit && (
                             <button 
-                              onClick={() => handleOpenEditModal(t)}
+                              onClick={(e) => { e.stopPropagation(); handleOpenEditModal(t); }}
                               className="text-brand-gray-muted hover:text-brand-gray-light p-1.5 rounded bg-brand-black-hover hover:bg-brand-black-border border border-brand-black-border transition-all"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
@@ -387,7 +408,7 @@ export const Trainings: React.FC = () => {
                           )}
                           {canDelete && (
                             <button 
-                              onClick={() => handleDelete(t.id)}
+                              onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }}
                               className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded bg-brand-black-hover hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/20 transition-all"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -405,7 +426,11 @@ export const Trainings: React.FC = () => {
           {/* Móvil */}
           <div className="md:hidden space-y-3.5">
             {filteredTrainings.map((t) => (
-              <div key={t.id} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3.5">
+              <div 
+                key={t.id} 
+                className={`bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3.5 ${canEdit ? 'cursor-pointer' : ''}`}
+                onClick={() => canEdit && handleOpenEditModal(t)}
+              >
                 <div className="flex justify-between items-start">
                   <div>
                     <h4 className="text-sm font-semibold text-brand-gray-light">Sesión {getTrainingNumber(t.id)}: {t.objective}</h4>
@@ -420,6 +445,7 @@ export const Trainings: React.FC = () => {
                     href={t.location.startsWith('http') ? t.location : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.location)}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     className="flex items-center gap-1.5 hover:text-brand-red-600 hover:underline transition-colors w-fit"
                     title="Ver ubicación en Google Maps"
                   >
@@ -448,7 +474,7 @@ export const Trainings: React.FC = () => {
                   <div className="flex justify-end gap-2 border-t border-brand-black-border pt-3">
                     {canEdit && (
                       <button 
-                        onClick={() => handleOpenEditModal(t)}
+                        onClick={(e) => { e.stopPropagation(); handleOpenEditModal(t); }}
                         className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1"
                       >
                         <Edit2 className="w-3 h-3" /> Editar
@@ -456,7 +482,7 @@ export const Trainings: React.FC = () => {
                     )}
                     {canDelete && (
                       <button 
-                        onClick={() => handleDelete(t.id)}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }}
                         className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-red-600 flex items-center gap-1"
                       >
                         <Trash2 className="w-3 h-3" /> Borrar
@@ -556,6 +582,54 @@ export const Trainings: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL EXPORTAR
+          ===================================================================== */}
+      <Modal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title="Exportar Entrenamientos"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-brand-gray-muted">
+            Selecciona un rango de fechas para exportar. Si dejas los campos vacíos, se exportarán todos los entrenamientos de la lista actual.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="form-label">Fecha Desde</label>
+              <input
+                type="date"
+                className="form-input cursor-pointer"
+                value={exportStartDate}
+                onChange={(e) => setExportStartDate(e.target.value)}
+                onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+              />
+            </div>
+            <div>
+              <label className="form-label">Fecha Hasta</label>
+              <input
+                type="date"
+                className="form-input cursor-pointer"
+                value={exportEndDate}
+                onChange={(e) => setExportEndDate(e.target.value)}
+                onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-4 justify-end">
+            <button onClick={() => setIsExportModalOpen(false)} className="btn-secondary py-2 text-xs">
+              Cancelar
+            </button>
+            <button onClick={() => handleExport('csv')} className="btn-secondary py-2 text-xs">
+               <Download className="w-3.5 h-3.5" /> Exportar CSV
+            </button>
+            <button onClick={() => handleExport('pdf')} className="btn-primary py-2 text-xs font-semibold flex items-center gap-1.5">
+               <FileText className="w-3.5 h-3.5" /> Exportar PDF
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

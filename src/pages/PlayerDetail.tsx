@@ -15,6 +15,41 @@ import {
 import { Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, TrainingAttendance, Match, Training } from '../types';
 import { exportToCSV, exportToPDF } from '../utils/export';
 
+const TransparentImage: React.FC<{ src: string, alt?: string, className?: string }> = ({ src, alt, className }) => {
+  const [dataUrl, setDataUrl] = useState<string>(src);
+  
+  React.useEffect(() => {
+    if (!src) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      // Convert white pixels to transparent
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        if (r > 240 && g > 240 && b > 240) {
+          data[i + 3] = 0; // alpha = 0
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      setDataUrl(canvas.toDataURL());
+    };
+    img.src = src;
+  }, [src]);
+
+  return <img src={dataUrl} alt={alt} className={className} />;
+};
+
 type DetailTab = 'ficha' | 'stats' | 'lesiones' | 'peso' | 'fisio';
 
 export const PlayerDetail: React.FC = () => {
@@ -704,11 +739,13 @@ export const PlayerDetail: React.FC = () => {
       <div className="dashboard-card p-6 border border-brand-black-border">
         <div className="flex flex-col sm:flex-row gap-5">
           {/* Foto */}
-          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl border-2 border-brand-red-600/30 bg-brand-black overflow-hidden flex items-center justify-center shrink-0 mx-auto sm:mx-0">
+          <div className="w-32 h-32 sm:w-40 sm:h-40 flex items-end justify-center shrink-0 mx-auto sm:mx-0 relative">
             {player.photo_url ? (
-              <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+              <TransparentImage src={player.photo_url} alt={player.full_name} className="w-full h-full object-contain object-bottom drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)]" />
             ) : (
-              <Users className="w-12 h-12 text-brand-gray-dark" />
+              <div className="w-full h-full rounded-2xl border-2 border-brand-red-600/30 bg-brand-black flex items-center justify-center overflow-hidden">
+                <Users className="w-12 h-12 text-brand-gray-dark" />
+              </div>
             )}
           </div>
 
@@ -716,9 +753,20 @@ export const PlayerDetail: React.FC = () => {
           <div className="flex-1 text-center sm:text-left">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
               {player.dorsal && (
-                <span className="text-sm font-black text-brand-red-600 bg-brand-red-600/10 px-2.5 py-1 rounded-lg leading-none w-fit mx-auto sm:mx-0">
-                  #{player.dorsal}
-                </span>
+                <div className="relative flex items-center justify-center w-12 h-12 shrink-0 mx-auto sm:mx-0 drop-shadow-lg">
+                  <svg viewBox="0 0 640 512" fill="#C1121F" className="w-full h-full text-brand-red-600 drop-shadow-sm">
+                    <path d="M211.8 0c7.8 0 14.3 5.7 16.7 13.2C240.8 51.9 277.1 80 320 80s79.2-28.1 91.5-66.8C413.9 5.7 420.4 0 428.2 0h12.6c22.5 0 44.2 7.9 61.5 22.3L628.5 127.4c15.8 13.2 15.6 37.3-.4 50.4l-38.6 31c-17.9 14.3-39.6 22.2-61.8 22.2H480V448c0 35.3-28.7 64-64 64H224c-35.3 0-64-28.7-64-64V231H112.3c-22.2 0-43.9-7.9-61.8-22.2l-38.6-31c-16-12.9-16.2-37-.4-50.4L137.7 22.3C155 7.9 176.7 0 199.2 0h12.6z"/>
+                  </svg>
+                  <span 
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[25%] font-black text-white tracking-tighter" 
+                    style={{ 
+                      fontSize: player.dorsal.toString().length > 1 ? '16px' : '20px',
+                      textShadow: '1.5px 1.5px 0px #7f1d1d, -0.5px -0.5px 0px rgba(255,255,255,0.3)' 
+                    }}
+                  >
+                    {player.dorsal}
+                  </span>
+                </div>
               )}
               <div className="flex items-center gap-2">
                 <h2 className="text-xl sm:text-2xl font-extrabold text-white leading-tight">

@@ -121,15 +121,20 @@ export const dataService = {
   // =====================================================================
   // ENTRENAMIENTOS (TRAININGS)
   // =====================================================================
-  async getTrainings(): Promise<Training[]> {
+  async getTrainings(teamCategory?: string): Promise<Training[]> {
     if (isMockMode) {
       await delay(300);
-      return MockDatabase.getTrainings().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      let list = MockDatabase.getTrainings();
+      if (teamCategory) {
+        list = list.filter(t => t.team_category === teamCategory || (!t.team_category && teamCategory === 'Primer Equipo'));
+      }
+      return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
-      const { data, error } = await supabase
-        .from('trainings')
-        .select('*')
-        .order('date', { ascending: false });
+      let query = supabase.from('trainings').select('*').order('date', { ascending: false });
+      if (teamCategory) {
+        query = query.eq('team_category', teamCategory);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return data as Training[];
     }
@@ -223,15 +228,20 @@ export const dataService = {
     }
   },
 
-  async getMatches(): Promise<Match[]> {
+  async getMatches(teamCategory?: string): Promise<Match[]> {
     if (isMockMode) {
       await delay(200);
-      return MockDatabase.getMatches().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      let list = MockDatabase.getMatches();
+      if (teamCategory) {
+        list = list.filter(m => m.team_category === teamCategory || (!m.team_category && teamCategory === 'Primer Equipo'));
+      }
+      return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
-      const { data, error } = await supabase
-        .from('matches')
-        .select('*')
-        .order('date', { ascending: false });
+      let query = supabase.from('matches').select('*').order('date', { ascending: false });
+      if (teamCategory) {
+        query = query.eq('team_category', teamCategory);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return data as Match[];
     }

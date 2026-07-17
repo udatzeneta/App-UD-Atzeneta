@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
@@ -40,6 +41,7 @@ const POSITIONS = [
 export const Matches: React.FC = () => {
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,9 +89,11 @@ export const Matches: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Consultar partidos
+  const teamFilter = user?.role_id === 2 || user?.role_id === 3 ? user?.team_category : undefined;
+  
   const { data: matches = [], isLoading } = useQuery({
-    queryKey: ['matches'],
-    queryFn: () => dataService.getMatches()
+    queryKey: ['matches', teamFilter],
+    queryFn: () => dataService.getMatches(teamFilter)
   });
 
   // Consultar equipos de la base de datos
@@ -539,7 +543,8 @@ export const Matches: React.FC = () => {
       matchday: matchday.trim() || null,
       location: location.trim() || (isLocal ? 'Campo Municipal El Porrejat' : 'Visitante'),
       objective: objective.trim(),
-      observations: observations.trim()
+      observations: observations.trim(),
+      team_category: user?.team_category || 'Primer Equipo'
     };
 
     if (editingMatch) {
