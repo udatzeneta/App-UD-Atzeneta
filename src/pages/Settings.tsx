@@ -312,7 +312,7 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {/* Tabs superiores */}
-      <div className="flex border-b border-brand-black-border gap-6">
+      <div className="flex border-b border-brand-black-border gap-6 overflow-x-auto whitespace-nowrap pb-1 no-scrollbar">
         <button
           onClick={() => setActiveTab('general')}
           className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all ${
@@ -442,7 +442,7 @@ export const SettingsPage: React.FC = () => {
 
           <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse min-w-[800px]">
                 <thead>
                   <tr className="bg-brand-black-hover/40">
                     <th className="table-th text-left">Usuario</th>
@@ -586,7 +586,7 @@ export const SettingsPage: React.FC = () => {
 
           <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse min-w-[800px]">
                 <thead>
                   <tr className="bg-brand-black-hover/40">
                     <th className="table-th">Sección / Página</th>
@@ -656,7 +656,7 @@ export const SettingsPage: React.FC = () => {
           {selectedUserId ? (
             <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full border-collapse min-w-[800px]">
                   <thead>
                     <tr className="bg-brand-black-hover/40">
                       <th className="table-th">Sección / Página</th>
