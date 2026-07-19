@@ -114,6 +114,24 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
   const [drawingLine, setDrawingLine] = useState<BoardLine | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, currentX: number, currentY: number } | null>(null);
   
+  const [history, setHistory] = useState<{ elements: BoardElement[], lines: BoardLine[] }[]>([]);
+  const saveState = () => {
+     setHistory(prev => {
+        const newHistory = [...prev, { elements: JSON.parse(JSON.stringify(elements)), lines: JSON.parse(JSON.stringify(lines)) }];
+        if (newHistory.length > 50) newHistory.shift();
+        return newHistory;
+     });
+  };
+
+  const handleUndo = () => {
+     if (history.length === 0) return;
+     const prev = history[history.length - 1];
+     setElements(prev.elements);
+     setLines(prev.lines);
+     setHistory(history.slice(0, -1));
+  };
+
+  
   const boardRef = useRef<HTMLDivElement>(null);
   const [boardSize, setBoardSize] = useState({ width: 500, height: 500 });
   // Espacio disponible del contenedor del campo (para calcular un ajuste "contain" exacto)
@@ -198,6 +216,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
 
   // Handle pointer down on the board (canvas)
   const handleBoardPointerDown = (e: React.PointerEvent) => {
+    saveState();
     if (readOnly) return;
     if (!boardRef.current) return;
     
@@ -209,6 +228,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     // llega hasta aquí en modo "Mover" es porque el clic fue en zona vacía:
     // deseleccionamos e iniciamos la caja de selección (marquee).
     if (activeTool === 'select') {
+      (e.target as Element).setPointerCapture(e.pointerId);
       setSelectedElementIds([]);
       setSelectedLineId(null);
       setSelectionBox({ startX: x, startY: y, currentX: x, currentY: y });
@@ -235,6 +255,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         setActiveTool('select'); // Switch to select to edit easily
       }
     } else if (['arrow', 'dashed-arrow', 'zone-line'].includes(activeTool)) {
+      (e.target as Element).setPointerCapture(e.pointerId);
       setDrawingLine({
         id: `line-${Date.now()}`,
         type: activeTool,
@@ -263,7 +284,11 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
       } else if (activeResizeId && resizeStartRef.current) {
         const { id, corner, initialScale, initialDist, elX, elY, initialW, initialH, startX, startY, elRotation } = resizeStartRef.current;
         
-        if (corner && initialW !== undefined && initialH !== undefined && startX !== undefined && startY !== undefined) {
+        if (corner === 'line-start') {
+           setLines(prev => prev.map(l => l.id === id ? { ...l, startX: Math.max(0, Math.min(100, x)), startY: Math.max(0, Math.min(100, y)) } : l));
+        } else if (corner === 'line-end') {
+           setLines(prev => prev.map(l => l.id === id ? { ...l, endX: Math.max(0, Math.min(100, x)), endY: Math.max(0, Math.min(100, y)) } : l));
+        } else if (corner && initialW !== undefined && initialH !== undefined && startX !== undefined && startY !== undefined) {
           const dx = e.clientX - startX;
           const dy = e.clientY - startY;
 
@@ -386,18 +411,22 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     if (drawingLine || activeDragId || activeResizeId || selectionBox) {
       document.addEventListener('pointermove', handlePointerMove);
       document.addEventListener('pointerup', handlePointerUp);
+      document.addEventListener('pointercancel', handlePointerUp);
     }
 
     return () => {
       document.removeEventListener('pointermove', handlePointerMove);
       document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [drawingLine, selectionBox, activeDragId, activeResizeId, activeTool, elements, selectedElementIds]);
 
   const handleElementPointerDown = (e: React.PointerEvent, id: string) => {
+    saveState();
     if (activeTool !== 'select') return;
     e.stopPropagation();
     if (activeTool === 'select') {
+      try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
       hasDraggedRef.current = false;
       setActiveDragId(id);
       
@@ -426,6 +455,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     if (activeTool !== 'select') return;
     e.stopPropagation();
     if (activeTool === 'select') {
+      try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
       setActiveResizeId(id);
       setSelectedElementIds([id]);
       
@@ -454,10 +484,23 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     }
   };
 
+  const handleLineResizePointerDown = (e: React.PointerEvent, id: string, point: string) => {
+    saveState();
+    if (activeTool !== 'select') return;
+    e.stopPropagation();
+    try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
+    setActiveResizeId(id);
+    setSelectedLineId(id);
+    setSelectedElementIds([]);
+    resizeStartRef.current = { id, corner: point, initialScale: 1, initialDist: 0, elX: 0, elY: 0 };
+  };
+
   const handleLinePointerDown = (e: React.PointerEvent, id: string) => {
+    saveState();
     if (activeTool !== 'select') return;
     e.stopPropagation();
     if (activeTool === 'select') {
+      try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
       setSelectedLineId(id);
       setSelectedElementIds([]);
       hasDraggedRef.current = false;
@@ -496,10 +539,12 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
   };
 
   const updateElementText = (ids: string[], text: string) => {
+    saveState();
     setElements(elements.map(e => ids.includes(e.id) ? { ...e, text } : e));
   };
 
   const duplicateElement = (ids: string[]) => {
+    saveState();
     const elsToCopy = elements.filter(e => ids.includes(e.id));
     if (elsToCopy.length > 0) {
       const now = Date.now();
@@ -515,6 +560,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
   };
 
   const duplicateElementSequence = (ids: string[]) => {
+    saveState();
     const elsToCopy = elements.filter(e => ids.includes(e.id));
     if (elsToCopy.length > 0) {
       const newElements: any[] = [];
@@ -534,14 +580,17 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
   };
 
   const toggleElementFill = (ids: string[]) => {
+    saveState();
     setElements(elements.map(e => ids.includes(e.id) ? { ...e, filled: !e.filled } : e));
   };
 
   const toggleElementDashed = (ids: string[]) => {
+    saveState();
     setElements(elements.map(e => ids.includes(e.id) ? { ...e, dashed: !e.dashed } : e));
   };
 
   const updateElementThickness = (ids: string[], thickness: number) => {
+    saveState();
     setElements(elements.map(e => ids.includes(e.id) ? { ...e, thickness } : e));
   };
 
@@ -1018,7 +1067,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     if (drawingLine) allLines.push(drawingLine);
 
     return (
-      <svg viewBox={`0 0 ${boardSize.width} ${boardSize.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1, overflow: 'visible' }}>
+      <svg viewBox={`0 0 ${boardSize.width} ${boardSize.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 20, overflow: 'visible' }}>
         <defs>
           <pattern id="net-pattern" width="4" height="4" patternUnits="userSpaceOnUse">
             <path d="M 4 0 L 4 4 L 0 4" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.5" />
@@ -1105,6 +1154,12 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 filter={filter}
                 fill="none"
               />
+              {isSelected && activeTool === 'select' && (
+                <>
+                  <circle cx={px1} cy={py1} r="6" fill="white" stroke="#dc2626" strokeWidth="2" cursor="move" onPointerDown={(e) => handleLineResizePointerDown(e, line.id, 'line-start')} />
+                  <circle cx={px2} cy={py2} r="6" fill="white" stroke="#dc2626" strokeWidth="2" cursor="move" onPointerDown={(e) => handleLineResizePointerDown(e, line.id, 'line-end')} />
+                </>
+              )}
             </g>
           );
         })}
@@ -1133,6 +1188,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         onClick={() => {
           setActiveColor(color);
           if (selectedElementIds.length > 0) {
+            saveState();
             setElements(prev => prev.map(e => selectedElementIds.includes(e.id) ? { ...e, color } : e));
           }
         }}
@@ -1234,8 +1290,12 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
       {!hideToolbar && (
         <div className="w-20 lg:w-48 shrink-0 bg-brand-black-card border border-brand-black-border rounded-xl p-2 flex flex-col gap-2 overflow-y-auto custom-scrollbar">
         
-        <div className="flex justify-center">
+        <div className="flex justify-center gap-1">
           <ToolButton tool="select" icon={<MousePointer2 className="w-5 h-5" />} label="Mover" bg={true} />
+          <button onClick={handleUndo} disabled={history.length === 0} className={`p-1.5 rounded flex flex-col items-center justify-center gap-1 transition-colors ${history.length === 0 ? 'opacity-50 cursor-not-allowed bg-brand-black text-brand-gray-dark' : 'bg-brand-black hover:bg-brand-black-hover text-brand-gray-light'}`} title="Deshacer">
+             <Undo2 className="w-5 h-5" />
+             <span className="text-[9px] uppercase font-bold tracking-wider hidden lg:block">Volver</span>
+          </button>
         </div>
 
         <hr className="border-brand-black-border" />
@@ -1460,8 +1520,8 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 containerType: 'inline-size'
              }}>
                 {renderFieldBackground()}
-                {renderLines()}
                 {elements.map(renderElement)}
+                {renderLines()}
              </div>
           ) : isCropped ? (
              <div style={{
@@ -1473,8 +1533,8 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 containerType: 'inline-size'
              }}>
                 {renderFieldBackground()}
-                {renderLines()}
                 {elements.map(renderElement)}
+                {renderLines()}
              </div>
           ) : (
              <div style={{ 
@@ -1484,8 +1544,8 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 containerType: 'inline-size' 
              }}>
                 {renderFieldBackground()}
-                {renderLines()}
                 {elements.map(renderElement)}
+                {renderLines()}
              </div>
           )}
 

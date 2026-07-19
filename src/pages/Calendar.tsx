@@ -54,14 +54,20 @@ export const Calendar: React.FC = () => {
   const { showToast } = useToast();
 
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [viewMode, setViewMode] = useState<'1_week' | '2_weeks' | '1_month' | '2_months'>('1_month');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'select' | 'training' | 'match' | 'social'>('select');
 
-  // Estados para exportación por lotes PDF
   const [isPDFModalOpen, setIsPDFModalOpen] = useState(false);
-  const [pdfSelectedMonths, setPdfSelectedMonths] = useState<number[]>([]);
-  const [pdfSelectedYear, setPdfSelectedYear] = useState<number>(new Date().getFullYear());
+  const [eventFilter, setEventFilter] = useState<'all' | 'trainings' | 'matches' | 'social'>('all');
+
+  const formatDateToYMD = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  
+  const [pdfStartDate, setPdfStartDate] = useState<string>(formatDateToYMD(new Date()));
+  const [pdfEndDate, setPdfEndDate] = useState<string>(formatDateToYMD(new Date(new Date().setDate(new Date().getDate() + 30))));
 
   // Permisos
   const canCreateTraining = hasPermission('trainings', 'crear');
@@ -166,26 +172,158 @@ export const Calendar: React.FC = () => {
   ];
   const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
-  const firstDayIndex = (new Date(year, month, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  const calendarDays: (number | null)[] = [];
-  for (let i = 0; i < firstDayIndex; i++) {
-    calendarDays.push(null);
-  }
-  for (let i = 1; i <= daysInMonth; i++) {
-    calendarDays.push(i);
-  }
-
-  const prevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
-  };
-  const nextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
+  const getDaysArray = (start: Date, daysCount: number) => {
+    return Array.from({ length: daysCount }).map((_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
   };
 
-  const getEventsForMonthAndDate = (targetYear: number, targetMonth: number, day: number): CalendarEvent[] => {
-    const monthStr = String(targetMonth + 1).padStart(2, '0');
+  type CalendarGridData = {
+    title: string;
+    days: { date: Date; isCurrentRange: boolean }[];
+    year: number;
+    month: number;
+  };
+
+  const getMonthGrid = (date: Date): CalendarGridData => {
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+    const dayOfWeek = (firstDay.getDay() + 6) % 7;
+    const startDay = new Date(firstDay);
+    startDay.setDate(firstDay.getDate() - dayOfWeek);
+    
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    const endDayOfWeek = (lastDay.getDay() + 6) % 7;
+    const daysToAddAtEnd = 6 - endDayOfWeek;
+    const totalDays = dayOfWeek + lastDay.getDate() + daysToAddAtEnd;
+    
+    return {
+      title: `${monthNames[date.getMonth()]} ${date.getFullYear()}`,
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      days: getDaysArray(startDay, totalDays).map(d => ({
+        date: d,
+        isCurrentRange: d.getMonth() === date.getMonth()
+      }))
+    };
+  };
+
+  let calendarGrids: CalendarGridData[] = [];
+  let displayTitle = '';
+
+  if (viewMode === '1_month') {
+    const grid = getMonthGrid(currentDate);
+    calendarGrids = [grid];
+    displayTitle = grid.title;
+  } else if (viewMode === '2_months') {
+    const grid1 = getMonthGrid(currentDate);
+    const nextDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+    const grid2 = getMonthGrid(nextDate);
+    calendarGrids = [grid1, grid2];
+    displayTitle = `${monthNames[currentDate.getMonth()]} - ${monthNames[nextDate.getMonth()]} ${currentDate.getFullYear()}`;
+  } else if (viewMode === '1_week') {
+    const dayOfWeek = (currentDate.getDay() + 6) % 7;
+    const startOfWeek = new Date(currentDate);
+    startOfWeek.setDate(currentDate.getDate() - dayOfWeek);
+    const days = getDaysArray(startOfWeek, 7).map(date => ({ date, isCurrentRange: true }));
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
+       displayTitle = `${startOfWeek.getDate()} - ${endOfWeek.getDate()} ${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getFullYear()}`;
+    } else {
+       displayTitle = `${startOfWeek.getDate()} ${monthNames[startOfWeek.getMonth()].substring(0,3)} - ${endOfWeek.getDate()} ${monthNames[endOfWeek.getMonth()].substring(0,3)} ${endOfWeek.getFullYear()}`;
+    }
+    calendarGrids = [{ title: displayTitle, days, year: currentDate.getFullYear(), month: currentDate.getMonth() }];
+  } else if (viewMode === '2_weeks') {
+    const dayOfWeek = (currentDate.getDay() + 6) % 7;
+    const startOfWeek = new Date(currentDate);
+    startOfWeek.setDate(currentDate.getDate() - dayOfWeek);
+    const days = getDaysArray(startOfWeek, 14).map(date => ({ date, isCurrentRange: true }));
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 13);
+    if (startOfWeek.getMonth() === endOfWeek.getMonth()) {
+       displayTitle = `${startOfWeek.getDate()} - ${endOfWeek.getDate()} ${monthNames[startOfWeek.getMonth()]} ${startOfWeek.getFullYear()}`;
+    } else {
+       displayTitle = `${startOfWeek.getDate()} ${monthNames[startOfWeek.getMonth()].substring(0,3)} - ${endOfWeek.getDate()} ${monthNames[endOfWeek.getMonth()].substring(0,3)} ${endOfWeek.getFullYear()}`;
+    }
+    calendarGrids = [{ title: displayTitle, days, year: currentDate.getFullYear(), month: currentDate.getMonth() }];
+  }
+
+  const getCustomRangeGrids = (startStr: string, endStr: string): CalendarGridData[] => {
+    const startParts = startStr.split('-');
+    const endParts = endStr.split('-');
+    if (startParts.length !== 3 || endParts.length !== 3) return [];
+    
+    const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+    const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+    
+    if (start > end) return [];
+
+    const firstGridDay = new Date(start);
+    const startDayOfWeek = (firstGridDay.getDay() + 6) % 7;
+    firstGridDay.setDate(firstGridDay.getDate() - startDayOfWeek);
+    
+    const lastGridDay = new Date(end);
+    const endDayOfWeek = (lastGridDay.getDay() + 6) % 7;
+    lastGridDay.setDate(lastGridDay.getDate() + (6 - endDayOfWeek));
+
+    const totalDays = Math.round((lastGridDay.getTime() - firstGridDay.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const allDays = getDaysArray(firstGridDay, totalDays).map(d => ({
+        date: d,
+        isCurrentRange: d.getTime() >= start.getTime() && d.getTime() <= end.getTime()
+    }));
+
+    const grids: CalendarGridData[] = [];
+    const MAX_DAYS_PER_PAGE = 42; // Max 6 weeks per page
+
+    for (let i = 0; i < allDays.length; i += MAX_DAYS_PER_PAGE) {
+      const chunk = allDays.slice(i, i + MAX_DAYS_PER_PAGE);
+      const activeDays = chunk.filter(d => d.isCurrentRange);
+      const firstDayInChunk = activeDays.length > 0 ? activeDays[0].date : chunk[0].date;
+      
+      // Calculate month title dynamically
+      const monthsInChunk = Array.from(new Set(activeDays.map(d => monthNames[d.date.getMonth()])));
+      let title = monthsInChunk.join(' - ');
+      if (monthsInChunk.length === 0) title = monthNames[firstDayInChunk.getMonth()];
+      title += ` ${firstDayInChunk.getFullYear()}`;
+
+      grids.push({
+        title: title,
+        year: firstDayInChunk.getFullYear(),
+        month: firstDayInChunk.getMonth(),
+        days: chunk
+      });
+    }
+
+    return grids;
+  };
+
+  const prevRange = () => {
+    const newDate = new Date(currentDate);
+    if (viewMode === '1_week') newDate.setDate(newDate.getDate() - 7);
+    else if (viewMode === '2_weeks') newDate.setDate(newDate.getDate() - 14);
+    else if (viewMode === '1_month') newDate.setMonth(newDate.getMonth() - 1);
+    else if (viewMode === '2_months') newDate.setMonth(newDate.getMonth() - 2);
+    setCurrentDate(newDate);
+  };
+
+  const nextRange = () => {
+    const newDate = new Date(currentDate);
+    if (viewMode === '1_week') newDate.setDate(newDate.getDate() + 7);
+    else if (viewMode === '2_weeks') newDate.setDate(newDate.getDate() + 14);
+    else if (viewMode === '1_month') newDate.setMonth(newDate.getMonth() + 1);
+    else if (viewMode === '2_months') newDate.setMonth(newDate.getMonth() + 2);
+    setCurrentDate(newDate);
+  };
+
+  const getEventsForDateObj = (date: Date): CalendarEvent[] => {
+    const targetYear = date.getFullYear();
+    const targetMonth = date.getMonth() + 1;
+    const day = date.getDate();
+    const monthStr = String(targetMonth).padStart(2, '0');
     const dayStr = String(day).padStart(2, '0');
     const targetDateStr = `${targetYear}-${monthStr}-${dayStr}`;
 
@@ -232,45 +370,42 @@ export const Calendar: React.FC = () => {
     return [...dateTrainings, ...dateMatches, ...dateSocialEvents];
   };
 
-  const getEventsForDate = (day: number): CalendarEvent[] => {
-    return getEventsForMonthAndDate(year, month, day);
-  };
-
-  const handleDayClick = (day: number) => {
-    setSelectedDay(day);
+  const handleDayClick = (date: Date) => {
+    setSelectedDate(date);
     setModalType('select');
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setSelectedDay(null);
+    setSelectedDate(null);
     setModalType('select');
   };
 
-  const getEventsListForMonth = (targetYear: number, targetMonth: number) => {
-    const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-    const list: { day: number; events: CalendarEvent[] }[] = [];
-    for (let d = 1; d <= daysInTargetMonth; d++) {
-      const dayEvts = getEventsForMonthAndDate(targetYear, targetMonth, d);
-      if (dayEvts.length > 0) {
-        list.push({ day: d, events: dayEvts });
-      }
-    }
-    return list.sort((a, b) => a.day - b.day);
+  const getEventsListForGrid = (grid: CalendarGridData) => {
+    const list: { date: Date; events: CalendarEvent[] }[] = [];
+    grid.days.forEach(dayInfo => {
+       if (!dayInfo.isCurrentRange && viewMode.includes('month')) return;
+       const dayEvts = getEventsForDateObj(dayInfo.date);
+       if (dayEvts.length > 0) {
+         list.push({ date: dayInfo.date, events: dayEvts });
+       }
+    });
+    return list;
   };
 
-  const getMonthEvents = () => {
-    return getEventsListForMonth(year, month);
-  };
+  const allEventsList = calendarGrids.flatMap(grid => getEventsListForGrid(grid));
+  const filteredEventsList = allEventsList.map(item => ({
+    date: item.date,
+    events: item.events.filter(e => eventFilter === 'all' || e.type === (eventFilter === 'trainings' ? 'training' : eventFilter === 'matches' ? 'match' : 'social'))
+  })).filter(item => item.events.length > 0);
 
-  const monthEventsList = getMonthEvents();
-  const isToday = (day: number) => {
+  const isTodayObj = (date: Date) => {
     const today = new Date();
     return (
-      today.getDate() === day &&
-      today.getMonth() === month &&
-      today.getFullYear() === year
+      today.getDate() === date.getDate() &&
+      today.getMonth() === date.getMonth() &&
+      today.getFullYear() === date.getFullYear()
     );
   };
 
@@ -312,7 +447,10 @@ export const Calendar: React.FC = () => {
     setModalType('training');
     const today = new Date();
     const defaultDay = today.getMonth() === month && today.getFullYear() === year ? today.getDate() : 1;
-    const targetDay = selectedDay || defaultDay;
+    const targetDate = selectedDate || currentDate;
+    const targetDay = targetDate.getDate();
+    const targetMonth = targetDate.getMonth() + 1;
+    const targetYear = targetDate.getFullYear();
     const monthStr = String(month + 1).padStart(2, '0');
     const dayStr = String(targetDay).padStart(2, '0');
     setTrainingForm({
@@ -331,7 +469,10 @@ export const Calendar: React.FC = () => {
     setIsCustomRival(false);
     const today = new Date();
     const defaultDay = today.getMonth() === month && today.getFullYear() === year ? today.getDate() : 1;
-    const targetDay = selectedDay || defaultDay;
+    const targetDate = selectedDate || currentDate;
+    const targetDay = targetDate.getDate();
+    const targetMonth = targetDate.getMonth() + 1;
+    const targetYear = targetDate.getFullYear();
     const monthStr = String(month + 1).padStart(2, '0');
     const dayStr = String(targetDay).padStart(2, '0');
     setMatchForm({
@@ -377,7 +518,10 @@ export const Calendar: React.FC = () => {
     setModalType('social');
     const today = new Date();
     const defaultDay = today.getMonth() === month && today.getFullYear() === year ? today.getDate() : 1;
-    const targetDay = selectedDay || defaultDay;
+    const targetDate = selectedDate || currentDate;
+    const targetDay = targetDate.getDate();
+    const targetMonth = targetDate.getMonth() + 1;
+    const targetYear = targetDate.getFullYear();
     const monthStr = String(month + 1).padStart(2, '0');
     const dayStr = String(targetDay).padStart(2, '0');
     setSocialForm({
@@ -399,41 +543,44 @@ export const Calendar: React.FC = () => {
   };
 
   const handleExportPDF = () => {
-    setPdfSelectedMonths([month]);
-    setPdfSelectedYear(year);
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
+    calendarGrids.forEach(g => g.days.forEach(d => {
+       if (d.isCurrentRange) {
+         if (!minDate || d.date < minDate) minDate = d.date;
+         if (!maxDate || d.date > maxDate) maxDate = d.date;
+       }
+    }));
+    
+    setPdfStartDate(minDate ? formatDateToYMD(minDate) : formatDateToYMD(new Date()));
+    setPdfEndDate(maxDate ? formatDateToYMD(maxDate) : formatDateToYMD(new Date()));
     setIsPDFModalOpen(true);
   };
 
   const handleExportPDFSubmit = async () => {
-    if (pdfSelectedMonths.length === 0) {
-      showToast('error', 'Selección vacía', 'Por favor, selecciona al menos un mes para exportar.');
+    if (!pdfStartDate || !pdfEndDate) {
+      showToast('error', 'Faltan fechas', 'Por favor selecciona la fecha de inicio y fin.');
+      return;
+    }
+    if (new Date(pdfStartDate) > new Date(pdfEndDate)) {
+      showToast('error', 'Fechas inválidas', 'La fecha final debe ser igual o posterior a la inicial.');
       return;
     }
 
     setIsPDFModalOpen(false);
-    showToast('info', 'Generando PDF', 'Estamos preparando tu calendario, por favor espera...');
+    showToast('info', 'Generando PDF', 'Estamos preparando el rango seleccionado...');
 
     try {
       const { exportCalendarToPDF } = await import('../utils/export');
       
-      const sortedMonths = [...pdfSelectedMonths].sort((a, b) => a - b);
-      const monthsPayload = sortedMonths.map((mIdx) => {
-        const eventsList = getEventsListForMonth(pdfSelectedYear, mIdx);
-        return {
-          monthName: monthNames[mIdx],
-          year: pdfSelectedYear,
-          eventsData: eventsList
-        };
-      });
-
-      const filename = sortedMonths.length === 1
-        ? `calendario_${monthNames[sortedMonths[0]].toLowerCase()}_${pdfSelectedYear}`
-        : `calendario_deportivo_${pdfSelectedYear}`;
+      const customGrids = getCustomRangeGrids(pdfStartDate, pdfEndDate);
+      const filename = `Calendario_${pdfStartDate}_al_${pdfEndDate}`;
 
       await exportCalendarToPDF(
-        `Calendario Deportivo ${pdfSelectedYear}`,
+        `Calendario Deportivo`,
         filename,
-        monthsPayload
+        customGrids,
+        getEventsForDateObj
       );
       showToast('success', 'PDF Descargado', 'Se ha descargado el archivo PDF con éxito.');
     } catch (error: any) {
@@ -455,16 +602,16 @@ export const Calendar: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3 md:justify-end">
           <div className="flex items-center gap-3 bg-brand-black border border-brand-black-border px-3 py-1.5 rounded-lg shrink-0">
             <button
-              onClick={prevMonth}
+              onClick={prevRange}
               className="p-1.5 hover:bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light rounded-lg transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-sm font-semibold text-brand-gray-light min-w-[140px] text-center">
-              {monthNames[month]} {year}
+              {displayTitle}
             </span>
             <button
-              onClick={nextMonth}
+              onClick={nextRange}
               className="p-1.5 hover:bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light rounded-lg transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
@@ -475,6 +622,16 @@ export const Calendar: React.FC = () => {
             >
               Hoy
             </button>
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value as '1_week' | '2_weeks' | '1_month' | '2_months')}
+              className="ml-2 bg-brand-black-card text-brand-gray-light text-xs font-semibold px-2 py-1.5 rounded-lg border border-brand-black-border outline-none"
+            >
+              <option value="1_week">1 Semana</option>
+              <option value="2_weeks">2 Semanas</option>
+              <option value="1_month">1 Mes</option>
+              <option value="2_months">2 Meses</option>
+            </select>
           </div>
 
           <button
@@ -489,7 +646,7 @@ export const Calendar: React.FC = () => {
           {(canCreateTraining || canCreateMatch) && (
             <button
               onClick={() => {
-                setSelectedDay(null);
+                setSelectedDate(null);
                 setModalType('select');
                 setIsModalOpen(true);
               }}
@@ -502,20 +659,29 @@ export const Calendar: React.FC = () => {
         </div>
       </div>
 
-      {/* Leyenda */}
+      {/* Filtros / Leyenda */}
       <div className="flex flex-wrap items-center gap-4 bg-brand-black border border-brand-black-border px-4 py-3 rounded-xl">
-        <span className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted">Leyenda:</span>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded bg-brand-red-600/20 border border-brand-red-600/30"></div>
-          <span className="text-xs text-brand-gray-muted">Entrenamiento</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded bg-yellow-500/20 border border-yellow-500/30"></div>
-          <span className="text-xs text-brand-gray-muted">Partido</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded bg-purple-600/20 border border-purple-600/30"></div>
-          <span className="text-xs text-brand-gray-muted">Evento Social</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted hidden sm:inline">Mostrar:</span>
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+           <button onClick={() => setEventFilter('all')} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${eventFilter === 'all' ? 'bg-white text-black' : 'bg-brand-black border border-brand-black-border text-brand-gray-muted'}`}>Todo</button>
+           <button onClick={() => setEventFilter('trainings')} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${eventFilter === 'trainings' ? 'bg-brand-red-600 text-white' : 'bg-brand-black border border-brand-black-border text-brand-gray-muted'}`}>
+             <div className="flex items-center gap-1.5">
+               <div className={`w-2 h-2 rounded-full ${eventFilter === 'trainings' ? 'bg-white' : 'bg-brand-red-600'}`}></div>
+               Entrenamientos
+             </div>
+           </button>
+           <button onClick={() => setEventFilter('matches')} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${eventFilter === 'matches' ? 'bg-yellow-500 text-black' : 'bg-brand-black border border-brand-black-border text-brand-gray-muted'}`}>
+             <div className="flex items-center gap-1.5">
+               <div className={`w-2 h-2 rounded-full ${eventFilter === 'matches' ? 'bg-black' : 'bg-yellow-500'}`}></div>
+               Partidos
+             </div>
+           </button>
+           <button onClick={() => setEventFilter('social')} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${eventFilter === 'social' ? 'bg-purple-600 text-white' : 'bg-brand-black border border-brand-black-border text-brand-gray-muted'}`}>
+             <div className="flex items-center gap-1.5">
+               <div className={`w-2 h-2 rounded-full ${eventFilter === 'social' ? 'bg-white' : 'bg-purple-600'}`}></div>
+               Eventos
+             </div>
+           </button>
         </div>
         {(canCreateTraining || canCreateMatch) && (
           <div className="flex items-center gap-2 md:ml-auto">
@@ -528,72 +694,81 @@ export const Calendar: React.FC = () => {
       {/* =====================================================================
           VISTA CALENDARIO - ESCRITORIO & TABLET
           ===================================================================== */}
-      <div className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
-        {/* Días de la semana */}
-        <div className="grid grid-cols-7 border-b border-brand-black-border bg-brand-black-hover/40 text-center font-semibold text-xs py-3 text-brand-gray-muted">
-          {dayNames.map(d => <div key={d}>{d}</div>)}
-        </div>
+      {calendarGrids.map((grid, gIdx) => (
+        <div key={gIdx} className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium mb-6">
+          {viewMode === '2_months' && (
+            <div className="bg-brand-black-hover/50 border-b border-brand-black-border px-4 py-3 text-center font-bold text-sm text-brand-gray-light">
+              {grid.title}
+            </div>
+          )}
+          {/* Días de la semana */}
+          <div className="grid grid-cols-7 border-b border-brand-black-border bg-brand-black-hover/40 text-center font-semibold text-xs py-3 text-brand-gray-muted">
+            {dayNames.map(d => <div key={d}>{d}</div>)}
+          </div>
 
-        {/* Cuadrícula de días */}
-        <div className="grid grid-cols-7 gap-[1px] bg-brand-black-border border-l border-t border-r border-b border-brand-black-border">
-          {calendarDays.map((day, idx) => {
-            const events = day ? getEventsForDate(day) : [];
-            const trainingCount = events.filter(e => e.type === 'training').length;
-            const matchCount = events.filter(e => e.type === 'match').length;
-            const socialCount = events.filter(e => e.type === 'social').length;
-            const hasTraining = trainingCount > 0;
-            const hasMatch = matchCount > 0;
-            const hasSocial = socialCount > 0;
-            const hasToday = day && isToday(day);
+          {/* Cuadrícula de días */}
+          <div className="grid grid-cols-7 gap-[1px] bg-brand-black-border border-l border-t border-r border-b border-brand-black-border">
+            {grid.days.map((dayInfo, idx) => {
+              const dayDate = dayInfo.date;
+              const events = getEventsForDateObj(dayDate);
+              const filteredEvents = events.filter(e => eventFilter === 'all' || e.type === (eventFilter === 'trainings' ? 'training' : eventFilter === 'matches' ? 'match' : 'social'));
+              const trainingCount = filteredEvents.filter(e => e.type === 'training').length;
+              const matchCount = filteredEvents.filter(e => e.type === 'match').length;
+              const socialCount = filteredEvents.filter(e => e.type === 'social').length;
+              const hasTraining = trainingCount > 0;
+              const hasMatch = matchCount > 0;
+              const hasSocial = socialCount > 0;
+              const hasToday = isTodayObj(dayDate);
 
-            let cellClass = '';
-            if (!day) {
-              cellClass = 'bg-brand-black-bg/30 opacity-30 select-none min-h-[150px] p-2';
-            } else {
-              cellClass = 'min-h-[150px] p-2 flex flex-col gap-1.5 transition-all duration-200 border-t-4 relative ';
+              let cellClass = 'min-h-[150px] p-2 flex flex-col gap-1.5 transition-all duration-200 border-t-4 relative ';
               
-              if (hasMatch) {
-                cellClass += 'bg-yellow-500/15 border-t-yellow-500 hover:bg-yellow-500/25';
-              } else if (hasTraining) {
-                cellClass += 'bg-brand-red-600/15 border-t-brand-red-600 hover:bg-brand-red-600/25';
-              } else if (hasSocial) {
-                cellClass += 'bg-purple-600/15 border-t-purple-500 hover:bg-purple-600/25';
+              if (!dayInfo.isCurrentRange && viewMode.includes('month')) {
+                cellClass += 'bg-brand-black-bg/40 opacity-50 border-t-brand-black-border';
               } else {
-                cellClass += 'bg-brand-black-card border-t-brand-black-border hover:bg-brand-black-hover/50';
+                if (hasMatch) {
+                  cellClass += 'bg-yellow-500/15 border-t-yellow-500 hover:bg-yellow-500/25';
+                } else if (hasTraining) {
+                  cellClass += 'bg-brand-red-600/15 border-t-brand-red-600 hover:bg-brand-red-600/25';
+                } else if (hasSocial) {
+                  cellClass += 'bg-purple-600/15 border-t-purple-500 hover:bg-purple-600/25';
+                } else {
+                  cellClass += 'bg-brand-black-card border-t-brand-black-border hover:bg-brand-black-hover/50';
+                }
+
+                if (hasToday) {
+                  cellClass += ' ring-2 ring-inset ring-brand-red-600 bg-brand-red-600/10';
+                }
+                
+                if (canCreateTraining || canCreateMatch) {
+                  cellClass += ' cursor-pointer';
+                }
               }
 
-              if (hasToday) {
-                cellClass += ' ring-2 ring-inset ring-brand-red-600 bg-brand-red-600/10';
-              }
-              
-              if (canCreateTraining || canCreateMatch) {
-                cellClass += ' cursor-pointer';
-              }
-            }
+              return (
+                <div
+                  key={idx}
+                  onClick={() => (canCreateTraining || canCreateMatch) && handleDayClick(dayDate)}
+                  className={cellClass}
+                >
+                  {/* Número del día */}
+                  <div className="flex justify-between items-center">
+                    <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
+                      hasToday
+                        ? 'bg-brand-red-600 text-white shadow-glow-red'
+                        : !dayInfo.isCurrentRange && viewMode.includes('month')
+                        ? 'text-brand-gray-muted'
+                        : 'text-brand-gray-light font-extrabold'
+                    }`}>
+                      {dayDate.getDate()}
+                    </span>
+                    {(canCreateTraining || canCreateMatch) && (
+                      <Plus className="w-3.5 h-3.5 text-brand-gray-muted hover:text-brand-gray-light" />
+                    )}
+                  </div>
 
-            return (
-              <div
-                key={idx}
-                onClick={() => day && (canCreateTraining || canCreateMatch) && handleDayClick(day)}
-                className={cellClass}
-              >
-                {/* Número del día */}
-                <div className="flex justify-between items-center">
-                  <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
-                    hasToday
-                      ? 'bg-brand-red-600 text-white shadow-glow-red'
-                      : 'text-brand-gray-light font-extrabold'
-                  }`}>
-                    {day}
-                  </span>
-                  {(canCreateTraining || canCreateMatch) && day && (
-                    <Plus className="w-3.5 h-3.5 text-brand-gray-muted hover:text-brand-gray-light" />
-                  )}
-                </div>
-
-                {/* Eventos */}
-                <div className="flex-1 flex flex-col gap-1.5 overflow-hidden">
-                  {day && events.slice(0, 3).map((evt, eIdx) => {
+                  {/* Eventos */}
+                  <div className="flex-1 flex flex-col gap-1.5 overflow-hidden">
+                    {filteredEvents.slice(0, 3).map((evt, eIdx) => {
                     const isTraining = evt.type === 'training';
                     const isMatch = evt.type === 'match';
                     const isSocial = evt.type === 'social';
@@ -655,15 +830,15 @@ export const Calendar: React.FC = () => {
                       </div>
                     );
                   })}
-                  {events.length > 3 && (
+                  {filteredEvents.length > 3 && (
                     <span className="text-[9px] text-brand-gray-light font-bold text-center">
-                      +{events.length - 3} más
+                      +{filteredEvents.length - 3} más
                     </span>
                   )}
                 </div>
 
                 {/* Contadores */}
-                {day && events.length > 0 && (
+                {filteredEvents.length > 0 && (
                   <div className="flex items-center gap-2 text-[9px] mt-auto pt-1">
                     {trainingCount > 0 && (
                       <span className="text-brand-red-400 flex items-center gap-0.5 font-bold">
@@ -687,24 +862,27 @@ export const Calendar: React.FC = () => {
           })}
         </div>
       </div>
+      ))}
 
       {/* =====================================================================
           VISTA MÓVIL - LISTA DE EVENTOS
           ===================================================================== */}
       <div className="md:hidden space-y-4">
-        <div className="flex items-center gap-2 mb-3">
-          <CalendarIcon className="w-4 h-4 text-brand-red-600" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted">Eventos del mes</h3>
+        <div className="flex flex-col gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4 text-brand-red-600" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted">Eventos del mes</h3>
+          </div>
         </div>
 
-        {monthEventsList.length === 0 ? (
+        {filteredEventsList.length === 0 ? (
           <div className="bg-brand-black-card border border-brand-black-border p-8 rounded-xl text-center">
             <CalendarIcon className="w-12 h-12 text-brand-gray-dark mx-auto mb-3" />
             <p className="text-sm text-brand-gray-muted">No hay eventos planificados para este mes.</p>
             {(canCreateTraining || canCreateMatch) && (
               <button
                 onClick={() => {
-                  setSelectedDay(1);
+                  setSelectedDate(new Date(year, month, 1));
                   setModalType('select');
                   setIsModalOpen(true);
                 }}
@@ -716,11 +894,11 @@ export const Calendar: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {monthEventsList.map(({ day, events }) => (
-              <div key={day} className="space-y-2">
-                <div className="sticky top-0 bg-brand-black-bg/90 backdrop-blur-sm py-1.5 flex items-center gap-2 border-b border-brand-black-border">
+            {filteredEventsList.map(({ date, events }, idx) => (
+              <div key={idx} className="space-y-2">
+                <div className="sticky top-0 bg-brand-black-bg/90 backdrop-blur-sm py-1.5 flex items-center gap-2 border-b border-brand-black-border z-10">
                   <span className="text-xs font-bold text-brand-red-600 bg-brand-red-600/10 px-2.5 py-0.5 rounded-full">
-                    Día {day}
+                    {date.getDate()} {monthNames[date.getMonth()].substring(0,3)}
                   </span>
                   <div className="h-px bg-brand-black-border flex-1" />
                 </div>
@@ -733,7 +911,13 @@ export const Calendar: React.FC = () => {
                     return (
                       <div
                         key={eIdx}
-                        className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex gap-3.5 items-start shadow-premium"
+                        className={`p-4 rounded-xl flex gap-3.5 items-start shadow-premium border-y border-r border-l-4 ${
+                          isTraining 
+                            ? 'bg-gradient-to-r from-brand-red-600/10 to-transparent border-brand-black-border border-l-brand-red-600' 
+                            : isMatch 
+                            ? 'bg-gradient-to-r from-yellow-500/10 to-transparent border-brand-black-border border-l-yellow-500' 
+                            : 'bg-gradient-to-r from-purple-600/10 to-transparent border-brand-black-border border-l-purple-600'
+                        }`}
                       >
                         <div className="shrink-0">
                           {isTraining ? (
@@ -836,15 +1020,15 @@ export const Calendar: React.FC = () => {
       <Modal
         isOpen={isModalOpen && modalType === 'select'}
         onClose={handleCloseModal}
-        title={selectedDay ? `Eventos del Día ${selectedDay} de ${monthNames[month]}` : `Añadir Evento - ${monthNames[month]}`}
+        title={selectedDate ? `Eventos del Día ${selectedDate.getDate()} de ${monthNames[selectedDate.getMonth()]}` : `Añadir Evento`}
       >
         <div className="space-y-5">
           {/* Listado de eventos del día seleccionado */}
-          {selectedDay && getEventsForDate(selectedDay).length > 0 && (
+          {selectedDate && getEventsForDateObj(selectedDate).length > 0 && (
             <div className="space-y-3 pb-3 border-b border-brand-black-border">
               <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted">Eventos programados para este día:</h4>
               <div className="space-y-2">
-                {getEventsForDate(selectedDay).map((evt, eIdx) => {
+                {getEventsForDateObj(selectedDate).map((evt, eIdx) => {
                   const isTraining = evt.type === 'training';
                   const isMatch = evt.type === 'match';
                   const isSocial = evt.type === 'social';
@@ -947,7 +1131,7 @@ export const Calendar: React.FC = () => {
           {(canCreateTraining || canCreateMatch) ? (
             <div className="space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted text-center">
-                {selectedDay && getEventsForDate(selectedDay).length > 0 ? 'Añadir otro evento:' : 'Selecciona el tipo de evento:'}
+                {selectedDate && getEventsForDateObj(selectedDate).length > 0 ? 'Añadir otro evento:' : 'Selecciona el tipo de evento:'}
               </h4>
               <div className="grid grid-cols-3 gap-3">
                 {canCreateTraining && (
@@ -1377,97 +1561,42 @@ export const Calendar: React.FC = () => {
           </div>
         </form>
       </Modal>
-
       {/* MODAL DE SELECCIÓN DE EXPORTACIÓN PDF */}
       <Modal
         isOpen={isPDFModalOpen}
         onClose={() => setIsPDFModalOpen(false)}
         title="Exportar Calendario a PDF"
       >
-        <div className="flex flex-col gap-4 text-brand-gray-light">
+        <div className="flex flex-col gap-5 text-brand-gray-light">
           <p className="text-xs text-brand-gray-muted leading-relaxed">
-            Selecciona el año y los meses que deseas exportar. Cada mes se generará en una página individual (formato horizontal A4) dentro del archivo PDF.
+            Selecciona el rango exacto de fechas que deseas exportar. El sistema agrupará el PDF automáticamente por meses, atenuando los días que queden fuera de tu selección.
           </p>
 
-          {/* Selector de Año */}
-          <div className="flex items-center gap-3 bg-brand-black-hover/40 p-3 rounded-lg border border-brand-black-border">
-            <label className="text-xs font-semibold text-brand-gray-muted">Año a exportar:</label>
-            <select
-              value={pdfSelectedYear}
-              onChange={(e) => setPdfSelectedYear(Number(e.target.value))}
-              className="bg-brand-black border border-brand-black-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-red-600"
-            >
-              {[year - 1, year, year + 1].map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-brand-gray-muted">Fecha Desde</label>
+              <input
+                type="date"
+                value={pdfStartDate}
+                onChange={(e) => setPdfStartDate(e.target.value)}
+                onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()}
+                className="form-input px-3 py-2 bg-brand-black border border-brand-black-border rounded-lg text-white font-medium focus:ring-1 focus:ring-brand-red-600 cursor-pointer"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-brand-gray-muted">Fecha Hasta</label>
+              <input
+                type="date"
+                value={pdfEndDate}
+                onChange={(e) => setPdfEndDate(e.target.value)}
+                onClick={(e) => e.currentTarget.showPicker && e.currentTarget.showPicker()}
+                className="form-input px-3 py-2 bg-brand-black border border-brand-black-border rounded-lg text-white font-medium focus:ring-1 focus:ring-brand-red-600 cursor-pointer"
+                min={pdfStartDate}
+              />
+            </div>
           </div>
 
-          {/* Acciones Rápidas */}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setPdfSelectedMonths([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])}
-              className="px-2.5 py-1 text-[11px] font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded text-brand-gray-light transition-colors"
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              onClick={() => setPdfSelectedMonths([])}
-              className="px-2.5 py-1 text-[11px] font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded text-brand-gray-light transition-colors"
-            >
-              Ninguno
-            </button>
-            <button
-              type="button"
-              onClick={() => setPdfSelectedMonths([month])}
-              className="px-2.5 py-1 text-[11px] font-semibold bg-brand-black border border-brand-black-border hover:bg-brand-black-hover rounded text-brand-gray-light transition-colors"
-            >
-              Solo mes actual ({monthNames[month]})
-            </button>
-          </div>
-
-          {/* Cuadrícula de Meses */}
-          <div className="grid grid-cols-3 gap-2">
-            {monthNames.map((mName, mIdx) => {
-              const isSelected = pdfSelectedMonths.includes(mIdx);
-              return (
-                <label
-                  key={mIdx}
-                  className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all select-none ${
-                    isSelected
-                      ? 'bg-brand-red-600/10 border-brand-red-600 text-white shadow-glow-red'
-                      : 'bg-brand-black-card border-brand-black-border text-brand-gray-muted hover:border-brand-gray-light/30 hover:text-brand-gray-light'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => {
-                      if (isSelected) {
-                        setPdfSelectedMonths(pdfSelectedMonths.filter((m) => m !== mIdx));
-                      } else {
-                        setPdfSelectedMonths([...pdfSelectedMonths, mIdx]);
-                      }
-                    }}
-                    className="sr-only"
-                  />
-                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[9px] font-bold ${
-                    isSelected ? 'border-brand-red-500 bg-brand-red-600 text-white' : 'border-brand-black-border bg-brand-black text-transparent'
-                  }`}>
-                    {isSelected && '✓'}
-                  </div>
-                  {mName}
-                </label>
-              );
-            })}
-          </div>
-
-          {/* Acciones del Modal */}
-          <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-brand-black-border">
+          <div className="flex justify-end gap-2 mt-2 pt-4 border-t border-brand-black-border">
             <button
               type="button"
               onClick={() => setIsPDFModalOpen(false)}
@@ -1480,11 +1609,12 @@ export const Calendar: React.FC = () => {
               onClick={handleExportPDFSubmit}
               className="px-4 py-2 text-xs font-semibold bg-brand-red-600 hover:bg-brand-red-700 text-white rounded-lg transition-colors shadow-glow-red"
             >
-              Descargar PDF
+              Generar y Descargar PDF
             </button>
           </div>
         </div>
       </Modal>
+
     </div>
   );
 };

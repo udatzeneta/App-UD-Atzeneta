@@ -186,12 +186,14 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
     if (activeTool === 'select') {
+      try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
       if (!e.shiftKey) {
         setSelectedElementIds([]);
         setSelectedLineId(null);
       }
       setSelectionBox({ startX: x, startY: y, currentX: x, currentY: y });
     } else if (activeTool === 'arrow' || activeTool === 'line') {
+      try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
       setDrawingLine({
         id: `line-${Date.now()}`,
         type: activeTool,
@@ -310,6 +312,7 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
   const handleElementPointerDown = (e: React.PointerEvent, id: string, type: 'element' | 'line') => {
     if (readOnly || activeTool !== 'select') return;
     e.stopPropagation();
+    try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) {}
 
     let newSelectedElements = [...selectedElementIds];
     let newSelectedLine = selectedLineId;

@@ -137,36 +137,23 @@ export const exportToPDF = async (
 export const exportCalendarToPDF = async (
   title: string,
   filename: string,
-  months: {
-    monthName: string;
+  grids: {
+    title: string;
+    days: { date: Date; isCurrentRange: boolean }[];
     year: number;
-    eventsData: { day: number; events: any[] }[]
-  }[]
+    month: number;
+  }[],
+  getEvents: (date: Date) => any[]
 ): Promise<void> => {
   const { jsPDF } = await import('jspdf');
 
   // Crear documento en formato horizontal (Landscape), A4 (297 mm x 210 mm)
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-  // Ayudante de truncado de texto según el ancho máximo disponible
-  const limitText = (text: string, maxWidth: number) => {
-    if (doc.getTextWidth(text) <= maxWidth) return text;
-    let truncated = text;
-    while (truncated.length > 0 && doc.getTextWidth(truncated + '...') > maxWidth) {
-      truncated = truncated.substring(0, truncated.length - 1);
-    }
-    return truncated.length > 0 ? truncated + '...' : '';
-  };
-
-  const monthNames = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-  ];
-
   // Pre-cargar el escudo del club en memoria como Base64 para que se dibuje de forma idéntica en cada página
   let logoData: string | null = null;
   try {
-    const logoResponse = await fetch(CLUB_LOGO_URL);
+    const logoResponse = await fetch('/club-logo.png');
     const logoBlob = await logoResponse.blob();
     const logoReader = new FileReader();
 
@@ -179,13 +166,12 @@ export const exportCalendarToPDF = async (
     console.warn('No se pudo cargar el logo del club para el PDF:', error);
   }
 
-  // Generar cada mes en una página separada
-  for (let mIdx = 0; mIdx < months.length; mIdx++) {
-    const monthObj = months[mIdx];
-    const { monthName, year, eventsData } = monthObj;
+  // Generar cada cuadrícula en una página separada
+  for (let gIdx = 0; gIdx < grids.length; gIdx++) {
+    const grid = grids[gIdx];
 
-    // Si no es el primer mes, añadir una nueva página al documento
-    if (mIdx > 0) {
+    // Si no es la primera cuadrícula, añadir una nueva página al documento
+    if (gIdx > 0) {
       doc.addPage();
     }
 
@@ -208,7 +194,7 @@ export const exportCalendarToPDF = async (
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(193, 18, 31); // Rojo UD Atzeneta
-    doc.text(`Calendario - ${monthName} ${year}`, 10, 16);
+    doc.text(`Calendario - ${grid.title}`, 10, 16);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
@@ -258,49 +244,33 @@ export const exportCalendarToPDF = async (
       doc.text(dName, x + (cellWidth - textWidth) / 2, headerY + 3.8);
     });
 
-    // 6. Cuadrícula de días del calendario para el mes en cuestión
-    const activeMonthIndex = monthNames.indexOf(monthName);
-    const activeMonth = activeMonthIndex !== -1 ? activeMonthIndex : new Date().getMonth();
-    const activeYear = year || new Date().getFullYear();
-
-    const firstDayIndex = (new Date(activeYear, activeMonth, 1).getDay() + 6) % 7; // Lunes = 0, Domingo = 6
-    const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
-
-    const calendarDays: (number | null)[] = [];
-    for (let i = 0; i < firstDayIndex; i++) {
-      calendarDays.push(null);
-    }
-    for (let i = 1; i <= daysInMonth; i++) {
-      calendarDays.push(i);
-    }
-
     const topOffset = headerY + headerHeight; // y = 35.5
     const availableHeight = doc.internal.pageSize.height - topOffset - 10; // Dejar 10mm de margen inferior
-    const numWeeks = Math.ceil(calendarDays.length / 7);
+    const numWeeks = Math.ceil(grid.days.length / 7);
     const cellHeight = availableHeight / numWeeks;
 
-    calendarDays.forEach((day, idx) => {
+    grid.days.forEach((dayInfo, idx) => {
       const col = idx % 7;
       const row = Math.floor(idx / 7);
       const x = 10 + col * cellWidth;
       const y = topOffset + row * cellHeight;
 
-      if (day === null) {
-        // Celda inactiva (desfase de mes)
-        doc.setFillColor(245, 245, 245);
-        doc.setDrawColor(220, 220, 220);
+      if (!dayInfo.isCurrentRange) {
+        // Celda inactiva (fuera del rango seleccionado)
+        // No dibujamos nada, solo el contorno de la celda vacía
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(230, 230, 230); // Gris más clarito para que resalte menos
         doc.setLineWidth(0.15);
         doc.rect(x, y, cellWidth, cellHeight, 'FD');
       } else {
-        // Celda de día del mes activo
+        // Celda de día activa
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(220, 220, 220);
         doc.setLineWidth(0.15);
         doc.rect(x, y, cellWidth, cellHeight, 'FD');
 
         // Buscar eventos de este día
-        const dayData = eventsData.find(item => item.day === day);
-        const events = dayData ? dayData.events : [];
+        const events = getEvents(dayInfo.date);
 
         // Si hay eventos, dibujar una barra superior gruesa según el tipo prioritario (Partido > Entrenamiento > Social)
         if (events.length > 0) {
@@ -321,7 +291,7 @@ export const exportCalendarToPDF = async (
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.setTextColor(15, 15, 15);
-        doc.text(day.toString(), x + 2.5, y + 4.8);
+        doc.text(dayInfo.date.getDate().toString(), x + 2.5, y + 4.8);
 
         // Dibujar las insignias (badges) de los eventos
         let yOffset = y + 6.0;

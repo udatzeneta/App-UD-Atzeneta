@@ -741,9 +741,9 @@ export const Players: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Cabecera */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-brand-gray-light flex items-center gap-2">
             <Users className="w-6 h-6 text-brand-red-600" /> Plantilla y Fichas de Jugadores
@@ -802,7 +802,7 @@ export const Players: React.FC = () => {
 
       {/* Pestañas de Equipo */}
       {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
-        <div className="flex border-b border-brand-black-border mb-4">
+        <div className="flex border-b border-brand-black-border">
           <button
             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
             onClick={() => { setFilterTeam('Primer Equipo'); setSelectedPlayer(null); }}
@@ -819,7 +819,7 @@ export const Players: React.FC = () => {
       )}
 
       {/* Buscador y Filtros */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-brand-black border border-brand-black-border p-4 rounded-xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-brand-black border border-brand-black-border p-2.5 rounded-lg">
         <div className="relative">
           <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-brand-gray-dark" />
           <input
