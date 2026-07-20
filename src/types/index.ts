@@ -247,6 +247,65 @@ export interface ScoutingPlayerHistory {
   created_at?: string;
 }
 
+export type ClipAnnotationType =
+  | 'spotlight'   // foco: oscurece el resto y resalta un jugador/zona
+  | 'player'      // anillo para marcar un jugador (con nº/etiqueta opcional)
+  | 'arrow'       // flecha de movimiento/pase
+  | 'zone'        // zona/área resaltada (polígono a mano alzada)
+  | 'line'        // línea que enlaza varios jugadores (línea defensiva, etc.)
+  | 'magnifier'   // catalejo/lupa (2º reproductor sincronizado)
+  | 'text';       // etiqueta de texto
+
+// Todas las coordenadas y tamaños están normalizados (0..1) respecto al frame
+// del vídeo, de modo que las anotaciones escalan con cualquier tamaño de pantalla.
+export interface ClipAnnotation {
+  id: string;
+  type: ClipAnnotationType;
+  color: string;
+  x: number;          // punto principal (centro para círculos, inicio para flecha, esquina para zona)
+  y: number;
+  radius?: number;    // spotlight / player / magnifier (normalizado al ancho)
+  x2?: number;        // flecha: punto final
+  y2?: number;
+  w?: number;         // zona (rect legado): ancho
+  h?: number;         // zona (rect legado): alto
+  points?: { x: number; y: number }[]; // zona (polígono libre) y línea de jugadores
+  label?: string;     // player / text
+  zoom?: number;      // magnifier: factor de ampliación (2, 3...)
+}
+
+export interface OpponentVideoClip {
+  id: string;
+  title: string;
+  start: number; // in seconds
+  end: number;   // in seconds
+  freezeTime?: number;            // segundo del vídeo sobre el que se anota (frame congelado)
+  annotations?: ClipAnnotation[]; // telestración del clip
+}
+
+export interface OpponentVideo {
+  id: string;
+  url: string;
+  clips: OpponentVideoClip[];
+}
+
+export interface OpponentRosterPlayer {
+  id: string;
+  name: string;
+  number?: number;
+  position?: string;
+  comments: string;
+  photo_url?: string;
+}
+
+export interface OpponentAnalysisBlock {
+  id: string;
+  title: string;
+  description: string;
+  board: string;
+  videos: OpponentVideo[];
+}
+
 export interface OpponentAnalysis {
   id: string;
   opponent: string;
@@ -258,6 +317,10 @@ export interface OpponentAnalysis {
   created_by?: string;
   team_category?: string;
   created_at?: string;
+  roster_comments?: OpponentRosterPlayer[];
+  with_ball_blocks?: OpponentAnalysisBlock[];
+  without_ball_blocks?: OpponentAnalysisBlock[];
+  abp_blocks?: OpponentAnalysisBlock[];
 }
 
 export interface Settings {
@@ -562,3 +625,47 @@ export interface ImprovementNotification {
   created_at?: string;
 }
 
+// =====================================================================
+// MÓDULO "PREPARACIÓN FÍSICA Y GPS" (PF)
+// =====================================================================
+
+export interface GpsRecord {
+  id: string;
+  jugador_id: string;
+  session_id: string;
+  session_type: 'entrenamiento' | 'partido';
+  distancia_total?: number;
+  velocidad_maxima?: number;
+  sprints?: number;
+  hsr?: number;
+  distancia_alta_intensidad?: number;
+  aceleraciones?: number;
+  deceleraciones?: number;
+  distancia_por_minuto?: number;
+  equilibrio_pasos?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FuerzaSession {
+  id: string;
+  plantilla: string; // 'primer_equipo' | 'juvenil'
+  tipo: 'tabata' | 'repeticiones';
+  fecha: string;
+  created_at?: string;
+}
+
+export interface EjercicioFuerza {
+  id: string;
+  nombre: string;
+  grupos?: string[];
+  otroTexto?: string;
+  created_at?: string;
+}
+
+export interface FuerzaSesionEjercicio {
+  id: string;
+  sesion_id: string;
+  ejercicio_id: string;
+  created_at?: string;
+}

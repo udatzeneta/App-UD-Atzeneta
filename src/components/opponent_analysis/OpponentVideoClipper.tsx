@@ -1,0 +1,299 @@
+import React, { useRef, useState } from 'react';
+import ReactPlayer from 'react-player';
+import { OpponentVideo, OpponentVideoClip } from '../../types';
+import { Plus, Trash2, Link, Play, Scissors, Clock, Wand2 } from 'lucide-react';
+import { ClipAnnotationEditor } from './ClipAnnotationEditor';
+
+interface Props {
+  videos: OpponentVideo[];
+  onChange: (v: OpponentVideo[]) => void;
+  readOnly?: boolean;
+}
+
+export const OpponentVideoClipper: React.FC<Props> = ({ videos, onChange, readOnly = false }) => {
+  const [newUrl, setNewUrl] = useState('');
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(videos[0]?.id || null);
+  const [editingClipId, setEditingClipId] = useState<string | null>(null);
+  const playerRef = useRef<HTMLVideoElement>(null);
+
+  const activeVideo = videos.find(v => v.id === activeVideoId);
+  const editingClip = activeVideo?.clips.find(c => c.id === editingClipId) || null;
+
+  const getValidUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('www.')) return `https://${url}`;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return `https://${url}`;
+    return url;
+  };
+
+  const addVideo = () => {
+    if (!newUrl.trim()) return;
+    const newVideo: OpponentVideo = {
+      id: `vid-${Date.now()}`,
+      url: newUrl.trim(),
+      clips: []
+    };
+    const newVideos = [...videos, newVideo];
+    onChange(newVideos);
+    setActiveVideoId(newVideo.id);
+    setNewUrl('');
+  };
+
+  const removeVideo = (id: string) => {
+    const newVideos = videos.filter(v => v.id !== id);
+    onChange(newVideos);
+    if (activeVideoId === id) {
+      setActiveVideoId(newVideos[0]?.id || null);
+    }
+  };
+
+  const addClip = () => {
+    if (!activeVideoId) return;
+    const currentTime = playerRef.current?.currentTime || 0;
+    const newClip: OpponentVideoClip = {
+      id: `clip-${Date.now()}`,
+      title: 'Nuevo Clip',
+      start: Math.floor(currentTime),
+      end: Math.floor(currentTime) + 10, // default 10 seconds
+      freezeTime: Math.floor(currentTime),
+      annotations: []
+    };
+    onChange(videos.map(v => v.id === activeVideoId ? { ...v, clips: [...v.clips, newClip] } : v));
+    // Abrir el editor profesional nada más crear el corte.
+    setEditingClipId(newClip.id);
+  };
+
+  const saveClip = (updated: OpponentVideoClip) => {
+    if (!activeVideoId) return;
+    onChange(videos.map(v => v.id === activeVideoId ? {
+      ...v,
+      clips: v.clips.map(c => c.id === updated.id ? updated : c)
+    } : v));
+  };
+
+  const updateClip = (clipId: string, updates: Partial<OpponentVideoClip>) => {
+    if (!activeVideoId) return;
+    onChange(videos.map(v => v.id === activeVideoId ? {
+      ...v,
+      clips: v.clips.map(c => c.id === clipId ? { ...c, ...updates } : c)
+    } : v));
+  };
+
+  const removeClip = (clipId: string) => {
+    if (!activeVideoId) return;
+    onChange(videos.map(v => v.id === activeVideoId ? {
+      ...v,
+      clips: v.clips.filter(c => c.id !== clipId)
+    } : v));
+  };
+
+  const captureTime = (clipId: string, field: 'start' | 'end') => {
+    const currentTime = playerRef.current?.currentTime || 0;
+    updateClip(clipId, { [field]: Math.floor(currentTime) });
+  };
+
+  const playClip = (clip: OpponentVideoClip) => {
+    if (playerRef.current) {
+      playerRef.current.currentTime = clip.start;
+      playerRef.current.play?.();
+      // No programamos pausa automática por simplicidad, pero el usuario puede verlo
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  return (
+    <div className="flex flex-col gap-4 w-full h-full bg-[#111] border border-brand-black-border rounded-xl p-4">
+      {/* Añadir Vídeo (solo edición) */}
+      {!readOnly && (
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Link className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
+            <input
+              type="text"
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+              placeholder="Añadir enlace de YouTube o Vimeo..."
+              className="w-full bg-black border border-brand-black-border rounded-lg pl-9 pr-3 py-2 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none"
+            />
+          </div>
+          <button type="button" onClick={addVideo} className="btn-primary py-2 px-4 text-xs shrink-0">
+            <Plus className="w-4 h-4 mr-1" /> Vídeo
+          </button>
+        </div>
+      )}
+
+      {/* Selector de Vídeo Activo */}
+      {videos.length > 1 && (
+        <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1">
+          {videos.map((v, idx) => (
+            <button
+              type="button"
+              key={v.id}
+              onClick={() => setActiveVideoId(v.id)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap transition-colors border ${
+                activeVideoId === v.id
+                  ? 'bg-brand-red-600/10 border-brand-red-600 text-brand-red-500'
+                  : 'bg-black border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light'
+              }`}
+            >
+              Vídeo {idx + 1}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {videos.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-brand-gray-muted text-sm border-2 border-dashed border-brand-black-border rounded-lg p-6">
+          <Play className="w-8 h-8 mb-2 opacity-50" />
+          <p>No hay vídeos para este bloque</p>
+        </div>
+      ) : activeVideo ? (
+        <div className="flex flex-col gap-4">
+          {/* Editor/Cabecera del Vídeo Actual */}
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={activeVideo.url}
+                onChange={(e) => {
+                  onChange(videos.map(v => v.id === activeVideoId ? { ...v, url: e.target.value } : v));
+                }}
+                className="flex-1 bg-black border border-brand-black-border rounded px-2 py-1 text-xs text-brand-gray-light outline-none focus:border-brand-red-600"
+              />
+              <button type="button" onClick={() => removeVideo(activeVideo.id)} className="text-brand-gray-muted hover:text-brand-red-600 p-1">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Reproductor Integrado */}
+          <div className="w-full aspect-video bg-black rounded-lg overflow-hidden border border-brand-black-border relative">
+            <ReactPlayer
+              ref={playerRef}
+              src={getValidUrl(activeVideo.url)}
+              width="100%"
+              height="100%"
+              controls={true}
+              playing={false}
+            />
+          </div>
+
+          {/* Gestor de Clips */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider">
+                <Scissors className="w-3.5 h-3.5 text-brand-red-600" />
+                Cortes de Vídeo
+              </h4>
+              {!readOnly && (
+                <button type="button" onClick={addClip} className="text-xs font-semibold text-brand-red-600 hover:text-brand-red-500">
+                  + Añadir Corte
+                </button>
+              )}
+            </div>
+
+            {activeVideo.clips.length === 0 ? (
+              <p className="text-xs text-brand-gray-dark italic">No hay cortes definidos.</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
+                {activeVideo.clips.map(clip => (
+                  <div key={clip.id} className={`flex items-center gap-2 bg-black p-2 rounded-lg border ${readOnly ? 'border-brand-black-border/50' : 'border-brand-black-border'}`}>
+                    
+                    {/* Reproducir Clip */}
+                    <button
+                      type="button"
+                      onClick={() => playClip(clip)}
+                      className="p-1.5 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white rounded transition-colors shrink-0"
+                      title="Ir a este momento"
+                    >
+                      <Play className="w-3 h-3" />
+                    </button>
+
+                    {/* Editor profesional del clip (telestración) */}
+                    {(!readOnly || (clip.annotations && clip.annotations.length > 0)) && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingClipId(clip.id)}
+                        className="relative p-1.5 bg-brand-black-card text-brand-gray-muted hover:text-white rounded transition-colors shrink-0"
+                        title={readOnly ? 'Ver clip anotado' : 'Editar clip (focos, lupa, jugadores)'}
+                      >
+                        <Wand2 className="w-3 h-3" />
+                        {clip.annotations && clip.annotations.length > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-brand-red-600 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                            {clip.annotations.length}
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {readOnly ? (
+                      <div className="flex-1 flex justify-between items-center px-2">
+                        <span className="text-xs font-semibold text-brand-gray-light">{clip.title}</span>
+                        <span className="text-xs text-brand-gray-muted font-mono bg-brand-black-card px-2 py-0.5 rounded">
+                          {formatTime(clip.start)} - {formatTime(clip.end)}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          value={clip.title}
+                          onChange={(e) => updateClip(clip.id, { title: e.target.value })}
+                          className="flex-1 min-w-[80px] bg-transparent text-xs text-brand-gray-light outline-none placeholder:text-brand-gray-dark"
+                          placeholder="Nombre del corte..."
+                        />
+                        
+                        <div className="flex items-center gap-1 shrink-0 bg-brand-black-card rounded p-1">
+                          <button type="button" onClick={() => captureTime(clip.id, 'start')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
+                            <Clock className="w-3 h-3" />
+                          </button>
+                          <input
+                            type="number"
+                            value={clip.start}
+                            onChange={(e) => updateClip(clip.id, { start: parseInt(e.target.value) || 0 })}
+                            className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none font-mono"
+                          />
+                          <span className="text-brand-gray-dark text-[10px]">-</span>
+                          <input
+                            type="number"
+                            value={clip.end}
+                            onChange={(e) => updateClip(clip.id, { end: parseInt(e.target.value) || 0 })}
+                            className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none font-mono"
+                          />
+                          <button type="button" onClick={() => captureTime(clip.id, 'end')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
+                            <Clock className="w-3 h-3" />
+                          </button>
+                        </div>
+                        
+                        <button type="button" onClick={() => removeClip(clip.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Editor / Visor profesional del clip */}
+      {editingClip && activeVideo && (
+        <ClipAnnotationEditor
+          videoUrl={getValidUrl(activeVideo.url)}
+          clip={editingClip}
+          allClips={activeVideo.clips}
+          readOnly={readOnly}
+          onSave={saveClip}
+          onClose={() => setEditingClipId(null)}
+        />
+      )}
+    </div>
+  );
+};

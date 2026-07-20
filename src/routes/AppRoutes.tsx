@@ -19,7 +19,9 @@ import { Points } from '../pages/Points';
 import { Scouting } from '../pages/Scouting';
 import { IndividualImprovement } from '../pages/IndividualImprovement';
 import { OpponentAnalysisPage } from '../pages/OpponentAnalysis';
+import { OpponentAnalysisMural } from '../pages/OpponentAnalysisMural';
 import { SettingsPage } from '../pages/Settings';
+import { PF } from '../pages/PF';
 import { AccessDenied } from '../pages/AccessDenied';
 import { NotFound } from '../pages/NotFound';
 import { Register } from '../pages/Register';
@@ -135,6 +137,11 @@ export const AppRoutes: React.FC = () => {
 
           <Route element={<ProtectedRoute pageKey="opponent_analysis" />}>
             <Route path="/opponent-analysis" element={<OpponentAnalysisPage />} />
+            <Route path="/opponent-analysis/:id" element={<OpponentAnalysisMural />} />
+          </Route>
+
+          <Route element={<ProtectedRoute pageKey="pf" />}>
+            <Route path="/pf" element={<PF />} />
           </Route>
 
           <Route element={<ProtectedRoute pageKey="settings" />}>

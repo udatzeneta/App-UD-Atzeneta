@@ -1038,31 +1038,36 @@ export const dataService = {
       await delay(300);
       return MockDatabase.getScouting().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
-      const allData: ScoutingPlayer[] = [];
+      const { count, error: countError } = await supabase
+        .from('scouting')
+        .select('*', { count: 'exact', head: true })
+        .eq('team_category', teamCategory);
+
+      if (countError) throw countError;
+      if (!count) return [];
+
       const pageSize = 1000;
-      let page = 0;
-      let hasMore = true;
+      const pages = Math.ceil(count / pageSize);
+      const promises = [];
 
-      while (hasMore) {
-        const start = page * pageSize;
+      for (let i = 0; i < pages; i++) {
+        const start = i * pageSize;
         const end = start + pageSize - 1;
-        const { data, error } = await supabase
-          .from('scouting')
-          .select('*')
-          .eq('team_category', teamCategory)
-          .order('created_at', { ascending: false })
-          .range(start, end);
+        promises.push(
+          supabase
+            .from('scouting')
+            .select('*')
+            .eq('team_category', teamCategory)
+            .order('created_at', { ascending: false })
+            .range(start, end)
+        );
+      }
 
-        if (error) throw error;
-        if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          allData.push(...data as ScoutingPlayer[]);
-          if (data.length < pageSize) {
-            hasMore = false;
-          }
-        }
-        page++;
+      const results = await Promise.all(promises);
+      const allData: ScoutingPlayer[] = [];
+      for (const res of results) {
+        if (res.error) throw res.error;
+        if (res.data) allData.push(...(res.data as ScoutingPlayer[]));
       }
       return allData;
     }
@@ -1074,31 +1079,36 @@ export const dataService = {
       await delay(300);
       return MockDatabase.getScouting().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
-      const allData: ScoutingPlayer[] = [];
-      const pageSize = 500;
-      let page = 0;
-      let hasMore = true;
+      const { count, error: countError } = await supabase
+        .from('scouting')
+        .select('*', { count: 'exact', head: true })
+        .eq('team_category', teamCategory);
 
-      while (hasMore) {
-        const start = page * pageSize;
+      if (countError) throw countError;
+      if (!count) return [];
+
+      const pageSize = 1000;
+      const pages = Math.ceil(count / pageSize);
+      const promises = [];
+
+      for (let i = 0; i < pages; i++) {
+        const start = i * pageSize;
         const end = start + pageSize - 1;
-        const { data, error } = await supabase
-          .from('scouting')
-          .select('*, scouting_player_history(*)')
-          .eq('team_category', teamCategory)
-          .order('created_at', { ascending: false })
-          .range(start, end);
+        promises.push(
+          supabase
+            .from('scouting')
+            .select('*, scouting_player_history(*)')
+            .eq('team_category', teamCategory)
+            .order('created_at', { ascending: false })
+            .range(start, end)
+        );
+      }
 
-        if (error) throw error;
-        if (!data || data.length === 0) {
-          hasMore = false;
-        } else {
-          allData.push(...data as ScoutingPlayer[]);
-          if (data.length < pageSize) {
-            hasMore = false;
-          }
-        }
-        page++;
+      const results = await Promise.all(promises);
+      const allData: ScoutingPlayer[] = [];
+      for (const res of results) {
+        if (res.error) throw res.error;
+        if (res.data) allData.push(...(res.data as ScoutingPlayer[]));
       }
       return allData;
     }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
@@ -11,9 +12,11 @@ import {
   Plus, Search, Edit2, Trash2, Download,
   Settings as TacticalIcon, ShieldAlert, Award, FileText
 } from 'lucide-react';
+import { OpponentAnalysisEditor } from '../components/opponent_analysis/OpponentAnalysisEditor';
 
 export const OpponentAnalysisPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
 
@@ -26,19 +29,33 @@ export const OpponentAnalysisPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAnalysis, setEditingAnalysis] = useState<OpponentAnalysis | null>(null);
 
-  // Campos formulario (Texto plano delimitado por comas para los arrays)
-  const [opponent, setOpponent] = useState('');
-  const [tacticalSystem, setTacticalSystem] = useState('');
-  const [strengthsText, setStrengthsText] = useState('');
-  const [weaknessesText, setWeaknessesText] = useState('');
-  const [keyPlayersText, setKeyPlayersText] = useState('');
-  const [observations, setObservations] = useState('');
-
-  // Query
+  // Queries
   const { data: analysisList = [], isLoading } = useQuery({
     queryKey: ['opponent_analysis'],
     queryFn: () => dataService.getOpponentAnalysis()
   });
+
+  const { data: teamsList = [] } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => dataService.getTeams()
+  });
+
+  const { data: scoutingList = [] } = useQuery({
+    queryKey: ['scouting'],
+    queryFn: () => dataService.getScouting()
+  });
+
+  // Preparar opciones del selector de equipos
+  const ffcvTeams = teamsList.map(t => t.name).sort();
+  
+  // Equipos únicos de scouting que no estén ya en FFCV
+  const scoutingTeams = Array.from(
+    new Set(
+      scoutingList
+        .map(p => p.team)
+        .filter(t => t && !ffcvTeams.includes(t))
+    )
+  ).sort();
 
   // Mutaciones
   const createMutation = useMutation({
@@ -72,23 +89,11 @@ export const OpponentAnalysisPage: React.FC = () => {
 
   const handleOpenCreateModal = () => {
     setEditingAnalysis(null);
-    setOpponent('');
-    setTacticalSystem('1-4-3-3');
-    setStrengthsText('');
-    setWeaknessesText('');
-    setKeyPlayersText('');
-    setObservations('');
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (oa: OpponentAnalysis) => {
     setEditingAnalysis(oa);
-    setOpponent(oa.opponent);
-    setTacticalSystem(oa.tactical_system);
-    setStrengthsText(oa.strengths.join(', '));
-    setWeaknessesText(oa.weaknesses.join(', '));
-    setKeyPlayersText(oa.key_players.join(', '));
-    setObservations(oa.observations);
     setIsModalOpen(true);
   };
 
@@ -97,38 +102,26 @@ export const OpponentAnalysisPage: React.FC = () => {
     setEditingAnalysis(null);
   };
 
-  // Separar string por comas
-  const parseTags = (text: string) => {
-    return text
-      .split(',')
-      .map(x => x.trim())
-      .filter(x => x.length > 0);
-  };
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!opponent.trim()) {
+  const handleSave = (payload: Partial<OpponentAnalysis>, isManual: boolean, oppSelect: string, oppManual: string) => {
+    const finalOpponent = isManual ? oppManual.trim() : oppSelect.trim();
+    if (!finalOpponent) {
       showToast('error', 'Validación', 'El nombre del rival es obligatorio.');
       return;
     }
-    if (!tacticalSystem.trim()) {
+    if (!payload.tactical_system?.trim()) {
       showToast('error', 'Validación', 'El sistema táctico es obligatorio.');
       return;
     }
 
-    const payload = {
-      opponent: opponent.trim(),
-      tactical_system: tacticalSystem.trim(),
-      strengths: parseTags(strengthsText),
-      weaknesses: parseTags(weaknessesText),
-      key_players: parseTags(keyPlayersText),
-      observations: observations.trim()
+    const finalPayload = {
+      ...payload,
+      opponent: finalOpponent
     };
 
     if (editingAnalysis) {
-      updateMutation.mutate({ id: editingAnalysis.id, item: payload });
+      updateMutation.mutate({ id: editingAnalysis.id, item: finalPayload });
     } else {
-      createMutation.mutate(payload);
+      createMutation.mutate(finalPayload as Omit<OpponentAnalysis, 'id'>);
     }
   };
 
@@ -227,9 +220,13 @@ export const OpponentAnalysisPage: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 gap-6">
           {filteredList.map((analysis) => (
-            <div key={analysis.id} className="dashboard-card flex flex-col justify-between p-6 space-y-6">
+            <div key={analysis.id} className="dashboard-card flex flex-col justify-between p-0 overflow-hidden">
               
-              {/* Bloque Cabecera Ficha */}
+              <div 
+                className="p-6 space-y-6 cursor-pointer hover:bg-brand-black-hover transition-colors"
+                onClick={() => navigate(`/opponent-analysis/${analysis.id}`)}
+              >
+                {/* Bloque Cabecera Ficha */}
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-brand-black-border pb-4">
                 <div>
                   <h3 className="text-lg font-bold text-brand-gray-light">{analysis.opponent}</h3>
@@ -312,10 +309,11 @@ export const OpponentAnalysisPage: React.FC = () => {
                   </p>
                 </div>
               )}
+              </div>
 
               {/* Acciones de Edición/Borrado */}
               {(canEdit || canDelete) && (
-                <div className="flex justify-end gap-2 border-t border-brand-black-border pt-4">
+                <div className="flex justify-end gap-2 border-t border-brand-black-border p-4 bg-brand-black/30">
                   {canEdit && (
                     <button 
                       onClick={() => handleOpenEditModal(analysis)}
@@ -345,84 +343,16 @@ export const OpponentAnalysisPage: React.FC = () => {
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        title={editingAnalysis ? 'Editar Informe Táctico' : 'Registrar Análisis del Rival'}
+        title={editingAnalysis ? `Editar Informe: ${editingAnalysis.opponent}` : 'Registrar Análisis del Rival'}
+        maxWidth="max-w-[1200px]"
       >
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="form-label">Club Rival</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Ontinyent 1931 CF"
-                value={opponent}
-                onChange={(e) => setOpponent(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="form-label">Sistema Táctico</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="1-4-3-3"
-                value={tacticalSystem}
-                onChange={(e) => setTacticalSystem(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">Fortalezas del Rival (Separadas por comas)</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Presión alta, Transiciones rápidas, Balón parado"
-              value={strengthsText}
-              onChange={(e) => setStrengthsText(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="form-label">Puntos Débiles / Falencias (Separados por comas)</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Espacio a la espalda de laterales, Lentitud de centrales"
-              value={weaknessesText}
-              onChange={(e) => setWeaknessesText(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="form-label">Jugadores Destacados (Separados por comas)</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Javi Llor (Nº 10), David Torres (Nº 9)"
-              value={keyPlayersText}
-              onChange={(e) => setKeyPlayersText(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="form-label">Observaciones e Instrucciones Tácticas para el Plantel</label>
-            <textarea
-              className="form-input h-28 resize-none"
-              placeholder="Evitar pases divididos en zona de iniciación, buscar pases en diagonal a las bandas..."
-              value={observations}
-              onChange={(e) => setObservations(e.target.value)}
-            />
-          </div>
-
-          <div className="flex gap-2 pt-4 justify-end">
-            <button type="button" onClick={handleCloseModal} className="btn-secondary py-2 text-xs">
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary py-2 text-xs font-semibold">
-              Guardar Análisis
-            </button>
-          </div>
-        </form>
+        <OpponentAnalysisEditor
+          initialData={editingAnalysis}
+          onSave={handleSave}
+          onCancel={handleCloseModal}
+          ffcvTeams={ffcvTeams}
+          scoutingTeams={scoutingTeams}
+        />
       </Modal>
     </div>
   );

@@ -21,6 +21,7 @@ export interface BoardElement {
   filled?: boolean;
   dashed?: boolean;
   thickness?: number;
+  abp_marking?: 'Z' | 'H' | '';
 }
 
 export interface BoardLine {
@@ -594,6 +595,11 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
     setElements(elements.map(e => ids.includes(e.id) ? { ...e, thickness } : e));
   };
 
+  const toggleAbpMarking = (ids: string[], marking: 'Z' | 'H' | '') => {
+    saveState();
+    setElements(elements.map(e => ids.includes(e.id) ? { ...e, abp_marking: marking } : e));
+  };
+
   // Keyboard shortcuts (Supr/Backspace: eliminar, Ctrl/Cmd+D: duplicar, Esc: deseleccionar)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -828,11 +834,26 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
             <div style={{
               width: px(24), height: px(24), borderRadius: '50%',
               background: printMode ? displayColor : `radial-gradient(circle at 30% 30%, ${displayColor}, #111)`,
-              boxShadow: printMode ? 'none' : 'inset -2px -2px 4px rgba(0,0,0,0.5), inset 2px 2px 4px rgba(255,255,255,0.4), 2px 3px 4px rgba(0,0,0,0.4)',
-              border: '1px solid rgba(255,255,255,0.2)'
-            }} />
-            {el.text && (
-              <span className="absolute text-white font-bold whitespace-nowrap" style={{ fontSize: px(11), textShadow: printMode ? 'none' : '0 1px 2px rgba(0,0,0,0.8)', color: printMode ? 'black' : 'white' }}>{el.text}</span>
+              border: `2px solid ${printMode ? '#000' : 'rgba(255,255,255,0.8)'}`,
+              boxShadow: printMode ? 'none' : '2px 2px 4px rgba(0,0,0,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: ['#ffffff', '#ffeb3b'].includes(el.color.toLowerCase()) ? '#000' : '#fff',
+              fontWeight: 'bold', fontSize: px(12),
+              fontFamily: 'sans-serif'
+            }}>
+              {el.text}
+            </div>
+            {el.abp_marking && (
+              <div style={{
+                position: 'absolute', top: px(-10), right: px(-10),
+                width: px(16), height: px(16), borderRadius: '50%',
+                background: el.abp_marking === 'Z' ? '#3b82f6' : '#ef4444',
+                color: '#fff', fontSize: px(10), fontWeight: 'bold',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '1px solid #fff'
+              }}>
+                {el.abp_marking}
+              </div>
             )}
           </div>
         );
@@ -1357,9 +1378,9 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
           {openSections.elements && (
             <div className={`grid ${limitedTools ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-2'} gap-1`}>
               <ToolButton tool="player" label="Jugador" bg={true} icon={<div className="w-5 h-5 rounded-full border border-white/50" style={{ background: `radial-gradient(circle at 30% 30%, ${activeColor}, #333)` }} />}/>
+              <ToolButton tool="ball" label="Balón" bg={true} icon={<div className="w-4 h-4 flex items-center justify-center"><TiroLeagueBall /></div>}/>
               {!limitedTools && (
                 <>
-                  <ToolButton tool="ball" label="Balón" bg={true} icon={<div className="w-4 h-4 flex items-center justify-center"><TiroLeagueBall /></div>}/>
                   <ToolButton tool="cone" label="Chino" bg={true} icon={
                      <svg width="16" height="16" viewBox="0 0 20 20">
                        <path d="M 1 10 A 9 9 0 1 0 19 10 A 9 9 0 1 0 1 10 Z M 8 10 A 2 2 0 1 1 12 10 A 2 2 0 1 1 8 10 Z" fill={activeColor} fillRule="evenodd" />
@@ -1578,7 +1599,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
             )}
 
             {/* Si es un único texto o forma, mostrar input de edición */}
-            {selectedElement && ['text', 'shape-circle', 'shape-square'].includes(selectedElement.type) ? (
+            {selectedElement && ['text', 'shape-circle', 'shape-square', 'player'].includes(selectedElement.type) ? (
               <>
                 <input
                   type="text"
@@ -1590,6 +1611,27 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 <div className="w-px h-6 bg-brand-black-border mx-1" />
               </>
             ) : null}
+
+            {/* Si es jugador y modo ABP, opciones de marcaje */}
+            {selectedElement && selectedElement.type === 'player' && (
+              <>
+                <button
+                  onClick={() => toggleAbpMarking(selectedElementIds, selectedElement.abp_marking === 'Z' ? '' : 'Z')}
+                  className={`px-2 py-1 text-xs font-bold rounded transition-colors ${selectedElement.abp_marking === 'Z' ? 'bg-blue-500 text-white' : 'text-brand-gray-light hover:bg-brand-black-hover'}`}
+                  title="Marcar en Zona"
+                >
+                  Z
+                </button>
+                <button
+                  onClick={() => toggleAbpMarking(selectedElementIds, selectedElement.abp_marking === 'H' ? '' : 'H')}
+                  className={`px-2 py-1 text-xs font-bold rounded transition-colors ${selectedElement.abp_marking === 'H' ? 'bg-red-500 text-white' : 'text-brand-gray-light hover:bg-brand-black-hover'}`}
+                  title="Marcar al Hombre"
+                >
+                  H
+                </button>
+                <div className="w-px h-6 bg-brand-black-border mx-1" />
+              </>
+            )}
 
             {/* Rotar: oculto solo si la selección única es texto */}
             {!(selectedElement && selectedElement.type === 'text') && (
