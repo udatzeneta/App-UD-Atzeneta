@@ -42,7 +42,7 @@ export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jug
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gps_records'] });
-      showToast('Registro GPS guardado correctamente', 'success');
+      showToast('success', 'Registro GPS guardado correctamente');
       onClose();
       // Reset form
       setJugadorId('');
@@ -55,7 +55,7 @@ export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jug
     },
     onError: (error: any) => {
       console.error(error);
-      showToast(`Error al guardar: ${error.message || 'Error desconocido'}`, 'error');
+      showToast('error', `Error al guardar: ${error.message || 'Error desconocido'}`);
     }
   });
 

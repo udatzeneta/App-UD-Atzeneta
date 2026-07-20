@@ -54,7 +54,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fuerza_sesiones'] });
       queryClient.invalidateQueries({ queryKey: ['fuerza_sesion_ejercicios'] });
-      showToast('Sesión de fuerza registrada', 'success');
+      showToast('success', 'Sesión de fuerza registrada');
       onClose();
       // Reset form
       setEjerciciosSeleccionados([]);
@@ -62,7 +62,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
     },
     onError: (error) => {
       console.error(error);
-      showToast('Error al guardar la sesión', 'error');
+      showToast('error', 'Error al guardar la sesión');
     }
   });
 
