@@ -3,6 +3,7 @@ import { OpponentAnalysis, OpponentAnalysisBlock, OpponentRosterPlayer } from '.
 import { Save, X, LayoutDashboard, Users, MoveRight, MoveLeft, Target } from 'lucide-react';
 import { OpponentVideoClipper } from './OpponentVideoClipper';
 import { TaskBoardEditor } from '../TaskBoardEditor';
+import { OpponentRosterManager } from './OpponentRosterManager';
 
 interface Props {
   initialData?: OpponentAnalysis | null;
