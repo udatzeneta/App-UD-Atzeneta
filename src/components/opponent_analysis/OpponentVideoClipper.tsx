@@ -324,80 +324,57 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
                         </button>
                       )}
 
-                      {readOnly ? (
-                        <div className="flex-1 flex flex-col px-2 gap-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-semibold text-brand-gray-light">{clip.title}</span>
-                            <span className="text-xs text-brand-gray-muted font-mono bg-brand-black-card px-2 py-0.5 rounded">
-                              {formatTime(clip.start)} - {formatTime(clip.end)}
-                            </span>
-                          </div>
-                          {clip.description && (
-                            <p className="text-[11px] text-brand-gray-muted mt-1">{clip.description}</p>
-                          )}
-                          {clip.board && (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedClipId(expandedClipId === clip.id ? null : clip.id)}
-                              className="text-[10px] text-brand-red-600 hover:text-white text-left mt-1"
-                            >
-                              {expandedClipId === clip.id ? 'Ocultar Campograma' : 'Ver Campograma adjunto'}
+                      <div className="flex-1 flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={clip.title}
+                            onChange={(e) => updateClip(clip.id, { title: e.target.value })}
+                            className="flex-1 min-w-[80px] bg-transparent text-xs text-brand-gray-light outline-none placeholder:text-brand-gray-dark"
+                            placeholder="Nombre del corte..."
+                          />
+                          
+                          <div className="flex items-center gap-1 shrink-0 bg-brand-black-card rounded p-1">
+                            <button type="button" onClick={() => captureTime(clip.id, 'start')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
+                              <Clock className="w-3 h-3" />
                             </button>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex-1 flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
                             <input
-                              type="text"
-                              value={clip.title}
-                              onChange={(e) => updateClip(clip.id, { title: e.target.value })}
-                              className="flex-1 min-w-[80px] bg-transparent text-xs text-brand-gray-light outline-none placeholder:text-brand-gray-dark"
-                              placeholder="Nombre del corte..."
+                              type="number"
+                              value={clip.start}
+                              onChange={(e) => updateClip(clip.id, { start: parseInt(e.target.value) || 0 })}
+                              className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
                             />
-                            
-                            <div className="flex items-center gap-1 shrink-0 bg-brand-black-card rounded p-1">
-                              <button type="button" onClick={() => captureTime(clip.id, 'start')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
-                                <Clock className="w-3 h-3" />
-                              </button>
-                              <input
-                                type="number"
-                                value={clip.start}
-                                onChange={(e) => updateClip(clip.id, { start: parseInt(e.target.value) || 0 })}
-                                className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
-                              />
-                              <span className="text-brand-gray-dark text-[10px]">-</span>
-                              <input
-                                type="number"
-                                value={clip.end}
-                                onChange={(e) => updateClip(clip.id, { end: parseInt(e.target.value) || 0 })}
-                                className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
-                              />
-                              <button type="button" onClick={() => captureTime(clip.id, 'end')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
-                                <Clock className="w-3 h-3" />
-                              </button>
-                            </div>
-
-                            <button type="button" onClick={() => removeClip(clip.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0">
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <span className="text-brand-gray-dark text-[10px]">-</span>
+                            <input
+                              type="number"
+                              value={clip.end}
+                              onChange={(e) => updateClip(clip.id, { end: parseInt(e.target.value) || 0 })}
+                              className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
+                            />
+                            <button type="button" onClick={() => captureTime(clip.id, 'end')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
+                              <Clock className="w-3 h-3" />
                             </button>
                           </div>
 
-                          <div className="flex flex-col gap-2 border-t border-brand-black-border/50 pt-2">
-                            <textarea
-                              value={clip.description || ''}
-                              onChange={(e) => updateClip(clip.id, { description: e.target.value })}
-                              placeholder="Comentario del clip..."
-                              className="w-full bg-brand-black-card border border-brand-black-border rounded p-1.5 text-[11px] text-brand-gray-light outline-none focus:border-brand-red-600 min-h-[40px] resize-y"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setExpandedClipId(expandedClipId === clip.id ? null : clip.id)}
-                              className="text-[10px] font-semibold text-brand-gray-muted hover:text-white self-start"
-                            >
-                              {expandedClipId === clip.id ? '- Ocultar Campograma' : '+ Añadir/Editar Campograma'}
-                            </button>
-                          </div>
+                          <button type="button" onClick={() => removeClip(clip.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="flex flex-col gap-2 border-t border-brand-black-border/50 pt-2">
+                          <textarea
+                            value={clip.description || ''}
+                            onChange={(e) => updateClip(clip.id, { description: e.target.value })}
+                            placeholder="Comentario del clip..."
+                            className="w-full bg-brand-black-card border border-brand-black-border rounded p-1.5 text-[11px] text-brand-gray-light outline-none focus:border-brand-red-600 min-h-[40px] resize-y"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setExpandedClipId(expandedClipId === clip.id ? null : clip.id)}
+                            className="text-[10px] font-semibold text-brand-gray-muted hover:text-white self-start"
+                          >
+                            {expandedClipId === clip.id ? '- Ocultar Campograma' : '+ Añadir/Editar Campograma'}
+                          </button>
                         </div>
                       </div>
                     </div>
