@@ -264,7 +264,7 @@ function DashboardGPS() {
       filename:     filename,
       image:        { type: 'jpeg' as const, quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' as const }
     };
 
     html2pdf().set(opt).from(element).save();
@@ -540,7 +540,7 @@ function DashboardFuerza() {
           filename:     filename,
           image:        { type: 'jpeg' as const, quality: 0.98 },
           html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
-          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }, // A4 Portrait
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }, // A4 Portrait
         };
 
         html2pdf().set(opt).from(element).save().then(() => {
