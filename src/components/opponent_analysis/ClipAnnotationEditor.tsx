@@ -128,6 +128,10 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   const tlDragRef = useRef<null | 'scrub' | 'start' | 'end' | 'move'>(null);
   const tlGrabRef = useRef(0); // offset (en seg) entre el puntero y el inicio del corte al arrastrarlo
 
+  const [pauseDuration, setPauseDuration] = useState<number>(clip.pauseDuration ?? 3);
+  const [hasAutoPaused, setHasAutoPaused] = useState(false);
+  const autoPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const frozen = !playing; // mientras no reproducimos, mostramos el frame congelado + anotaciones
 
   // Medir el tamaño en píxeles del lienzo (para posicionar la lupa).
@@ -329,7 +333,7 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   }, [selectedId, readOnly, drawingLineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = () => {
-    onSave({ ...clip, start: Math.round(start), end: Math.round(end), freezeTime, annotations });
+    onSave({ ...clip, start: Math.round(start), end: Math.round(end), freezeTime, pauseDuration, annotations });
     onClose();
   };
 
@@ -342,6 +346,13 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
       try { playerRef.current.currentTime = clamped; } catch { /* noop */ }
     }
     if (freeze) setFreezeTime(clamped);
+    if (t < freezeTime) {
+      setHasAutoPaused(false);
+    }
+    if (autoPauseTimerRef.current) {
+      clearTimeout(autoPauseTimerRef.current);
+      autoPauseTimerRef.current = null;
+    }
   };
 
   // ----- Timeline (barra de tiempo) -----
@@ -454,7 +465,33 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                 onReady={() => { if (frozen) seekToFreeze(); }}
                 onDurationChange={() => setDuration(playerRef.current?.duration || 0)}
                 onLoadedMetadata={() => setDuration(playerRef.current?.duration || 0)}
-                onTimeUpdate={() => { if (!frozen) setCurrentTime(playerRef.current?.currentTime || 0); }}
+                onTimeUpdate={() => {
+                  const t = playerRef.current?.currentTime || 0;
+                  if (!frozen) setCurrentTime(t);
+
+                  // 1. Loop/Boundaries en reproducción
+                  if (!frozen) {
+                    if (t > end) {
+                      seekTo(start, false);
+                      return;
+                    }
+                    if (t < start) {
+                      seekTo(start, false);
+                      return;
+                    }
+
+                    // 2. Auto-pausa en anotaciones
+                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.5) {
+                      setPlaying(false); // esto hará frozen=true y mostrará el dibujo
+                      setHasAutoPaused(true);
+                      seekToFreeze(); // asegura que clavemos el tiempo exacto
+                      
+                      autoPauseTimerRef.current = setTimeout(() => {
+                        setPlaying(true);
+                      }, pauseDuration * 1000);
+                    }
+                  }
+                }}
               />
 
               {/* Capa de anotaciones (visible sólo congelado) */}
@@ -681,7 +718,16 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPlaying(p => !p)}
+                onClick={() => {
+                  if (autoPauseTimerRef.current) {
+                    clearTimeout(autoPauseTimerRef.current);
+                    autoPauseTimerRef.current = null;
+                  }
+                  if (!playing && currentTime >= end) {
+                    seekTo(start, false);
+                  }
+                  setPlaying(p => !p);
+                }}
                 className="flex items-center gap-1.5 bg-black border border-brand-black-border rounded-lg px-3 py-2 text-xs text-brand-gray-light hover:text-white"
               >
                 {playing ? <><Pause className="w-4 h-4" /> Pausar</> : <><Play className="w-4 h-4" /> Reproducir</>}
@@ -705,6 +751,20 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
               <span className="text-xs text-brand-gray-muted font-mono bg-black border border-brand-black-border rounded-lg px-3 py-2">
                 Frame: {fmt(freezeTime)}
               </span>
+
+              {!readOnly && (
+                <div className="flex items-center gap-2 bg-black border border-brand-black-border rounded-lg pl-3 pr-2 py-1.5">
+                  <span className="text-xs text-brand-gray-muted whitespace-nowrap">Pausa (seg):</span>
+                  <input
+                    type="number"
+                    min={1} max={10}
+                    value={pauseDuration}
+                    onChange={(e) => setPauseDuration(Number(e.target.value) || 3)}
+                    className="w-12 bg-transparent text-white text-xs border border-brand-black-border rounded px-1 py-0.5 text-center outline-none focus:border-brand-red-600"
+                    title="Segundos que se detendrá el vídeo para ver el dibujo"
+                  />
+                </div>
+              )}
 
               {!readOnly && selected && (
                 <button

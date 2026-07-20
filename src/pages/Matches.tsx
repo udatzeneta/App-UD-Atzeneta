@@ -589,6 +589,14 @@ export const Matches: React.FC = () => {
     return matchesSearch && matchesCompetition && matchesStatus;
   });
 
+  const upcomingMatches = filteredMatches
+    .filter(m => m.status !== 'Jugado')
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const playedMatches = filteredMatches
+    .filter(m => m.status === 'Jugado')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
   const exportHeaders = ['Jornada', 'Fecha', 'Rival', 'Campo', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
   const buildExportRows = (): ExportCell[][] =>
@@ -628,6 +636,282 @@ export const Matches: React.FC = () => {
     { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' },
     { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' }
   ];
+
+  const renderMatchRow = (match: Match) => {
+    const hasPlayed = match.status === 'Jugado';
+    return (
+      <tr 
+        key={match.id} 
+        onClick={() => handleMatchClick(match)}
+        className={`transition-colors cursor-pointer ${selectedMatchIds.includes(match.id) ? 'bg-brand-red-600/10 hover:bg-brand-red-600/20' : 'hover:bg-brand-black-hover/20'}`}
+      >
+        {isSelectionMode && (
+          <td className="table-td text-center" onClick={(e) => e.stopPropagation()}>
+            <input 
+              type="checkbox" 
+              className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 cursor-pointer"
+              checked={selectedMatchIds.includes(match.id)}
+              onChange={() => toggleMatchSelection(match.id)}
+            />
+          </td>
+        )}
+        <td className="table-td">
+          <div className="flex flex-col">
+            <span className="font-semibold text-brand-gray-light">{match.date}</span>
+            {match.time && (
+              <span className="text-[11px] text-brand-gray-muted mt-0.5">
+                {match.time} hs
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="table-td text-center">
+          {match.matchday ? (
+            <span className="font-semibold text-brand-gray-light bg-brand-black-border px-2 py-0.5 rounded text-xs">
+              J. {match.matchday}
+            </span>
+          ) : (
+            <span className="text-brand-gray-dark">-</span>
+          )}
+        </td>
+        <td className="table-td font-semibold text-brand-gray-light">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 shrink-0 border border-brand-black-border/10 shadow-sm">
+                <img 
+                  src={getTeamLogo(match.rival)} 
+                  alt={match.rival} 
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+                  }}
+                />
+              </div>
+              <span>{match.rival}</span>
+            </div>
+             <div className="flex items-center gap-2 mt-1">
+               {(match.callup_time || match.callup_location) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSquadModal(match);
+                  }}
+                  className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
+                >
+                  <Users className="w-3 h-3" /> Convocatoria
+                </button>
+              )}
+              {match.tactical_system && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/matches/${match.id}/report`);
+                  }}
+                  className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
+                >
+                  <CheckCircle className="w-3 h-3" /> Datos subidos
+                </button>
+              )}
+             </div>
+          </div>
+        </td>
+        <td className="table-td text-center">
+          <div className="flex flex-col items-center gap-1">
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+              match.is_local ? 'bg-indigo-950/30 text-indigo-300 border border-indigo-900/30' : 'bg-orange-950/30 text-orange-300 border border-orange-900/30'
+            }`}>
+              {match.is_local ? 'Local' : 'Visitante'}
+            </span>
+            {match.location && <span className="text-[11px] text-brand-gray-muted text-center truncate max-w-[150px]" title={match.location}>{match.location}</span>}
+          </div>
+        </td>
+        <td className="table-td text-brand-gray-muted">{match.competition}</td>
+        <td className="table-td text-center font-bold text-base">
+          {hasPlayed ? (
+            <span className={match.score_us! > match.score_them! ? 'text-emerald-500' : match.score_us! < match.score_them! ? 'text-brand-red-600' : 'text-brand-gray-light'}>
+              {match.score_us} - {match.score_them}
+            </span>
+          ) : (
+            <span className="text-brand-gray-dark font-normal text-xs">-</span>
+          )}
+        </td>
+        <td className="table-td">
+          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+            match.status === 'Jugado' 
+              ? 'bg-emerald-950/20 text-emerald-400 border border-emerald-900/30' 
+              : match.status === 'Suspendido'
+              ? 'bg-red-950/20 text-red-400 border border-red-900/30'
+              : 'bg-brand-black-border text-brand-gray-muted border border-brand-black-border'
+          }`}>
+            {match.status === 'Jugado' && <CheckCircle className="w-3 h-3" />}
+            {match.status === 'Suspendido' && <XCircle className="w-3 h-3" />}
+            {match.status === 'Programado' && <HelpCircle className="w-3 h-3" />}
+            {match.status}
+          </span>
+        </td>
+        {(canEdit || canDelete) && (
+          <td className="table-td text-right">
+            <div className="flex gap-2 justify-end">
+              {canEdit && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleOpenEditModal(match); }}
+                  className="text-brand-gray-muted hover:text-brand-gray-light p-1.5 rounded bg-brand-black-hover hover:bg-brand-black-border border border-brand-black-border transition-all"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {canDelete && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }}
+                  className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded bg-brand-black-hover hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/20 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </td>
+        )}
+      </tr>
+    );
+  };
+
+  const renderMatchCard = (match: Match) => {
+    const hasPlayed = match.status === 'Jugado';
+    return (
+      <div 
+        key={match.id} 
+        onClick={() => handleMatchClick(match)}
+        className={`bg-brand-black-card border rounded-xl p-4 shadow-premium space-y-3 cursor-pointer transition-colors relative ${
+          selectedMatchIds.includes(match.id) 
+            ? 'border-brand-red-600/50 bg-brand-red-600/5' 
+            : 'border-brand-black-border hover:border-brand-black-border/80'
+        }`}
+      >
+        {isSelectionMode && (
+          <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
+            <input 
+              type="checkbox" 
+              className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 scale-125 cursor-pointer"
+              checked={selectedMatchIds.includes(match.id)}
+              onChange={() => toggleMatchSelection(match.id)}
+            />
+          </div>
+        )}
+        <div className={`flex justify-between items-start ${isSelectionMode ? 'pr-8' : ''}`}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
+              <img 
+                src={getTeamLogo(match.rival)} 
+                alt={match.rival} 
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+                }}
+              />
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-brand-gray-light flex flex-col gap-1">
+                {match.rival}
+                <div className="flex flex-wrap items-center gap-2 mt-1 font-normal">
+                  {(match.callup_time || match.callup_location) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openSquadModal(match);
+                      }}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
+                    >
+                      <Users className="w-3 h-3" /> Convocatoria
+                    </button>
+                  )}
+                  {match.tactical_system && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/matches/${match.id}/report`);
+                      }}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
+                    >
+                      <CheckCircle className="w-3 h-3" /> Datos subidos
+                    </button>
+                  )}
+                </div>
+              </h4>
+              <span className="text-[11px] text-brand-gray-muted flex flex-wrap items-center gap-1 mt-1">
+                <Calendar className="w-3.5 h-3.5" /> {match.date} {match.time && `| ${match.time} hs`}
+              </span>
+              {match.location && (
+                <span className="text-[11px] text-brand-gray-muted block mt-1">
+                  📍 {match.location}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+              match.is_local ? 'bg-indigo-950/30 text-indigo-300' : 'bg-orange-950/30 text-orange-300'
+            }`}>
+              {match.is_local ? 'Local' : 'Visitante'}
+            </span>
+            {match.matchday && (
+              <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-400/30 shadow-[0_0_8px_rgba(34,211,238,0.15)]">
+                Jornada {match.matchday}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center border-t border-brand-black-border pt-3">
+          <div className="text-xs text-brand-gray-muted">
+            Competición: <span className="text-brand-gray-light font-medium">{match.competition}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-medium text-brand-gray-muted">Resultado:</span>
+            <span className="text-sm font-bold bg-brand-black px-2.5 py-1 rounded border border-brand-black-border">
+              {hasPlayed ? `${match.score_us} - ${match.score_them}` : '-'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-brand-black-border/50 pt-3">
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+            match.status === 'Jugado' 
+              ? 'bg-emerald-950/20 text-emerald-400' 
+              : match.status === 'Suspendido'
+              ? 'bg-red-950/20 text-red-400'
+              : 'bg-brand-black-border text-brand-gray-muted'
+          }`}>
+            {match.status}
+          </span>
+
+          <div className="flex gap-2">
+            {canEdit && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleOpenEditModal(match); }}
+                className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1"
+              >
+                <Edit2 className="w-3 h-3" /> Editar
+              </button>
+            )}
+            {canDelete && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }}
+                className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-red-600 flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" /> Borrar
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -831,313 +1115,97 @@ export const Matches: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Tabla para Escritorio */}
-          <div className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  {isSelectionMode && (
-                    <th className="table-th w-10 text-center">
-                      <input 
-                        type="checkbox" 
-                        className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 cursor-pointer"
-                        checked={filteredMatches.length > 0 && selectedMatchIds.length === filteredMatches.length}
-                        onChange={toggleAllSelection}
-                      />
-                    </th>
-                  )}
-                  <th className="table-th">Fecha</th>
-                  <th className="table-th text-center">Jornada</th>
-                  <th className="table-th">Rival</th>
-                  <th className="table-th text-center">Ubicación</th>
-                  <th className="table-th">Competición</th>
-                  <th className="table-th text-center">Resultado</th>
-                  <th className="table-th">Estado</th>
-                  {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
-                {filteredMatches.map((match) => {
-                  const hasPlayed = match.status === 'Jugado';
-                  return (
-                    <tr 
-                      key={match.id} 
-                      onClick={() => handleMatchClick(match)}
-                      className={`transition-colors cursor-pointer ${selectedMatchIds.includes(match.id) ? 'bg-brand-red-600/10 hover:bg-brand-red-600/20' : 'hover:bg-brand-black-hover/20'}`}
-                    >
+          {upcomingMatches.length > 0 && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-white mb-4">Partidos por jugar</h3>
+              <div className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
                       {isSelectionMode && (
-                        <td className="table-td text-center" onClick={(e) => e.stopPropagation()}>
+                        <th className="table-th w-10 text-center">
                           <input 
                             type="checkbox" 
                             className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 cursor-pointer"
-                            checked={selectedMatchIds.includes(match.id)}
-                            onChange={() => toggleMatchSelection(match.id)}
+                            checked={upcomingMatches.length > 0 && upcomingMatches.every(m => selectedMatchIds.includes(m.id))}
+                            onChange={() => {
+                              const allSelected = upcomingMatches.every(m => selectedMatchIds.includes(m.id));
+                              if (allSelected) {
+                                setSelectedMatchIds(prev => prev.filter(id => !upcomingMatches.find(m => m.id === id)));
+                              } else {
+                                const newIds = upcomingMatches.filter(m => !selectedMatchIds.includes(m.id)).map(m => m.id);
+                                setSelectedMatchIds(prev => [...prev, ...newIds]);
+                              }
+                            }}
                           />
-                        </td>
+                        </th>
                       )}
-                      <td className="table-td">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-brand-gray-light">{match.date}</span>
-                          {match.time && (
-                            <span className="text-[11px] text-brand-gray-muted mt-0.5">
-                              {match.time} hs
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="table-td text-center">
-                        {match.matchday ? (
-                          <span className="font-semibold text-brand-gray-light bg-brand-black-border px-2 py-0.5 rounded text-xs">
-                            J. {match.matchday}
-                          </span>
-                        ) : (
-                          <span className="text-brand-gray-dark">-</span>
-                        )}
-                      </td>
-                      <td className="table-td font-semibold text-brand-gray-light">
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 shrink-0 border border-brand-black-border/10 shadow-sm">
-                              <img 
-                                src={getTeamLogo(match.rival)} 
-                                alt={match.rival} 
-                                className="w-full h-full object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
-                                }}
-                              />
-                            </div>
-                            <span>{match.rival}</span>
-                          </div>
-                           <div className="flex items-center gap-2 mt-1">
-                             {(match.callup_time || match.callup_location) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openSquadModal(match);
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
-                              >
-                                <Users className="w-3 h-3" /> Convocatoria
-                              </button>
-                            )}
-                            {match.tactical_system && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(`/matches/${match.id}/report`);
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
-                              >
-                                <CheckCircle className="w-3 h-3" /> Datos subidos
-                              </button>
-                            )}
-                           </div>
-                        </div>
-                      </td>
-                      <td className="table-td text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                            match.is_local ? 'bg-indigo-950/30 text-indigo-300 border border-indigo-900/30' : 'bg-orange-950/30 text-orange-300 border border-orange-900/30'
-                          }`}>
-                            {match.is_local ? 'Local' : 'Visitante'}
-                          </span>
-                          {match.location && <span className="text-[11px] text-brand-gray-muted text-center truncate max-w-[150px]" title={match.location}>{match.location}</span>}
-                        </div>
-                      </td>
-                      <td className="table-td text-brand-gray-muted">{match.competition}</td>
-                      <td className="table-td text-center font-bold text-base">
-                        {hasPlayed ? (
-                          <span className={match.score_us! > match.score_them! ? 'text-emerald-500' : match.score_us! < match.score_them! ? 'text-brand-red-600' : 'text-brand-gray-light'}>
-                            {match.score_us} - {match.score_them}
-                          </span>
-                        ) : (
-                          <span className="text-brand-gray-dark font-normal text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="table-td">
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                          match.status === 'Jugado' 
-                            ? 'bg-emerald-950/20 text-emerald-400 border border-emerald-900/30' 
-                            : match.status === 'Suspendido'
-                            ? 'bg-red-950/20 text-red-400 border border-red-900/30'
-                            : 'bg-brand-black-border text-brand-gray-muted border border-brand-black-border'
-                        }`}>
-                          {match.status === 'Jugado' && <CheckCircle className="w-3 h-3" />}
-                          {match.status === 'Suspendido' && <XCircle className="w-3 h-3" />}
-                          {match.status === 'Programado' && <HelpCircle className="w-3 h-3" />}
-                          {match.status}
-                        </span>
-                      </td>
-                      {(canEdit || canDelete) && (
-                        <td className="table-td text-right">
-                          <div className="flex gap-2 justify-end">
-                            {canEdit && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleOpenEditModal(match); }}
-                                className="text-brand-gray-muted hover:text-brand-gray-light p-1.5 rounded bg-brand-black-hover hover:bg-brand-black-border border border-brand-black-border transition-all"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {canDelete && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }}
-                                className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded bg-brand-black-hover hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/20 transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
+                      <th className="table-th">Fecha</th>
+                      <th className="table-th text-center">Jornada</th>
+                      <th className="table-th">Rival</th>
+                      <th className="table-th text-center">Ubicación</th>
+                      <th className="table-th">Competición</th>
+                      <th className="table-th text-center">Resultado</th>
+                      <th className="table-th">Estado</th>
+                      {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
+                    {upcomingMatches.map((match) => renderMatchRow(match))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="md:hidden space-y-3.5">
+                {upcomingMatches.map((match) => renderMatchCard(match))}
+              </div>
+            </div>
+          )}
 
-          {/* Cards responsivas para móviles */}
-          <div className="md:hidden space-y-3.5">
-            {filteredMatches.map((match) => {
-              const hasPlayed = match.status === 'Jugado';
-              return (
-                <div 
-                  key={match.id} 
-                  onClick={() => handleMatchClick(match)}
-                  className={`bg-brand-black-card border rounded-xl p-4 shadow-premium space-y-3 cursor-pointer transition-colors relative ${
-                    selectedMatchIds.includes(match.id) 
-                      ? 'border-brand-red-600/50 bg-brand-red-600/5' 
-                      : 'border-brand-black-border hover:border-brand-black-border/80'
-                  }`}
-                >
-                  {isSelectionMode && (
-                    <div className="absolute top-4 right-4 z-10" onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="checkbox" 
-                        className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 scale-125 cursor-pointer"
-                        checked={selectedMatchIds.includes(match.id)}
-                        onChange={() => toggleMatchSelection(match.id)}
-                      />
-                    </div>
-                  )}
-                  <div className={`flex justify-between items-start ${isSelectionMode ? 'pr-8' : ''}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center p-0.5 shrink-0 border border-brand-black-border/10 shadow-sm">
-                        <img 
-                          src={getTeamLogo(match.rival)} 
-                          alt={match.rival} 
-                          className="w-full h-full object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-semibold text-brand-gray-light flex flex-col gap-1">
-                          {match.rival}
-                          <div className="flex flex-wrap items-center gap-2 mt-1 font-normal">
-                            {(match.callup_time || match.callup_location) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openSquadModal(match);
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 rounded border border-brand-red-600/20 w-fit hover:bg-brand-red-600/20 transition-all cursor-pointer text-left"
-                              >
-                                <Users className="w-3 h-3" /> Convocatoria
-                              </button>
-                            )}
-                            {match.tactical_system && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(`/matches/${match.id}/report`);
-                                }}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
-                              >
-                                <CheckCircle className="w-3 h-3" /> Datos subidos
-                              </button>
-                            )}
-                          </div>
-                        </h4>
-                        <span className="text-[11px] text-brand-gray-muted flex flex-wrap items-center gap-1 mt-1">
-                          <Calendar className="w-3.5 h-3.5" /> {match.date} {match.time && `| ${match.time} hs`}
-                        </span>
-                        {match.location && (
-                          <span className="text-[11px] text-brand-gray-muted block mt-1">
-                            📍 {match.location}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                        match.is_local ? 'bg-indigo-950/30 text-indigo-300' : 'bg-orange-950/30 text-orange-300'
-                      }`}>
-                        {match.is_local ? 'Local' : 'Visitante'}
-                      </span>
-                      {match.matchday && (
-                        <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-400/30 shadow-[0_0_8px_rgba(34,211,238,0.15)]">
-                          Jornada {match.matchday}
-                        </span>
+          {playedMatches.length > 0 && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-white mb-4">Partidos jugados</h3>
+              <div className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      {isSelectionMode && (
+                        <th className="table-th w-10 text-center">
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-brand-black-border bg-brand-black-bg text-brand-red-600 focus:ring-brand-red-600 cursor-pointer"
+                            checked={playedMatches.length > 0 && playedMatches.every(m => selectedMatchIds.includes(m.id))}
+                            onChange={() => {
+                              const allSelected = playedMatches.every(m => selectedMatchIds.includes(m.id));
+                              if (allSelected) {
+                                setSelectedMatchIds(prev => prev.filter(id => !playedMatches.find(m => m.id === id)));
+                              } else {
+                                const newIds = playedMatches.filter(m => !selectedMatchIds.includes(m.id)).map(m => m.id);
+                                setSelectedMatchIds(prev => [...prev, ...newIds]);
+                              }
+                            }}
+                          />
+                        </th>
                       )}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center border-t border-brand-black-border pt-3">
-                    <div className="text-xs text-brand-gray-muted">
-                      Competición: <span className="text-brand-gray-light font-medium">{match.competition}</span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-medium text-brand-gray-muted">Resultado:</span>
-                      <span className="text-sm font-bold bg-brand-black px-2.5 py-1 rounded border border-brand-black-border">
-                        {hasPlayed ? `${match.score_us} - ${match.score_them}` : '-'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-brand-black-border/50 pt-3">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      match.status === 'Jugado' 
-                        ? 'bg-emerald-950/20 text-emerald-400' 
-                        : match.status === 'Suspendido'
-                        ? 'bg-red-950/20 text-red-400'
-                        : 'bg-brand-black-border text-brand-gray-muted'
-                    }`}>
-                      {match.status}
-                    </span>
-
-                    <div className="flex gap-2">
-                      {canEdit && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleOpenEditModal(match); }}
-                          className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1"
-                        >
-                          <Edit2 className="w-3 h-3" /> Editar
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }}
-                          className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-red-600 flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3 h-3" /> Borrar
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <th className="table-th">Fecha</th>
+                      <th className="table-th text-center">Jornada</th>
+                      <th className="table-th">Rival</th>
+                      <th className="table-th text-center">Ubicación</th>
+                      <th className="table-th">Competición</th>
+                      <th className="table-th text-center">Resultado</th>
+                      <th className="table-th">Estado</th>
+                      {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
+                    {playedMatches.map((match) => renderMatchRow(match))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="md:hidden space-y-3.5">
+                {playedMatches.map((match) => renderMatchCard(match))}
+              </div>
+            </div>
+          )}
         </>
       )}
 

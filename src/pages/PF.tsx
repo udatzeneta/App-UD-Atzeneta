@@ -8,10 +8,19 @@ import {
 import { computeGruposCounts } from '../lib/fuerzaConstants';
 import MuscleHeatmap, { MuscleHeatmapLegend } from '../components/MuscleHeatmap';
 import { useAuth } from '../context/AuthContext';
-import { Plus } from 'lucide-react';
+import { Plus, Download } from 'lucide-react';
 import { GpsFormModal } from '../components/pf/GpsFormModal';
 import { FuerzaFormModal } from '../components/pf/FuerzaFormModal';
 import { PlayerSelect } from '../components/pf/PlayerSelect';
+import { ComparadorGPS } from '../components/pf/ComparadorGPS';
+import { PFHistoryList } from '../components/pf/PFHistoryList';
+import { EjercicioFuerzaFormModal } from '../components/pf/EjercicioFuerzaFormModal';
+import { GPSPlayerPrintView } from '../components/pf/GPSPlayerPrintView';
+import { FuerzaSessionPrintView } from '../components/pf/FuerzaSessionPrintView';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { useToast } from '../context/ToastContext';
 
 const METRICS = [
   { key: 'distancia_total', label: 'Distancia total (m)', color: '#CC0000' },
@@ -34,7 +43,7 @@ function formatDate(iso: string) {
 }
 
 export function PF() {
-  const [activeTab, setActiveTab] = useState<'gps' | 'fuerza'>('gps');
+  const [activeTab, setActiveTab] = useState<'gps' | 'comparador' | 'fuerza'>('gps');
 
   return (
     <div className="space-y-6">
@@ -60,6 +69,16 @@ export function PF() {
             Dashboard GPS
           </button>
           <button
+            onClick={() => setActiveTab('comparador')}
+            className={`${
+              activeTab === 'comparador'
+                ? 'border-brand-red-600 text-brand-red-600'
+                : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light hover:border-brand-gray-muted'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
+          >
+            Comparador
+          </button>
+          <button
             onClick={() => setActiveTab('fuerza')}
             className={`${
               activeTab === 'fuerza'
@@ -72,13 +91,39 @@ export function PF() {
         </nav>
       </div>
 
-      {activeTab === 'gps' ? <DashboardGPS /> : <DashboardFuerza />}
+      {activeTab === 'gps' && <DashboardGPS />}
+      {activeTab === 'comparador' && <ComparadorTab />}
+      {activeTab === 'fuerza' && <DashboardFuerza />}
     </div>
   );
 }
 
+function ComparadorTab() {
+  const { data: jugadores = [] } = useQuery({
+    queryKey: ['players'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('players').select('*').order('dorsal', { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: gpsRecords = [] } = useQuery({
+    queryKey: ['gps_records'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('gps_records').select('*');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  return <ComparadorGPS jugadores={jugadores} gpsRecords={gpsRecords} metrics={METRICS} />;
+}
+
 function DashboardGPS() {
   const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [jugadorId, setJugadorId] = useState('');
   const [sessionFilter, setSessionFilter] = useState('todos'); // 'todos' | 'entrenamiento' | 'partido'
@@ -164,6 +209,67 @@ function DashboardGPS() {
     ? (jugadorData.reduce((s, d) => s + ((d[metric as keyof typeof d] as number) || 0), 0) / validDataCount).toFixed(1)
     : null;
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('gps_records').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gps_records'] });
+      showToast('success', 'Registro GPS eliminado');
+    },
+    onError: () => {
+      showToast('error', 'Error al eliminar el registro');
+    }
+  });
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar este registro GPS?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const gpsColumns = [
+    { key: 'fecha', label: 'Fecha', render: (r: any) => formatDate(r.fecha) },
+    { key: 'jugador', label: 'Jugador', render: (r: any) => {
+      const j = jugadores.find(x => x.id === r.jugador_id);
+      return j?.full_name || 'Desconocido';
+    }},
+    { key: 'sessionLabel', label: 'Sesión' },
+    { key: 'distancia_total', label: 'Dist. Total' },
+    { key: 'velocidad_maxima', label: 'Vel. Máx' }
+  ];
+
+  // For the history list we use the raw data sorted by created_at or date desc
+  const allHistoryData = [...gpsRecords].map(g => {
+    const session = g.session_type === 'entrenamiento'
+      ? entrenamientos.find(e => e.id === g.session_id)
+      : partidos.find(p => p.id === g.session_id);
+    const fecha = session?.date || session?.fecha || g.created_at;
+    return {
+      ...g,
+      fecha,
+      sessionLabel: g.session_type === 'entrenamiento' ? 'Entrenamiento' : 'Partido'
+    };
+  }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+  const handleDownloadPDF = () => {
+    const element = document.getElementById('pdf-gps-player-container');
+    if (!element || !selectedJugador) return;
+
+    const filename = `Reporte_GPS_${selectedJugador.full_name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    const opt = {
+      margin:       0,
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+    };
+
+    html2pdf().set(opt).from(element).save();
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex flex-wrap gap-4 items-end">
@@ -198,8 +304,17 @@ function DashboardGPS() {
           </div>
         </div>
 
-        {hasPermission('pf', 'editar') && (
-          <div className="ml-auto">
+        <div className="ml-auto flex gap-2">
+          {jugadorId && hasData && (
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 bg-brand-black-hover border border-brand-black-border text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-gray-dark transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span>Exportar PDF</span>
+            </button>
+          )}
+          {hasPermission('pf', 'editar') && (
             <button
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red"
@@ -207,8 +322,8 @@ function DashboardGPS() {
               <Plus className="w-4 h-4" />
               <span>Añadir Registro GPS</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <GpsFormModal
@@ -284,6 +399,28 @@ function DashboardGPS() {
           </div>
         </>
       )}
+
+      <PFHistoryList 
+        title="Historial de Registros GPS"
+        data={allHistoryData.slice(0, 50)} // Show latest 50
+        columns={gpsColumns}
+        onDelete={handleDelete}
+        hasPermission={hasPermission('pf', 'editar')}
+      />
+
+      {/* Hidden Print View */}
+      {selectedJugador && hasData && (
+        <div style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
+          <div id="pdf-gps-player-container">
+            <GPSPlayerPrintView
+              jugador={selectedJugador}
+              jugadorData={jugadorData}
+              metrics={METRICS}
+              selectedMetric={selectedMetric}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -312,8 +449,12 @@ function MiniChart({ title, data, dataKey, color = '#CC0000' }: { title: string,
 
 function DashboardFuerza() {
   const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEjercicioModalOpen, setIsEjercicioModalOpen] = useState(false);
   const [plantilla, setPlantilla] = useState('primer_equipo');
+  const [selectedSessionToPrint, setSelectedSessionToPrint] = useState<any>(null);
 
   const { data: sesiones = [] } = useQuery({
     queryKey: ['fuerza_sesiones'],
@@ -351,6 +492,87 @@ function DashboardFuerza() {
 
   const counts = computeGruposCounts(entriesPlantilla.map(e => e.ejercicio_id), catalogo);
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('fuerza_sesiones').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fuerza_sesiones'] });
+      queryClient.invalidateQueries({ queryKey: ['fuerza_sesion_ejercicios'] });
+      showToast('success', 'Sesión de fuerza eliminada');
+    },
+    onError: () => {
+      showToast('error', 'Error al eliminar la sesión');
+    }
+  });
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar esta sesión de fuerza?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const fuerzaColumns = [
+    { key: 'fecha', label: 'Fecha', render: (r: any) => formatDate(r.fecha) },
+    { key: 'tipo', label: 'Tipo', render: (r: any) => r.tipo === 'repeticiones' ? 'Repeticiones' : 'Tabata' },
+    { key: 'ejercicios', label: 'Nº Ejercicios', render: (r: any) => {
+      return sesionEjercicios.filter((se: any) => se.sesion_id === r.id).length;
+    }}
+  ];
+
+  // Sort sessions by date desc
+  const historyData = [...sesionesPlantilla].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+  // UseEffect for PDF generation when a session is selected
+  React.useEffect(() => {
+    if (selectedSessionToPrint) {
+      // Small delay to allow react to render the hidden component
+      setTimeout(() => {
+        const element = document.getElementById('pdf-fuerza-session-container');
+        if (!element) return;
+        
+        const fecha = selectedSessionToPrint.fecha ? selectedSessionToPrint.fecha.split('T')[0] : 'fecha';
+        const filename = `Sesion_Fuerza_${plantilla}_${fecha}.pdf`;
+        
+        const opt = {
+          margin:       0,
+          filename:     filename,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }, // A4 Portrait
+        };
+
+        html2pdf().set(opt).from(element).save().then(() => {
+          setSelectedSessionToPrint(null); // Reset after printing
+        });
+      }, 500);
+    }
+  }, [selectedSessionToPrint, plantilla]);
+
+  const handlePrintSession = (session: any) => {
+    setSelectedSessionToPrint(session);
+  };
+
+  const getEjerciciosParaImprimir = () => {
+    if (!selectedSessionToPrint) return [];
+    
+    // Filter the session entries
+    const sessionEntries = sesionEjercicios
+      .filter(se => se.sesion_id === selectedSessionToPrint.id)
+      .sort((a, b) => (a.orden || 0) - (b.orden || 0));
+
+    // Map to catalog entries
+    return sessionEntries.map(se => {
+      const catEj = catalogo.find(c => c.id === se.ejercicio_id) || {};
+      return {
+        ...se,
+        ...catEj,
+        id: se.id // keep unique ID from session_ejercicios
+      };
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -370,13 +592,22 @@ function DashboardFuerza() {
         </div>
 
         {hasPermission('pf', 'editar') && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Registrar Sesión</span>
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsEjercicioModalOpen(true)}
+              className="flex items-center gap-2 bg-brand-black-hover border border-brand-black-border text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-gray-dark transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Ejercicio</span>
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Registrar Sesión</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -384,6 +615,11 @@ function DashboardFuerza() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         catalogoEjercicios={catalogo}
+      />
+
+      <EjercicioFuerzaFormModal 
+        isOpen={isEjercicioModalOpen}
+        onClose={() => setIsEjercicioModalOpen(false)}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -418,6 +654,27 @@ function DashboardFuerza() {
           </div>
         )}
       </div>
+
+      <PFHistoryList 
+        title="Historial de Sesiones de Fuerza"
+        data={historyData.slice(0, 50)}
+        columns={fuerzaColumns}
+        onDelete={handleDelete}
+        onPrint={handlePrintSession}
+        hasPermission={hasPermission('pf', 'editar')}
+      />
+
+      {/* Hidden Print View */}
+      {selectedSessionToPrint && (
+        <div style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
+          <div id="pdf-fuerza-session-container">
+            <FuerzaSessionPrintView
+              session={selectedSessionToPrint}
+              ejercicios={getEjerciciosParaImprimir()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

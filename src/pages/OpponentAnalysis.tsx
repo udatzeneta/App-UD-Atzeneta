@@ -316,10 +316,10 @@ export const OpponentAnalysisPage: React.FC = () => {
                 <div className="flex justify-end gap-2 border-t border-brand-black-border p-4 bg-brand-black/30">
                   {canEdit && (
                     <button 
-                      onClick={() => handleOpenEditModal(analysis)}
+                      onClick={() => navigate(`/opponent-analysis/${analysis.id}`)}
                       className="text-xs text-brand-gray-muted bg-brand-black px-3.5 py-2 rounded-lg border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1.5 transition-colors"
                     >
-                      <Edit2 className="w-3.5 h-3.5" /> Editar Informe
+                      <Edit2 className="w-3.5 h-3.5" /> Editar Bloques
                     </button>
                   )}
                   {canDelete && (

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { OpponentAnalysis, OpponentAnalysisBlock, OpponentRosterPlayer } from '../../types';
-import { OpponentAnalysisBlockEditor } from './OpponentAnalysisBlockEditor';
-import { OpponentRosterManager } from './OpponentRosterManager';
-import { Save, X, LayoutDashboard, Users, MoveRight, MoveLeft, Target, Plus } from 'lucide-react';
+import { Save, X, LayoutDashboard, Users, MoveRight, MoveLeft, Target } from 'lucide-react';
+import { OpponentVideoClipper } from './OpponentVideoClipper';
+import { TaskBoardEditor } from '../TaskBoardEditor';
 
 interface Props {
   initialData?: OpponentAnalysis | null;
@@ -26,6 +26,7 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
   const [weaknessesText, setWeaknessesText] = useState('');
   const [keyPlayersText, setKeyPlayersText] = useState('');
   const [observations, setObservations] = useState('');
+  const [generalBoard, setGeneralBoard] = useState('');
 
   // Blocks state
   const [withBallBlocks, setWithBallBlocks] = useState<OpponentAnalysisBlock[]>([]);
@@ -50,6 +51,7 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
       setWeaknessesText((initialData.weaknesses || []).join(', '));
       setKeyPlayersText((initialData.key_players || []).join(', '));
       setObservations(initialData.observations || '');
+      setGeneralBoard(initialData.general_board || '');
       
       setWithBallBlocks(initialData.with_ball_blocks || []);
       setWithoutBallBlocks(initialData.without_ball_blocks || []);
@@ -71,6 +73,7 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
       weaknesses: parseTags(weaknessesText),
       key_players: parseTags(keyPlayersText),
       observations: observations.trim(),
+      general_board: generalBoard,
       with_ball_blocks: withBallBlocks,
       without_ball_blocks: withoutBallBlocks,
       abp_blocks: abpBlocks,
@@ -86,54 +89,59 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
     { id: 'abp', label: 'ABP', icon: Target }
   ] as const;
 
-  const renderBlockTab = (
+  const renderPhaseTab = (
     title: string,
     blocks: OpponentAnalysisBlock[],
     setBlocks: (b: OpponentAnalysisBlock[]) => void
   ) => {
-    const addBlock = () => {
-      setBlocks([...blocks, {
-        id: `block-${Date.now()}`,
-        title: '',
-        description: '',
-        board: '',
-        videos: []
-      }]);
+    // Solo usamos el primer bloque para toda la fase
+    const block = blocks[0] || {
+      id: `phase-${Date.now()}`,
+      title: title,
+      description: '',
+      board: '',
+      videos: []
+    };
+
+    const updateBlock = (updates: Partial<OpponentAnalysisBlock>) => {
+      setBlocks([{ ...block, ...updates }]);
     };
 
     return (
-      <div className="flex flex-col h-full">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h3 className="text-sm font-bold text-white">{title}</h3>
-            <p className="text-xs text-brand-gray-muted">Añade diferentes bloques o comentarios para explicar esta fase.</p>
-          </div>
-          <button onClick={addBlock} type="button" className="btn-primary py-2 px-4 text-xs shrink-0">
-            <Plus className="w-4 h-4 mr-1" />
-            Añadir Bloque
-          </button>
-        </div>
+      <div className="flex flex-col h-full overflow-y-auto pr-2 no-scrollbar pb-10">
+        <h3 className="text-sm font-bold text-white mb-4">{title}</h3>
         
-        {blocks.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-brand-black-border rounded-xl">
-            <p className="text-brand-gray-muted text-sm mb-4">No hay bloques definidos para esta fase.</p>
-            <button onClick={addBlock} type="button" className="btn-secondary py-2 px-4 text-xs">
-              Añadir el primer bloque
-            </button>
+        <div className="space-y-6 max-w-4xl">
+          <div>
+            <label className="form-label">Comentario general de esta parte del juego</label>
+            <textarea
+              className="form-input h-24 resize-none"
+              placeholder="Añade un breve resumen general..."
+              value={block.description}
+              onChange={(e) => updateBlock({ description: e.target.value })}
+            />
           </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto no-scrollbar space-y-4 pr-2 pb-10">
-            {blocks.map((block, index) => (
-              <OpponentAnalysisBlockEditor
-                key={block.id}
-                index={index}
-                block={block}
-                onChange={(updated) => setBlocks(blocks.map(b => b.id === block.id ? updated : b))}
-                onRemove={() => setBlocks(blocks.filter(b => b.id !== block.id))}
+
+          <div>
+            <label className="form-label">Campograma General de la fase (Opcional)</label>
+            <div className="p-2 bg-brand-black border border-brand-black-border rounded-lg">
+              <TaskBoardEditor
+                value={block.board}
+                onChange={(board) => updateBlock({ board })}
               />
-            ))}
+            </div>
           </div>
-        )}
+
+          <div>
+            <label className="form-label">Clips de Vídeo</label>
+            <div className="p-4 bg-brand-black-card border border-brand-black-border rounded-xl">
+              <OpponentVideoClipper
+                videos={block.videos}
+                onChange={(videos) => updateBlock({ videos })}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -262,13 +270,13 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
             </div>
 
             <div>
-              <label className="form-label">Observaciones e Instrucciones Tácticas</label>
-              <textarea
-                className="form-input h-28 resize-none"
-                placeholder="Evitar pases divididos en zona de iniciación..."
-                value={observations}
-                onChange={(e) => setObservations(e.target.value)}
-              />
+              <label className="form-label">Alineación / Campograma General</label>
+              <div className="p-2 bg-brand-black border border-brand-black-border rounded-lg">
+                <TaskBoardEditor
+                  value={generalBoard}
+                  onChange={setGeneralBoard}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -281,11 +289,11 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
           />
         )}
 
-        {activeTab === 'con_balon' && renderBlockTab('Con Balón', withBallBlocks, setWithBallBlocks)}
+        {activeTab === 'con_balon' && renderPhaseTab('Con Balón', withBallBlocks, setWithBallBlocks)}
         
-        {activeTab === 'sin_balon' && renderBlockTab('Sin Balón', withoutBallBlocks, setWithoutBallBlocks)}
+        {activeTab === 'sin_balon' && renderPhaseTab('Sin Balón', withoutBallBlocks, setWithoutBallBlocks)}
         
-        {activeTab === 'abp' && renderBlockTab('Acciones a Balón Parado', abpBlocks, setAbpBlocks)}
+        {activeTab === 'abp' && renderPhaseTab('Acciones a Balón Parado', abpBlocks, setAbpBlocks)}
       </div>
 
       {/* Footer Actions */}

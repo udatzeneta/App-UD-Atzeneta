@@ -280,7 +280,10 @@ export interface OpponentVideoClip {
   start: number; // in seconds
   end: number;   // in seconds
   freezeTime?: number;            // segundo del vídeo sobre el que se anota (frame congelado)
+  pauseDuration?: number;         // Segundos de auto-pausa en reproducción (defecto 3s)
   annotations?: ClipAnnotation[]; // telestración del clip
+  description?: string;           // Breve comentario del clip
+  board?: string;                 // Campograma adjunto al clip
 }
 
 export interface OpponentVideo {
@@ -314,6 +317,7 @@ export interface OpponentAnalysis {
   weaknesses: string[];
   key_players: string[];
   observations: string;
+  general_board?: string;
   created_by?: string;
   team_category?: string;
   created_at?: string;
