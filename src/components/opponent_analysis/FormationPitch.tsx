@@ -1,16 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { OpponentFormation, FormationPlayer, ScoutingPlayer } from '../../types';
+import type { OpponentFormation, FormationPlayer, ScoutingPlayer, OpponentRosterPlayer } from '../../types';
 import { FORMATIONS_SLOTS } from '../../utils/formations';
 import { dataService } from '../../services/data';
 import { FormationPlayerPicker } from './FormationPlayerPicker';
-import { RefreshCw, User, DownloadCloud } from 'lucide-react';
+import { RefreshCw, User, DownloadCloud, Star } from 'lucide-react';
 
 interface Props {
   value?: OpponentFormation;
   onChange: (data: OpponentFormation) => void;
   readOnly?: boolean;
   opponentName?: string;
+  rosterPlayers?: OpponentRosterPlayer[];
 }
 
 const EMPTY: OpponentFormation = { system: 'Libre', players: [] };
@@ -22,8 +23,11 @@ const defaultNumber = (idx: number) => idx + 1;
 // arrastra las fichas de los jugadores del rival. Componente controlado.
 // Los nombres/fotos se rellenan desde la base de datos de scouting (por
 // equipo) o manualmente (con foto).
-export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = false, opponentName }) => {
-  const data = value || EMPTY;
+export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = false, opponentName, rosterPlayers = [] }) => {
+  const data = {
+    system: value?.system || EMPTY.system,
+    players: value?.players || EMPTY.players,
+  };
   const pitchRef = useRef<HTMLDivElement>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [pickerId, setPickerId] = useState<string | null>(null);
@@ -231,7 +235,10 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
         <div className="absolute bottom-[11%] left-1/2 w-1.5 h-1.5 bg-emerald-100/35 rounded-full -translate-x-1/2" />
 
         {/* Jugadores */}
-        {data.players.map(player => (
+        {data.players.map(player => {
+          const isStar = rosterPlayers.some(rp => rp.name && player.name && rp.name.toLowerCase() === player.name.toLowerCase());
+          
+          return (
           <div
             key={player.id}
             style={{
@@ -245,6 +252,11 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
             onClick={() => handleTokenClick(player.id)}
             className="absolute z-10 group flex flex-col items-center select-none"
           >
+            {isStar && (
+              <div className="absolute -top-1 -right-1 bg-amber-500 text-white rounded-full p-[2px] shadow-md border border-amber-900 z-20" title="Jugador Destacado">
+                <Star className="w-3 h-3 fill-white" />
+              </div>
+            )}
             <div className={`relative w-10 h-10 rounded-full bg-brand-red-600 border-2 shadow-premium flex items-center justify-center overflow-visible group-hover:scale-110 transition-transform duration-150 ${pickerId === player.id ? 'border-white ring-2 ring-white/50' : 'border-white/70'}`}>
               {player.photo_url ? (
                 <img src={player.photo_url} alt={player.name || ''} className="w-full h-full object-cover rounded-full pointer-events-none" />
@@ -263,7 +275,7 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
               </span>
             )}
           </div>
-        ))}
+        )})}
 
         {data.players.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-emerald-100/60 text-xs gap-2 pointer-events-none px-6 text-center">

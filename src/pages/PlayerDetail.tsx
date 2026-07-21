@@ -5,15 +5,17 @@ import { dataService } from '../services/data';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Modal } from '../components/Modal';
+import { supabase } from '../lib/supabase';
 import { BodyMap, ZONE_LABELS } from '../components/BodyMap';
 import { TableSkeleton } from '../components/Skeletons';
-import {
-  ArrowLeft, Users, Edit2, Trash2, Scale, HeartPulse, Activity, Calendar,
+import { ArrowLeft, Users, Edit2, Trash2, Scale, HeartPulse, Activity, Calendar,
   TrendingUp, Ruler, UserCheck, Phone, Mail, Trophy, AlertTriangle,
   FileText, ChevronRight, ShieldCheck, ShieldAlert, Plus, X, Check, Stethoscope
 } from 'lucide-react';
 import { Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, TrainingAttendance, Match, Training } from '../types';
-import { exportToCSV, exportToPDF } from '../utils/export';
+import { exportToCSV } from '../utils/export';
+import html2pdf from 'html2pdf.js';
+import { PlayerFullPrintView } from '../components/players/PlayerFullPrintView';
 
 const TransparentImage: React.FC<{ src: string, alt?: string, className?: string }> = ({ src, alt, className }) => {
   const [dataUrl, setDataUrl] = useState<string>(src);
@@ -50,7 +52,7 @@ const TransparentImage: React.FC<{ src: string, alt?: string, className?: string
   return <img src={dataUrl} alt={alt} className={className} />;
 };
 
-type DetailTab = 'ficha' | 'stats' | 'lesiones' | 'peso' | 'fisio';
+type DetailTab = 'ficha' | 'stats' | 'lesiones' | 'peso' | 'fisio' | 'pf';
 
 export const PlayerDetail: React.FC = () => {
   const { playerId } = useParams<{ playerId: string }>();
@@ -115,6 +117,17 @@ export const PlayerDetail: React.FC = () => {
     queryKey: ['playerInjuries', playerId],
     queryFn: () => playerId ? dataService.getPlayerInjuries(playerId) : Promise.resolve([]),
     enabled: !!playerId
+  });
+
+  const { data: gpsRecords = [], isLoading: isLoadingGps } = useQuery({
+    queryKey: ['playerGps', playerId],
+    queryFn: async () => {
+      if (!playerId) return [];
+      const { data, error } = await supabase.from('gps_records').select('*').eq('jugador_id', playerId);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!playerId && (detailTab === 'pf' || detailTab === 'stats')
   });
 
   const { data: attendanceRecords = [] } = useQuery<TrainingAttendance[]>({
@@ -361,121 +374,37 @@ export const PlayerDetail: React.FC = () => {
 
   const handleExportPlayerReport = async () => {
     if (!player) return;
-    showToast('info', 'Generando Reporte', 'Preparando el informe PDF...');
+    showToast('info', 'Generando Reporte', 'Preparando el informe PDF a 2 páginas...');
 
-    try {
-      const { jsPDF } = await import('jspdf');
-      const html2canvas = (await import('html2canvas')).default;
+    setTimeout(() => {
+      const element = document.getElementById('pdf-player-full-report-container');
+      if (!element) return;
+      
+      const firstChild = element.firstElementChild;
+      if (!firstChild) return;
 
-      const reportEl = document.createElement('div');
-      reportEl.style.position = 'fixed';
-      reportEl.style.left = '-9999px';
-      reportEl.style.top = '-9999px';
-      reportEl.style.width = '700px';
-      reportEl.style.padding = '35px';
-      reportEl.style.background = '#ffffff';
-      reportEl.style.color = '#1f2937';
-      reportEl.style.fontFamily = 'system-ui, sans-serif';
+      const opt = {
+        margin:       0,
+        filename:     `informe_${player.nickname || player.full_name.replace(/\s+/g, '_')}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, scrollY: 0, logging: false },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['css', 'legacy'] }
+      };
 
-      const totalSessions = attendanceRecords.length;
-      const sessionsTrained = attendanceRecords.filter((a: TrainingAttendance) => a.status === 'Entrena').length;
-      const attendanceRate = totalSessions > 0 ? ((sessionsTrained / totalSessions) * 100).toFixed(0) : '0';
-      const activeInjuries = injuries.filter(i => i.status !== 'Recuperado');
+      // Ensure the container is temporarily visible for html2pdf to render
+      const originalDisplay = (firstChild as HTMLElement).style.display;
+      (firstChild as HTMLElement).style.display = 'block';
 
-      reportEl.innerHTML = `
-        <div style="border: 2px solid #C1121F; padding: 25px; border-radius: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e5e7eb; padding-bottom: 15px; margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-              <img src="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png" style="width: 55px; height: 55px; object-fit: contain;" crossorigin="anonymous" />
-              <div>
-                <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #C1121F;">U.D. ATZENETA DE CASTELLÓN</h1>
-                <span style="font-size: 10px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Informe de Rendimiento y Ficha Técnica</span>
-              </div>
-            </div>
-            <div style="text-align: right;">
-              <span style="font-size: 10px; color: #9ca3af; font-weight: bold;">TEMPORADA 2025/2026</span>
-              <p style="margin: 3px 0 0 0; font-size: 9px; color: #6b7280;">Generado: ${new Date().toLocaleDateString('es-ES')}</p>
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 25px; background: #f9fafb; border: 1px solid #e5e7eb; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <div style="width: 100px; height: 100px; border-radius: 50%; overflow: hidden; border: 2px solid #C1121F; background: #fff; display: flex; align-items: center; justify-content: center;">
-              ${player.photo_url
-                ? `<img src="${player.photo_url}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />`
-                : `<div style="font-size: 32px; color: #9ca3af; font-weight: bold; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #e5e7eb;">${(player.nickname || player.full_name)[0]}</div>`}
-            </div>
-            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-              <div style="grid-column: span 2;">
-                <h2 style="margin: 0; font-size: 18px; font-weight: 800;">${player.nickname || player.full_name} ${player.dorsal ? `<span style="color: #C1121F;">#${player.dorsal}</span>` : ''}</h2>
-                ${player.nickname ? `<p style="margin: 3px 0 0 0; font-size: 11px; color: #6b7280;">Nombre: <strong>${player.full_name}</strong></p>` : ''}
-              </div>
-              <div><span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Posición</span><strong style="font-size: 11px;">${player.position || '-'}</strong></div>
-              <div><span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Pie</span><strong style="font-size: 11px;">${player.dominant_foot || '-'}</strong></div>
-              <div><span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Estatura / Peso</span><strong style="font-size: 11px;">${player.height ? `${player.height} cm` : '-'} / ${player.weight ? `${player.weight} kg` : '-'}</strong></div>
-              <div><span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Estado</span><strong style="font-size: 11px; color: ${player.physical_status === 'Disponible' ? '#10b981' : '#ef4444'};">${player.physical_status || 'Disponible'}</strong></div>
-            </div>
-          </div>
-
-          <div style="margin-bottom: 20px;">
-            <h3 style="margin: 0 0 10px 0; font-size: 12px; font-weight: 700; color: #C1121F; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Rendimiento Deportivo</h3>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Partidos</span>
-                <strong style="font-size: 15px; display: block; margin-top: 3px;">${player.matches_played}</strong>
-              </div>
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Minutos</span>
-                <strong style="font-size: 15px; display: block; margin-top: 3px;">${player.minutes_played}'</strong>
-              </div>
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Goles / Asist.</span>
-                <strong style="font-size: 15px; display: block; margin-top: 3px; color: #10b981;">${player.goals} / ${player.assists}</strong>
-              </div>
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Asistencia</span>
-                <strong style="font-size: 15px; display: block; margin-top: 3px; color: #3b82f6;">${attendanceRate}%</strong>
-              </div>
-            </div>
-          </div>
-
-          ${activeInjuries.length > 0 ? `
-          <div>
-            <h3 style="margin: 0 0 10px 0; font-size: 12px; font-weight: 700; color: #C1121F; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Lesiones Activas (${activeInjuries.length})</h3>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              ${activeInjuries.map(inj => `
-                <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 8px; border-radius: 6px;">
-                  <div style="display: flex; justify-content: space-between; font-size: 9px; font-weight: bold; margin-bottom: 3px;">
-                    <span style="color: #374151;">${ZONE_LABELS[inj.body_zone] || inj.body_zone}</span>
-                    <span style="color: ${inj.severity === 'Grave' ? '#ef4444' : inj.severity === 'Moderada' ? '#f97316' : '#eab308'};">${inj.severity} — ${inj.status}</span>
-                  </div>
-                  <p style="margin: 0; font-size: 9px; color: #374151;">${inj.diagnosis}</p>
-                  ${inj.treatment ? `<p style="margin: 2px 0 0 0; font-size: 8px; color: #059669;">Tto: ${inj.treatment}</p>` : ''}
-                </div>
-              `).join('')}
-            </div>
-          </div>
-          ` : ''}
-        </div>
-      `;
-
-      document.body.appendChild(reportEl);
-
-      const canvas = await html2canvas(reportEl, { useCORS: true, allowTaint: false, scale: 2 });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pdfW = pdf.internal.pageSize.getWidth();
-      const margin = 10;
-      const imgW = pdfW - 2 * margin;
-      const imgH = (canvas.height * imgW) / canvas.width;
-      pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH);
-      pdf.save(`ficha_${player.nickname || player.full_name.replace(/\s+/g, '_')}.pdf`);
-
-      document.body.removeChild(reportEl);
-      showToast('success', 'PDF Generado', 'La ficha se ha descargado correctamente.');
-    } catch (err: any) {
-      console.error(err);
-      showToast('error', 'Error al exportar', 'No se pudo generar el informe en PDF.');
-    }
+      html2pdf().set(opt).from(firstChild).save().then(() => {
+        (firstChild as HTMLElement).style.display = originalDisplay;
+        showToast('success', 'PDF Generado', 'El informe completo se ha descargado correctamente.');
+      }).catch((err: any) => {
+        console.error(err);
+        (firstChild as HTMLElement).style.display = originalDisplay;
+        showToast('error', 'Error al exportar', 'No se pudo generar el informe en PDF.');
+      });
+    }, 500); // Pequeño delay para asegurar que los estilos e imágenes carguen
   };
 
   // ---- Chart & Stats Helpers ----
@@ -498,21 +427,40 @@ export const PlayerDetail: React.FC = () => {
       return <div className="text-center py-8 text-brand-gray-muted italic text-xs">No hay registros de partidos.</div>;
     }
     
-    const svgW = 600; const svgH = 200; const padX = 40; const padY = 30;
+    const svgW = 600; const svgH = 220; const padX = 40; const padY = 30;
     const chartW = svgW - 2 * padX; const chartH = svgH - 2 * padY;
     const maxMins = 90;
     
     const points = sortedStats.map((s, idx) => {
       const x = padX + (idx / (Math.max(sortedStats.length - 1, 1))) * chartW;
       const y = padY + chartH - ((s.minutes_played || 0) / maxMins) * chartH;
-      return { x, y, minutes: s.minutes_played || 0, label: `J.${s.matchday}`, rival: s.rival };
+      return { 
+        x, y, 
+        minutes: s.minutes_played || 0, 
+        label: `J.${s.matchday}`, 
+        rival: s.rival,
+        goals: s.goals || 0,
+        assists: s.assists || 0,
+        yellows: s.yellow_cards || 0,
+        reds: s.red_cards || 0
+      };
     });
     const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
     return (
       <div className="bg-brand-black/30 border border-brand-black-border p-4 rounded-xl overflow-x-auto space-y-2">
-        <span className="text-[10px] text-brand-gray-muted uppercase font-bold block">Evolución: Minutos Jugados</span>
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-brand-gray-muted uppercase font-bold block">Evolución: Rendimiento en Partidos</span>
+          <div className="flex gap-3">
+            <div className="flex items-center gap-1"><div className="w-2 h-2 bg-[#3b82f6] rounded-full"></div><span className="text-[8px] text-brand-gray-muted">Minutos</span></div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-500 rounded-sm"></div><span className="text-[8px] text-brand-gray-muted">Goles</span></div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 bg-indigo-400 rounded-sm"></div><span className="text-[8px] text-brand-gray-muted">Asistencias</span></div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 bg-yellow-500 rounded-sm"></div><span className="text-[8px] text-brand-gray-muted">Amarillas</span></div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 bg-brand-red-600 rounded-sm"></div><span className="text-[8px] text-brand-gray-muted">Rojas</span></div>
+          </div>
+        </div>
         <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="min-w-[500px] overflow-visible">
+          {/* Grid lines */}
           {[0, 0.5, 1].map((ratio, i) => {
             const y = padY + chartH * ratio;
             const mVal = (maxMins - ratio * maxMins).toFixed(0);
@@ -523,13 +471,101 @@ export const PlayerDetail: React.FC = () => {
               </g>
             );
           })}
-          {points.length > 1 && <path d={pathData} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+          
+          {/* Vertical Bars for Metrics */}
+          {points.map((p, idx) => {
+            const barW = 6;
+            const pxPerUnit = 12; // 12px height per 1 event (goal, assist, etc.)
+            return (
+              <g key={`bars-${idx}`}>
+                {p.goals > 0 && <rect x={p.x - 14} y={padY + chartH - (p.goals * pxPerUnit)} width={barW} height={p.goals * pxPerUnit} fill="#10b981" rx="2" className="opacity-80" />}
+                {p.assists > 0 && <rect x={p.x - 6} y={padY + chartH - (p.assists * pxPerUnit)} width={barW} height={p.assists * pxPerUnit} fill="#818cf8" rx="2" className="opacity-80" />}
+                {p.yellows > 0 && <rect x={p.x + 2} y={padY + chartH - (p.yellows * pxPerUnit)} width={barW} height={p.yellows * pxPerUnit} fill="#eab308" rx="2" className="opacity-80" />}
+                {p.reds > 0 && <rect x={p.x + 10} y={padY + chartH - (p.reds * pxPerUnit)} width={barW} height={p.reds * pxPerUnit} fill="#dc2626" rx="2" className="opacity-80" />}
+                
+                {/* Value labels on top of bars if they exist */}
+                {p.goals > 0 && <text x={p.x - 11} y={padY + chartH - (p.goals * pxPerUnit) - 3} fill="#10b981" fontSize="7" textAnchor="middle" fontWeight="bold">{p.goals}</text>}
+                {p.assists > 0 && <text x={p.x - 3} y={padY + chartH - (p.assists * pxPerUnit) - 3} fill="#818cf8" fontSize="7" textAnchor="middle" fontWeight="bold">{p.assists}</text>}
+                {p.yellows > 0 && <text x={p.x + 5} y={padY + chartH - (p.yellows * pxPerUnit) - 3} fill="#eab308" fontSize="7" textAnchor="middle" fontWeight="bold">{p.yellows}</text>}
+                {p.reds > 0 && <text x={p.x + 13} y={padY + chartH - (p.reds * pxPerUnit) - 3} fill="#dc2626" fontSize="7" textAnchor="middle" fontWeight="bold">{p.reds}</text>}
+              </g>
+            );
+          })}
+
+          {/* Line for minutes played */}
+          {points.length > 1 && <path d={pathData} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90" />}
+          
+          {/* Points and Labels */}
           {points.map((p, idx) => (
             <g key={idx}>
               <circle cx={p.x} cy={p.y} r="4" fill="#1f2937" stroke="#3b82f6" strokeWidth="2" />
-              <text x={p.x} y={p.y - 10} fill="#60a5fa" fontSize="10" textAnchor="middle" fontWeight="bold">{p.minutes}'</text>
+              <text x={p.x} y={p.y - 8} fill="#60a5fa" fontSize="9" textAnchor="middle" fontWeight="bold">{p.minutes}'</text>
+              
               <text x={p.x} y={padY + chartH + 15} fill="#9ca3af" fontSize="9" textAnchor="middle">{p.label}</text>
               <text x={p.x} y={padY + chartH + 26} fill="#6b7280" fontSize="8" textAnchor="middle">{p.rival.substring(0, 10)}</text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    );
+  };
+
+  const renderAttendanceEvolutionChart = () => {
+    if (filteredAttendance.length === 0) return null;
+
+    const attWithDate = filteredAttendance.map(a => {
+      const t = trainings.find((tr: Training) => tr.id === a.training_id);
+      return { ...a, date: t?.date || '?' };
+    }).filter(a => a.date !== '?')
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (attWithDate.length === 0) return null;
+
+    const byMonth: Record<string, { total: number, attended: number }> = {};
+    attWithDate.forEach(a => {
+      const monthStr = a.date.substring(0, 7); // YYYY-MM
+      if (!byMonth[monthStr]) byMonth[monthStr] = { total: 0, attended: 0 };
+      byMonth[monthStr].total++;
+      if (a.status === 'Entrena') byMonth[monthStr].attended++;
+    });
+
+    const months = Object.keys(byMonth).sort();
+    if (months.length === 0) return null;
+
+    const svgW = 600; const svgH = 140; const padX = 40; const padY = 20;
+    const chartW = svgW - 2 * padX; const chartH = svgH - 2 * padY;
+
+    const points = months.map((m, idx) => {
+      const data = byMonth[m];
+      const pct = data.total > 0 ? (data.attended / data.total) * 100 : 0;
+      const x = padX + (idx / Math.max(months.length - 1, 1)) * chartW;
+      const y = padY + chartH - (pct / 100) * chartH;
+      const [yy, mm] = m.split('-');
+      return { x, y, pct: Math.round(pct), label: `${mm}/${yy.substring(2)}` };
+    });
+
+    const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+    return (
+      <div className="mt-4 bg-brand-black/20 p-4 border border-brand-black-border rounded-xl overflow-x-auto">
+        <span className="text-[10px] text-brand-gray-muted uppercase font-bold block mb-2">Evolución Asistencia (%)</span>
+        <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="min-w-[500px] overflow-visible">
+          {[0, 0.5, 1].map((ratio, i) => {
+            const y = padY + chartH * ratio;
+            const pct = (100 - ratio * 100).toFixed(0);
+            return (
+              <g key={i} className="opacity-20">
+                <line x1={padX} y1={y} x2={padX + chartW} y2={y} stroke="#4b5563" strokeDasharray="3,3" />
+                <text x={padX - 8} y={y + 3} fill="#9ca3af" fontSize="10" textAnchor="end">{pct}%</text>
+              </g>
+            );
+          })}
+          {points.length > 1 && <path d={pathData} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90" />}
+          {points.map((p, idx) => (
+            <g key={idx}>
+              <circle cx={p.x} cy={p.y} r="4" fill="#1f2937" stroke="#10b981" strokeWidth="2" />
+              <text x={p.x} y={p.y - 10} fill="#34d399" fontSize="9" textAnchor="middle" fontWeight="bold">{p.pct}%</text>
+              <text x={p.x} y={padY + chartH + 15} fill="#9ca3af" fontSize="9" textAnchor="middle">{p.label}</text>
             </g>
           ))}
         </svg>
@@ -716,6 +752,7 @@ export const PlayerDetail: React.FC = () => {
     { key: 'lesiones', label: `Lesiones${activeInjuryCount > 0 ? ` (${activeInjuryCount})` : ''}` },
     { key: 'peso', label: 'Control de Peso' },
     { key: 'fisio', label: 'Fisioterapia' },
+    { key: 'pf', label: 'Prep. Física' },
   ];
 
   return (
@@ -730,9 +767,36 @@ export const PlayerDetail: React.FC = () => {
             onClick={handleExportPlayerReport}
             className="px-3 py-2 bg-brand-red-600/10 hover:bg-brand-red-600 text-brand-gray-light hover:text-white border border-brand-red-600/25 hover:border-brand-red-600 rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold"
           >
-            <FileText className="w-3.5 h-3.5" /> Exportar PDF
+            <FileText className="w-3.5 h-3.5" /> Informe Completo
           </button>
         </div>
+      </div>
+
+      {/* Hidden Print Container */}
+      <div id="pdf-player-full-report-container" style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
+        <PlayerFullPrintView 
+          player={player}
+          stats={{
+            matchesPlayed: dynMatchesPlayed,
+            minutesPlayed: dynMinutesPlayed,
+            goals: dynGoals,
+            assists: dynAssists,
+            yellows: dynYellows,
+            reds: dynReds,
+            attendanceRate: attendanceRecords.length > 0 
+              ? ((attendanceRecords.filter(a => a.status === 'Entrena').length / attendanceRecords.length) * 100).toFixed(0) 
+              : '0'
+          }}
+          injuries={injuries}
+          physioRecords={physioRecords}
+          weights={weights}
+          gpsRecords={gpsRecords}
+          topPositions={topPositions}
+          filteredMatchStats={filteredMatchStats}
+          matches={matches}
+          filteredAttendance={filteredAttendance}
+          trainings={trainings}
+        />
       </div>
 
       {/* Perfil del Jugador */}
@@ -1011,6 +1075,9 @@ export const PlayerDetail: React.FC = () => {
                   </span>
                 </div>
               </div>
+              
+              {/* Gráfica de Asistencia */}
+              {renderAttendanceEvolutionChart()}
 
               {filteredAttendance.filter(a => a.status !== 'Entrena').length > 0 && (
                 <div className="mt-4">
@@ -1248,6 +1315,84 @@ export const PlayerDetail: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {/* ===== PREPARACIÓN FÍSICA (GPS) ===== */}
+        {detailTab === 'pf' && (
+          <div className="space-y-6 text-left">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-brand-gray-light uppercase tracking-wider flex items-center gap-2">
+                <Activity className="w-4 h-4 text-brand-red-600" />
+                Rendimiento Físico (GPS)
+              </span>
+            </div>
+            
+            {isLoadingGps ? (
+              <div className="text-center py-8 text-brand-gray-muted text-xs">Cargando datos GPS...</div>
+            ) : gpsRecords.length === 0 ? (
+              <div className="bg-brand-black/20 border border-dashed border-brand-black-border p-6 rounded-lg text-center text-xs text-brand-gray-muted italic">
+                No hay registros de GPS para este jugador.
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                  {[
+                    { label: 'Sprints (Max)', value: Math.max(...gpsRecords.map((r: any) => parseFloat(r.sprints) || 0)), color: 'text-brand-gray-light', bg: 'bg-brand-black/30' },
+                    { label: 'Sprints (Media)', value: Math.round(gpsRecords.reduce((acc: number, r: any) => acc + (parseFloat(r.sprints) || 0), 0) / gpsRecords.length), color: 'text-brand-gray-muted', bg: 'bg-brand-black/20' },
+                    { label: 'Acel. (Max)', value: Math.max(...gpsRecords.map((r: any) => parseFloat(r.aceleraciones) || 0)), color: 'text-emerald-400', bg: 'bg-emerald-900/10' },
+                    { label: 'Decel. (Max)', value: Math.max(...gpsRecords.map((r: any) => parseFloat(r.deceleraciones) || 0)), color: 'text-amber-400', bg: 'bg-amber-900/10' },
+                    { label: 'Dist. Total (Max)', value: `${Math.max(...gpsRecords.map((r: any) => parseFloat(r.distancia_total) || 0))}m`, color: 'text-indigo-400', bg: 'bg-indigo-900/10' },
+                    { label: 'Vel. Máx', value: `${Math.max(...gpsRecords.map((r: any) => parseFloat(r.velocidad_maxima) || 0))}km/h`, color: 'text-brand-red-500', bg: 'bg-brand-red-900/10' },
+                  ].map((stat, i) => (
+                    <div key={i} className={`${stat.bg} border border-brand-black-border p-3 rounded-xl text-center flex flex-col justify-center`}>
+                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block mb-1 leading-tight">{stat.label}</span>
+                      <span className={`text-xl font-extrabold ${stat.color} block leading-none`}>{stat.value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-brand-black border border-brand-black-border rounded-xl p-4 overflow-x-auto">
+                  <h4 className="text-[10px] font-bold text-brand-gray-muted uppercase mb-4">Evolución: Distancia Total y Sprints</h4>
+                  {(() => {
+                    const sortedGps = [...gpsRecords].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(-15);
+                    const svgW = 600; const svgH = 180; const padX = 40; const padY = 20;
+                    const chartW = svgW - 2 * padX; const chartH = svgH - 2 * padY;
+                    const maxDist = Math.max(...sortedGps.map((r: any) => parseFloat(r.distancia_total) || 0), 100);
+                    const points = sortedGps.map((r: any, idx: number) => {
+                      const x = padX + (idx / (Math.max(sortedGps.length - 1, 1))) * chartW;
+                      const yDist = padY + chartH - ((parseFloat(r.distancia_total) || 0) / maxDist) * chartH;
+                      return { x, yDist, dist: r.distancia_total, sprints: r.sprints, session: r.session_type.substring(0,3).toUpperCase() };
+                    });
+                    const pathDist = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.yDist}`).join(' ');
+
+                    return (
+                      <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="min-w-[500px] overflow-visible">
+                        {[0, 0.5, 1].map((ratio, i) => {
+                          const y = padY + chartH * ratio;
+                          return (
+                            <g key={i} className="opacity-20">
+                              <line x1={padX} y1={y} x2={padX + chartW} y2={y} stroke="#4b5563" strokeDasharray="3,3" />
+                            </g>
+                          );
+                        })}
+                        {points.length > 1 && <path d={pathDist} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                        {points.map((p, idx) => (
+                          <g key={idx}>
+                            <circle cx={p.x} cy={p.yDist} r="4" fill="#1f2937" stroke="#6366f1" strokeWidth="2" />
+                            <text x={p.x} y={p.yDist - 10} fill="#818cf8" fontSize="9" textAnchor="middle" fontWeight="bold">{p.dist}m</text>
+                            
+                            <rect x={p.x - 12} y={padY + chartH + 5} width="24" height="14" rx="4" fill="#374151" />
+                            <text x={p.x} y={padY + chartH + 15} fill="#9ca3af" fontSize="8" textAnchor="middle" fontWeight="bold">{p.sprints} sp</text>
+                          </g>
+                        ))}
+                      </svg>
+                    );
+                  })()}
+                </div>
               </div>
             )}
           </div>

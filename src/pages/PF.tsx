@@ -8,13 +8,14 @@ import {
 import { computeGruposCounts } from '../lib/fuerzaConstants';
 import MuscleHeatmap, { MuscleHeatmapLegend } from '../components/MuscleHeatmap';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Download } from 'lucide-react';
+import { Plus, Download, Activity } from 'lucide-react';
 import { GpsFormModal } from '../components/pf/GpsFormModal';
 import { FuerzaFormModal } from '../components/pf/FuerzaFormModal';
 import { PlayerSelect } from '../components/pf/PlayerSelect';
 import { ComparadorGPS } from '../components/pf/ComparadorGPS';
 import { PFHistoryList } from '../components/pf/PFHistoryList';
 import { EjercicioFuerzaFormModal } from '../components/pf/EjercicioFuerzaFormModal';
+import { EjercicioDetalleModal } from '../components/pf/EjercicioDetalleModal';
 import { GPSPlayerPrintView } from '../components/pf/GPSPlayerPrintView';
 import { FuerzaSessionPrintView } from '../components/pf/FuerzaSessionPrintView';
 // @ts-ignore
@@ -125,6 +126,7 @@ function DashboardGPS() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingGpsRecord, setEditingGpsRecord] = useState<any>(null);
   const [jugadorId, setJugadorId] = useState('');
   const [sessionFilter, setSessionFilter] = useState('todos'); // 'todos' | 'entrenamiento' | 'partido'
   const [metric, setMetric] = useState('distancia_total');
@@ -170,7 +172,6 @@ function DashboardGPS() {
   });
 
   const jugadoresOrdenados = [...jugadores].sort((a, b) => {
-    // We don't have strict position mapped here easily, just fallback to dorsal
     return (a.dorsal || 999) - (b.dorsal || 999);
   });
 
@@ -229,6 +230,11 @@ function DashboardGPS() {
     }
   };
 
+  const handleEditGps = (record: any) => {
+    setEditingGpsRecord(record);
+    setIsModalOpen(true);
+  };
+
   const gpsColumns = [
     { key: 'fecha', label: 'Fecha', render: (r: any) => formatDate(r.fecha) },
     { key: 'jugador', label: 'Jugador', render: (r: any) => {
@@ -240,7 +246,6 @@ function DashboardGPS() {
     { key: 'velocidad_maxima', label: 'Vel. Máx' }
   ];
 
-  // For the history list we use the raw data sorted by created_at or date desc
   const allHistoryData = [...gpsRecords].map(g => {
     const session = g.session_type === 'entrenamiento'
       ? entrenamientos.find(e => e.id === g.session_id)
@@ -316,7 +321,10 @@ function DashboardGPS() {
           )}
           {hasPermission('pf', 'editar') && (
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setEditingGpsRecord(null);
+                setIsModalOpen(true);
+              }}
               className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red"
             >
               <Plus className="w-4 h-4" />
@@ -328,10 +336,14 @@ function DashboardGPS() {
 
       <GpsFormModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingGpsRecord(null);
+        }}
         jugadores={jugadores}
         entrenamientos={entrenamientos}
         partidos={partidos}
+        editData={editingGpsRecord}
       />
 
       {!jugadorId ? (
@@ -402,13 +414,13 @@ function DashboardGPS() {
 
       <PFHistoryList 
         title="Historial de Registros GPS"
-        data={allHistoryData.slice(0, 50)} // Show latest 50
+        data={allHistoryData.slice(0, 50)}
         columns={gpsColumns}
         onDelete={handleDelete}
+        onEdit={handleEditGps}
         hasPermission={hasPermission('pf', 'editar')}
       />
 
-      {/* Hidden Print View */}
       {selectedJugador && hasData && (
         <div style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
           <div id="pdf-gps-player-container">
@@ -452,7 +464,10 @@ function DashboardFuerza() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingFuerzaSession, setEditingFuerzaSession] = useState<any>(null);
   const [isEjercicioModalOpen, setIsEjercicioModalOpen] = useState(false);
+  const [editingEjercicio, setEditingEjercicio] = useState<any>(null);
+  const [viewingEjercicio, setViewingEjercicio] = useState<any>(null);
   const [plantilla, setPlantilla] = useState('primer_equipo');
   const [selectedSessionToPrint, setSelectedSessionToPrint] = useState<any>(null);
 
@@ -492,6 +507,23 @@ function DashboardFuerza() {
 
   const counts = computeGruposCounts(entriesPlantilla.map(e => e.ejercicio_id), catalogo);
 
+  const computeTagsCounts = () => {
+    const tagCounts: Record<string, number> = {};
+    let total = 0;
+    const uniqueIds = [...new Set(entriesPlantilla.map(e => e.ejercicio_id))];
+    uniqueIds.forEach(id => {
+      const ex = catalogo.find(e => e.id === id);
+      if (!ex || !ex.tags) return;
+      ex.tags.forEach((t: string) => {
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+        total++;
+      });
+    });
+    return { tagCounts, total };
+  };
+  
+  const { tagCounts, total: totalTags } = computeTagsCounts();
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('fuerza_sesiones').delete().eq('id', id);
@@ -513,6 +545,37 @@ function DashboardFuerza() {
     }
   };
 
+  const deleteEjercicioMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('ejercicios_fuerza').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ejercicios_fuerza'] });
+      showToast('success', 'Ejercicio eliminado del catálogo');
+    },
+    onError: () => {
+      showToast('error', 'Error al eliminar. Es posible que el ejercicio ya esté siendo usado en una sesión.');
+    }
+  });
+
+  const handleDeleteEjercicio = (id: string) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar este ejercicio del catálogo?')) {
+      deleteEjercicioMutation.mutate(id);
+    }
+  };
+
+  const handleEditEjercicio = (ejercicio: any) => {
+    setEditingEjercicio(ejercicio);
+    setIsEjercicioModalOpen(true);
+  };
+
+  const handleEditFuerza = (session: any) => {
+    const ejercicios = sesionEjercicios.filter((se: any) => se.sesion_id === session.id).map((se: any) => se.ejercicio_id);
+    setEditingFuerzaSession({ ...session, ejercicios });
+    setIsModalOpen(true);
+  };
+
   const fuerzaColumns = [
     { key: 'fecha', label: 'Fecha', render: (r: any) => formatDate(r.fecha) },
     { key: 'tipo', label: 'Tipo', render: (r: any) => r.tipo === 'repeticiones' ? 'Repeticiones' : 'Tabata' },
@@ -521,13 +584,18 @@ function DashboardFuerza() {
     }}
   ];
 
-  // Sort sessions by date desc
+  const ejercicioColumns = [
+    { key: 'nombre', label: 'Nombre' },
+    { key: 'grupos', label: 'Grupos', render: (r: any) => (r.grupos || []).join(', ') },
+    { key: 'tags', label: 'Tags', render: (r: any) => (r.tags || []).join(', ') },
+    { key: 'zona', label: 'Zona', render: (r: any) => r.zona === 'ambos' ? 'Ambos' : r.zona === 'anterior' ? 'Anterior' : 'Posterior' },
+    { key: 'tren', label: 'Tren', render: (r: any) => r.tren === 'full_body' ? 'Full Body' : r.tren === 'superior' ? 'Superior' : 'Inferior' }
+  ];
+
   const historyData = [...sesionesPlantilla].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
-  // UseEffect for PDF generation when a session is selected
   React.useEffect(() => {
     if (selectedSessionToPrint) {
-      // Small delay to allow react to render the hidden component
       setTimeout(() => {
         const element = document.getElementById('pdf-fuerza-session-container');
         if (!element) return;
@@ -540,11 +608,11 @@ function DashboardFuerza() {
           filename:     filename,
           image:        { type: 'jpeg' as const, quality: 0.98 },
           html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
-          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }, // A4 Portrait
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
         };
 
         html2pdf().set(opt).from(element).save().then(() => {
-          setSelectedSessionToPrint(null); // Reset after printing
+          setSelectedSessionToPrint(null);
         });
       }, 500);
     }
@@ -557,18 +625,16 @@ function DashboardFuerza() {
   const getEjerciciosParaImprimir = () => {
     if (!selectedSessionToPrint) return [];
     
-    // Filter the session entries
     const sessionEntries = sesionEjercicios
       .filter(se => se.sesion_id === selectedSessionToPrint.id)
       .sort((a, b) => (a.orden || 0) - (b.orden || 0));
 
-    // Map to catalog entries
     return sessionEntries.map(se => {
       const catEj = catalogo.find(c => c.id === se.ejercicio_id) || {};
       return {
         ...se,
         ...catEj,
-        id: se.id // keep unique ID from session_ejercicios
+        id: se.id
       };
     });
   };
@@ -594,14 +660,20 @@ function DashboardFuerza() {
         {hasPermission('pf', 'editar') && (
           <div className="flex gap-2">
             <button
-              onClick={() => setIsEjercicioModalOpen(true)}
+              onClick={() => {
+                setEditingEjercicio(null);
+                setIsEjercicioModalOpen(true);
+              }}
               className="flex items-center gap-2 bg-brand-black-hover border border-brand-black-border text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-gray-dark transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>Nuevo Ejercicio</span>
             </button>
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setEditingFuerzaSession(null);
+                setIsModalOpen(true);
+              }}
               className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red"
             >
               <Plus className="w-4 h-4" />
@@ -613,16 +685,32 @@ function DashboardFuerza() {
 
       <FuerzaFormModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingFuerzaSession(null);
+        }}
         catalogoEjercicios={catalogo}
+        editData={editingFuerzaSession}
       />
 
       <EjercicioFuerzaFormModal 
         isOpen={isEjercicioModalOpen}
-        onClose={() => setIsEjercicioModalOpen(false)}
+        onClose={() => {
+          setIsEjercicioModalOpen(false);
+          setEditingEjercicio(null);
+        }}
+        editData={editingEjercicio}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <EjercicioDetalleModal 
+        isOpen={!!viewingEjercicio}
+        onClose={() => setViewingEjercicio(null)}
+        ejercicio={viewingEjercicio}
+        sesiones={sesiones}
+        sesionEjercicios={sesionEjercicios}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
           <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Sesiones de fuerza</div>
           <div className="text-2xl font-bold text-white mt-1">{sesionesPlantilla.length}</div>
@@ -634,6 +722,47 @@ function DashboardFuerza() {
         <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
           <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Sesiones por repeticiones</div>
           <div className="text-2xl font-bold text-white mt-1">{repeticionesCount}</div>
+        </div>
+        
+        {/* Uso de Tags */}
+        <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 shadow-sm md:col-span-1">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-8 h-8 rounded-lg bg-brand-red-600/10 flex items-center justify-center">
+              <Activity className="w-4 h-4 text-brand-red-500" />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-sm">Etiquetas (Tags)</h3>
+              <p className="text-brand-gray-muted text-xs">Uso de tags manuales</p>
+            </div>
+          </div>
+          
+          <div className="space-y-4 max-h-[100px] overflow-y-auto pr-2 no-scrollbar">
+            {Object.keys(tagCounts).length > 0 ? (
+              Object.entries(tagCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([tag, val]) => {
+                  const pct = totalTags > 0 ? Math.round((val / totalTags) * 100) : 0;
+                  return (
+                    <div key={tag}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-brand-gray-light font-medium">{tag}</span>
+                        <span className="text-brand-gray-muted font-bold">{pct}% ({val})</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-brand-black-border rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-brand-red-600 rounded-full"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+            ) : (
+              <p className="text-xs text-brand-gray-muted text-center pt-8 italic">
+                No hay tags registrados.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -656,10 +785,21 @@ function DashboardFuerza() {
       </div>
 
       <PFHistoryList 
+        title="Catálogo de Ejercicios Creados"
+        data={catalogo}
+        columns={ejercicioColumns}
+        onDelete={handleDeleteEjercicio}
+        onEdit={handleEditEjercicio}
+        onRowClick={(row) => setViewingEjercicio(row)}
+        hasPermission={hasPermission('pf', 'editar')}
+      />
+
+      <PFHistoryList 
         title="Historial de Sesiones de Fuerza"
         data={historyData.slice(0, 50)}
         columns={fuerzaColumns}
         onDelete={handleDelete}
+        onEdit={handleEditFuerza}
         onPrint={handlePrintSession}
         hasPermission={hasPermission('pf', 'editar')}
       />

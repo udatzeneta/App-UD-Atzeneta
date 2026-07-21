@@ -725,6 +725,12 @@ export interface EjercicioFuerza {
   id: string;
   nombre: string;
   grupos?: string[];
+  tags?: string[];
+  explicacion?: string;
+  imagen_url?: string;
+  zona?: 'anterior' | 'posterior' | 'ambos';
+  tren?: 'superior' | 'inferior' | 'full_body';
+  patron?: string;
   otroTexto?: string;
   created_at?: string;
 }
@@ -733,5 +739,8 @@ export interface FuerzaSesionEjercicio {
   id: string;
   sesion_id: string;
   ejercicio_id: string;
+  repeticiones?: string;
+  tiempo?: string;
+  comentarios?: string;
   created_at?: string;
 }

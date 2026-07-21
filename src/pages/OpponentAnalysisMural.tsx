@@ -268,7 +268,7 @@ export const OpponentAnalysisMural: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="md:col-span-2">
                     <label className="form-label">Alineación / Sistema de Juego (arrastra los jugadores)</label>
-                    <FormationPitch value={formation} onChange={handleFormationChange} opponentName={analysis.opponent} />
+                    <FormationPitch value={formation} onChange={handleFormationChange} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
                   </div>
                   <div className="space-y-4">
                     <div>
@@ -305,7 +305,7 @@ export const OpponentAnalysisMural: React.FC = () => {
                       <span className="text-[11px] font-bold text-brand-red-500 bg-brand-red-600/10 border border-brand-red-600/20 px-2.5 py-1 rounded-full">{formation.system}</span>
                     )}
                   </div>
-                  <FormationPitch value={formation} onChange={handleFormationChange} readOnly={!canEdit} opponentName={analysis.opponent} />
+                  <FormationPitch value={formation} onChange={handleFormationChange} readOnly={!canEdit} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
                 </div>
                 <div className="lg:col-span-1 flex flex-col gap-6">
                   <div className="bg-brand-black border border-brand-black-border rounded-xl p-5">

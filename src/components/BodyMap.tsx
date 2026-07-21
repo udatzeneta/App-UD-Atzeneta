@@ -85,13 +85,16 @@ export const BodyMap: React.FC<BodyMapProps> = ({ injuries, onZoneClick }) => {
 
   return (
     <div className="space-y-4">
-      <div className="relative w-full max-w-[800px] mx-auto rounded-xl overflow-hidden border border-brand-black-border" style={{ minHeight: '400px' }}>
+      <div 
+        className="relative w-full max-w-[800px] mx-auto rounded-xl overflow-hidden border border-brand-black-border bg-brand-black/20" 
+        style={{ aspectRatio: '473 / 487' }}
+      >
         
         {/* IMAGEN DEL SISTEMA MUSCULAR */}
         <img 
           src="/muscular_map.png" 
           alt="Anatomía Muscular" 
-          className="w-full h-auto object-contain pointer-events-none select-none"
+          className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
         />
 
         {/* MAPEO DE ZONAS Y LESIONES */}

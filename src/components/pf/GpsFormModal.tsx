@@ -11,9 +11,10 @@ interface GpsFormModalProps {
   jugadores: any[];
   entrenamientos: any[];
   partidos: any[];
+  editData?: any;
 }
 
-export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jugadores, entrenamientos, partidos }) => {
+export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jugadores, entrenamientos, partidos, editData }) => {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -30,19 +31,53 @@ export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jug
     aceleraciones: '',
     deceleraciones: '',
     distancia_por_minuto: '',
+    distancia_por_minuto: '',
     equilibrio_pasos: ''
   });
+
+  React.useEffect(() => {
+    if (isOpen && editData) {
+      setJugadorId(editData.jugador_id || '');
+      setSessionType(editData.session_type || 'entrenamiento');
+      setSessionId(editData.session_id || '');
+      setMetrics({
+        distancia_total: editData.distancia_total?.toString() || '',
+        velocidad_maxima: editData.velocidad_maxima?.toString() || '',
+        sprints: editData.sprints?.toString() || '',
+        hsr: editData.hsr?.toString() || '',
+        distancia_alta_intensidad: editData.distancia_alta_intensidad?.toString() || '',
+        aceleraciones: editData.aceleraciones?.toString() || '',
+        deceleraciones: editData.deceleraciones?.toString() || '',
+        distancia_por_minuto: editData.distancia_por_minuto?.toString() || '',
+        equilibrio_pasos: editData.equilibrio_pasos?.toString() || ''
+      });
+    } else if (isOpen && !editData) {
+      setJugadorId('');
+      setSessionType('entrenamiento');
+      setSessionId('');
+      setMetrics({
+        distancia_total: '', velocidad_maxima: '', sprints: '', hsr: '',
+        distancia_alta_intensidad: '', aceleraciones: '', deceleraciones: '',
+        distancia_por_minuto: '', equilibrio_pasos: ''
+      });
+    }
+  }, [isOpen, editData]);
 
   const availableSessions = sessionType === 'entrenamiento' ? entrenamientos : partidos;
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
-      const { error } = await supabase.from('gps_records').insert(data);
-      if (error) throw error;
+      if (editData?.id) {
+        const { error } = await supabase.from('gps_records').update(data).eq('id', editData.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('gps_records').insert(data);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gps_records'] });
-      showToast('success', 'Registro GPS guardado correctamente');
+      showToast('success', editData ? 'Registro GPS actualizado' : 'Registro GPS guardado');
       onClose();
       // Reset form
       setJugadorId('');
@@ -84,7 +119,7 @@ export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jug
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Añadir Registro GPS" maxWidth="max-w-2xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={editData ? "Editar Registro GPS" : "Añadir Registro GPS"} maxWidth="max-w-2xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -183,7 +218,7 @@ export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jug
             Cancelar
           </button>
           <button type="submit" disabled={mutation.isPending} className="px-6 py-2 bg-brand-red-600 hover:bg-brand-red-700 text-white rounded-lg text-sm font-semibold shadow-glow-red disabled:opacity-50">
-            {mutation.isPending ? 'Guardando...' : 'Guardar Registro'}
+            {mutation.isPending ? 'Guardando...' : (editData ? 'Actualizar Registro' : 'Guardar Registro')}
           </button>
         </div>
       </form>

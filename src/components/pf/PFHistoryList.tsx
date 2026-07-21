@@ -14,10 +14,11 @@ interface PFHistoryListProps {
   onDelete?: (id: string) => void;
   onEdit?: (row: any) => void;
   onPrint?: (row: any) => void;
+  onRowClick?: (row: any) => void;
   hasPermission: boolean;
 }
 
-export const PFHistoryList: React.FC<PFHistoryListProps> = ({ title, data, columns, onDelete, onEdit, onPrint, hasPermission }) => {
+export const PFHistoryList: React.FC<PFHistoryListProps> = ({ title, data, columns, onDelete, onEdit, onPrint, onRowClick, hasPermission }) => {
   return (
     <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-6">
       <h3 className="text-lg font-bold text-white mb-4">{title}</h3>
@@ -41,7 +42,11 @@ export const PFHistoryList: React.FC<PFHistoryListProps> = ({ title, data, colum
             </thead>
             <tbody className="divide-y divide-brand-black-border">
               {data.map((row, i) => (
-                <tr key={row.id || i} className="hover:bg-brand-black/30 transition-colors text-sm text-brand-gray-light">
+                <tr 
+                  key={row.id || i} 
+                  className={`transition-colors text-sm text-brand-gray-light ${onRowClick ? 'cursor-pointer hover:bg-brand-black-hover' : 'hover:bg-brand-black/30'}`}
+                  onClick={() => onRowClick && onRowClick(row)}
+                >
                   {columns.map(col => (
                     <td key={col.key} className="py-3 px-4">
                       {col.render ? col.render(row) : row[col.key] ?? '—'}
@@ -51,7 +56,7 @@ export const PFHistoryList: React.FC<PFHistoryListProps> = ({ title, data, colum
                     <td className="py-3 px-4 text-right flex justify-end gap-2">
                       {onPrint && (
                         <button
-                          onClick={() => onPrint(row)}
+                          onClick={(e) => { e.stopPropagation(); onPrint(row); }}
                           className="p-1.5 text-brand-gray-muted hover:text-white transition-colors rounded-lg hover:bg-brand-black"
                           title="Imprimir"
                         >
@@ -60,7 +65,7 @@ export const PFHistoryList: React.FC<PFHistoryListProps> = ({ title, data, colum
                       )}
                       {onEdit && (
                         <button
-                          onClick={() => onEdit(row)}
+                          onClick={(e) => { e.stopPropagation(); onEdit(row); }}
                           className="p-1.5 text-brand-gray-muted hover:text-brand-blue transition-colors rounded-lg hover:bg-brand-black"
                           title="Editar"
                         >
@@ -69,7 +74,7 @@ export const PFHistoryList: React.FC<PFHistoryListProps> = ({ title, data, colum
                       )}
                       {onDelete && (
                         <button
-                          onClick={() => onDelete(row.id)}
+                          onClick={(e) => { e.stopPropagation(); onDelete(row.id); }}
                           className="p-1.5 text-brand-gray-muted hover:text-brand-red-600 transition-colors rounded-lg hover:bg-brand-black"
                           title="Eliminar"
                         >

@@ -1,97 +1,144 @@
-import { GRUPO_LABEL, colorForCount } from '../lib/fuerzaConstants';
+import React, { useState } from 'react';
+import { GRUPO_LABEL, HEATMAP_COLORS, colorForCount } from '../lib/fuerzaConstants';
+import { anteriorData, posteriorData } from '../lib/bodyHighlighterData';
 
-const SKIN = '#F1F5F9';
-const SKIN_STROKE = '#94A3B8';
-const ZONE_STROKE = '#5B7A99';
-
-// Silueta corporal base (sin colorear): cabeza, torso+cuello, brazos y piernas.
-const HEAD_PATH = 'M120,10 C142,10 154,28 154,49 C154,68 145,82 132,91 C127,93.5 113,93.5 108,91 C95,82 86,68 86,49 C86,28 98,10 120,10 Z';
-const TORSO_PATH = 'M 135.00,86.00 C 135.50,88.33 133.17,95.00 138.00,100.00 C 142.83,105.00 157.33,109.67 164.00,116.00 C 170.67,122.33 176.33,129.33 178.00,138.00 C 179.67,146.67 176.33,157.67 174.00,168.00 C 171.67,178.33 167.00,190.00 164.00,200.00 C 161.00,210.00 155.33,219.00 156.00,228.00 C 156.67,237.00 164.83,245.67 168.00,254.00 C 171.17,262.33 175.67,271.00 175.00,278.00 C 174.33,285.00 165.83,293.00 164.00,296.00 C 148.00,305.00 128.00,307.00 120,299.00 C 112.00,307.00 92.00,305.00 76.00,296.00 C 74.17,293.00 65.67,285.00 65.00,278.00 C 64.33,271.00 68.83,262.33 72.00,254.00 C 75.17,245.67 83.33,237.00 84.00,228.00 C 84.67,219.00 79.00,210.00 76.00,200.00 C 73.00,190.00 68.33,178.33 66.00,168.00 C 63.67,157.67 60.33,146.67 62.00,138.00 C 63.67,129.33 69.33,122.33 76.00,116.00 C 82.67,109.67 97.17,105.00 102.00,100.00 C 106.83,95.00 104.50,88.33 105.00,86.00 Z';
-const ARM_PATH = 'M 163.00,114.00 C 166.17,115.33 177.17,117.33 182.00,122.00 C 186.83,126.67 191.17,134.67 192.00,142.00 C 192.83,149.33 189.00,157.67 187.00,166.00 C 185.00,174.33 182.00,184.33 180.00,192.00 C 178.00,199.67 175.00,204.33 175.00,212.00 C 175.00,219.67 179.67,228.67 180.00,238.00 C 180.33,247.33 178.67,259.00 177.00,268.00 C 175.33,277.00 170.17,285.67 170.00,292.00 C 169.83,298.33 175.17,300.67 176.00,306.00 C 176.83,311.33 177.00,319.17 175.00,324.00 C 173.00,328.83 165.83,333.17 164.00,335.00 L 154.00,335.00 C 153.33,333.17 150.33,328.83 150.00,324.00 C 149.67,319.17 151.33,310.67 152.00,306.00 C 152.67,301.33 153.00,302.33 154.00,296.00 C 155.00,289.67 156.83,277.67 158.00,268.00 C 159.17,258.33 161.33,247.33 161.00,238.00 C 160.67,228.67 156.17,219.67 156.00,212.00 C 155.83,204.33 159.00,199.67 160.00,192.00 C 161.00,184.33 163.00,174.33 162.00,166.00 C 161.00,157.67 156.33,149.00 154.00,142.00 C 151.67,135.00 148.33,128.67 148.00,124.00 C 147.67,119.33 151.33,115.67 152.00,114.00 Z';
-const LEG_PATH = 'M 172.00,274.00 C 173.33,278.33 178.17,291.00 180.00,300.00 C 181.83,309.00 183.50,317.00 183.00,328.00 C 182.50,339.00 179.50,354.00 177.00,366.00 C 174.50,378.00 170.33,391.00 168.00,400.00 C 165.67,409.00 163.00,412.00 163.00,420.00 C 163.00,428.00 166.50,439.33 168.00,448.00 C 169.50,456.67 172.83,462.00 172.00,472.00 C 171.17,482.00 165.50,499.00 163.00,508.00 C 160.50,517.00 156.17,520.67 157.00,526.00 C 157.83,531.33 165.17,535.67 168.00,540.00 C 170.83,544.33 173.00,550.00 174.00,552.00 Q 160.00,558.00 144,560 L 128.00,550.00 C 127.67,547.67 125.33,540.00 126.00,536.00 C 126.67,532.00 130.83,530.67 132.00,526.00 C 133.17,521.33 133.67,517.00 133.00,508.00 C 132.33,499.00 129.17,482.00 128.00,472.00 C 126.83,462.00 125.83,456.67 126.00,448.00 C 126.17,439.33 128.00,428.00 129.00,420.00 C 130.00,412.00 131.17,409.00 132.00,400.00 C 132.83,391.00 134.67,378.00 134.00,366.00 C 133.33,354.00 129.67,339.00 128.00,328.00 C 126.33,317.00 124.00,308.33 124.00,300.00 C 124.00,291.67 127.33,281.67 128.00,278.00 Z';
-
-// Zonas musculares coloreables (una mitad; las de brazos/piernas se reflejan con <g transform>).
-const ZONE_PATHS: Record<string, string> = {
-  hombro: 'M 163.00,114.00 C 166.17,115.33 177.17,117.33 182.00,122.00 C 186.83,126.67 191.17,134.67 192.00,142.00 C 192.83,149.33 187.83,162.00 187.00,166.00 L 162.00,166.00 C 160.67,162.00 156.33,149.00 154.00,142.00 C 151.67,135.00 148.33,128.67 148.00,124.00 C 147.67,119.33 151.33,115.67 152.00,114.00 Z',
-  biceps: 'M 178.00,166.00 C 176.83,170.33 173.00,184.33 171.00,192.00 C 169.00,199.67 166.83,208.67 166.00,212.00 L 156.00,212.00 C 156.67,208.67 159.00,199.67 160.00,192.00 C 161.00,184.33 161.67,170.33 162.00,166.00 Z',
-  triceps: 'M 187.00,166.00 C 185.83,170.33 182.00,184.33 180.00,192.00 C 178.00,199.67 175.83,208.67 175.00,212.00 L 166.00,212.00 C 166.83,208.67 169.00,199.67 171.00,192.00 C 173.00,184.33 176.83,170.33 178.00,166.00 Z',
-  cuadriceps: 'M 162.00,274.00 C 163.33,278.33 168.17,291.00 170.00,300.00 C 171.83,309.00 173.50,317.00 173.00,328.00 C 172.50,339.00 169.50,354.00 167.00,366.00 C 164.50,378.00 160.33,391.00 158.00,400.00 C 155.67,409.00 153.83,416.67 153.00,420.00 L 129.00,420.00 C 129.50,416.67 131.17,409.00 132.00,400.00 C 132.83,391.00 134.67,378.00 134.00,366.00 C 133.33,354.00 129.67,339.00 128.00,328.00 C 126.33,317.00 124.00,308.33 124.00,300.00 C 124.00,291.67 127.33,281.67 128.00,278.00 Z',
-  isquiotibiales: 'M 172.00,274.00 C 173.33,278.33 178.17,291.00 180.00,300.00 C 181.83,309.00 183.50,317.00 183.00,328.00 C 182.50,339.00 179.50,354.00 177.00,366.00 C 174.50,378.00 170.33,391.00 168.00,400.00 C 165.67,409.00 163.83,416.67 163.00,420.00 L 153.00,420.00 C 153.83,416.67 155.67,409.00 158.00,400.00 C 160.33,391.00 164.50,378.00 167.00,366.00 C 169.50,354.00 172.50,339.00 173.00,328.00 C 173.50,317.00 171.83,309.00 170.00,300.00 C 168.17,291.00 163.33,278.33 162.00,274.00 Z',
-  gemelos: 'M 163.00,420.00 C 163.83,424.67 166.50,439.33 168.00,448.00 C 169.50,456.67 172.83,462.00 172.00,472.00 C 171.17,482.00 165.50,499.00 163.00,508.00 C 160.50,517.00 158.00,523.00 157.00,526.00 L 132.00,526.00 C 132.17,523.00 133.67,517.00 133.00,508.00 C 132.33,499.00 129.17,482.00 128.00,472.00 C 126.83,462.00 125.83,456.67 126.00,448.00 C 126.17,439.33 128.50,424.67 129.00,420.00 Z',
+const groupToHighlighterMuscles: Record<string, string[]> = {
+  cuadriceps: ['quadriceps'],
+  isquiotibiales: ['hamstring'],
+  gluteos: ['gluteal'],
+  gemelos: ['calves'],
+  core: ['abs', 'obliques'],
+  pecho: ['chest'],
+  espalda: ['upper-back', 'lower-back', 'trapezius'],
+  hombro: ['front-deltoids', 'back-deltoids'],
+  biceps: ['biceps'],
+  triceps: ['triceps'],
 };
 
-// Zonas centrales del torso (no se reflejan, ya son simétricas respecto al eje central).
-const CENTER_ZONE_PATHS: Record<string, string> = {
-  espalda: 'M 138.00,100.00 C 142.33,102.67 159.67,113.33 164.00,116.00 L 76.00,116.00 C 80.33,113.33 97.67,102.67 102.00,100.00 Z',
-  pecho: 'M 164.00,116.00 C 166.33,119.67 176.33,129.33 178.00,138.00 C 179.67,146.67 174.67,163.00 174.00,168.00 L 66.00,168.00 C 65.33,163.00 60.33,146.67 62.00,138.00 C 63.67,129.33 73.67,119.67 76.00,116.00 Z',
-  core: 'M 174.00,168.00 C 172.33,173.33 167.00,190.00 164.00,200.00 C 161.00,210.00 157.33,223.33 156.00,228.00 L 84.00,228.00 C 82.67,223.33 79.00,210.00 76.00,200.00 C 73.00,190.00 67.67,173.33 66.00,168.00 Z',
-  gluteos: 'M 156.00,228.00 C 158.00,232.33 164.83,245.67 168.00,254.00 C 171.17,262.33 173.83,274.00 175.00,278.00 L 65.00,278.00 C 66.17,274.00 68.83,262.33 72.00,254.00 C 75.17,245.67 82.00,232.33 84.00,228.00 Z',
-};
+// Create a reverse mapping to easily know which "group" a muscle belongs to
+const muscleToGroup: Record<string, string> = {};
+Object.entries(groupToHighlighterMuscles).forEach(([group, muscles]) => {
+  muscles.forEach(m => {
+    muscleToGroup[m] = group;
+  });
+});
 
-// Silueta humana realista, de frente, con zonas musculares coloreables.
 export default function MuscleHeatmap({ counts = {}, size = 220 }: { counts?: Record<string, number>, size?: number }) {
-  const fillFor = (key: string) => colorForCount(counts[key] || 0);
-  const titleFor = (key: string) => {
-    const c = counts[key] || 0;
-    return `${(GRUPO_LABEL as any)[key]}: ${c} ejercicio${c !== 1 ? 's' : ''}`;
+  const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    text: ''
+  });
+
+  const handleMouseMove = (e: React.MouseEvent, groupKey: string) => {
+    if (!groupKey) return;
+    const c = counts[groupKey] || 0;
+    const text = `${(GRUPO_LABEL as any)[groupKey]}: ${c} ejercicio${c !== 1 ? 's' : ''}`;
+    setTooltip({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      text
+    });
   };
 
-  const Zone = ({ groupKey, d }: { groupKey: string, d: string }) => (
-    <path d={d} fill={fillFor(groupKey)} stroke={ZONE_STROKE} strokeWidth="1" strokeLinejoin="round">
-      <title>{titleFor(groupKey)}</title>
-    </path>
-  );
+  const handleMouseLeave = () => {
+    setTooltip(t => ({ ...t, visible: false }));
+  };
 
-  // Zona de brazo/pierna: se dibuja una vez y se refleja para formar el par izquierdo/derecho.
-  const MirroredZone = ({ groupKey }: { groupKey: string }) => (
-    <g>
-      <Zone groupKey={groupKey} d={ZONE_PATHS[groupKey]} />
-      <g transform="scale(-1,1) translate(-240,0)">
-        <Zone groupKey={groupKey} d={ZONE_PATHS[groupKey]} />
-      </g>
-    </g>
-  );
+  const getColor = (muscle: string) => {
+    const group = muscleToGroup[muscle];
+    if (!group) return HEATMAP_COLORS[0];
+    const count = counts[group] || 0;
+    return colorForCount(count);
+  };
 
   return (
-    <svg viewBox="0 0 240 600" width={size} height={(size * 600) / 240} xmlns="http://www.w3.org/2000/svg">
-      {/* Piel base: piernas, torso, brazos, cabeza */}
-      <g>
-        <path d={LEG_PATH} fill={SKIN} stroke={SKIN_STROKE} strokeWidth="1.5" strokeLinejoin="round" />
-        <g transform="scale(-1,1) translate(-240,0)">
-          <path d={LEG_PATH} fill={SKIN} stroke={SKIN_STROKE} strokeWidth="1.5" strokeLinejoin="round" />
-        </g>
-      </g>
-      <path d={TORSO_PATH} fill={SKIN} stroke={SKIN_STROKE} strokeWidth="1.5" strokeLinejoin="round" />
-      <g>
-        <path d={ARM_PATH} fill={SKIN} stroke={SKIN_STROKE} strokeWidth="1.5" strokeLinejoin="round" />
-        <g transform="scale(-1,1) translate(-240,0)">
-          <path d={ARM_PATH} fill={SKIN} stroke={SKIN_STROKE} strokeWidth="1.5" strokeLinejoin="round" />
-        </g>
-      </g>
-      <path d={HEAD_PATH} fill={SKIN} stroke={SKIN_STROKE} strokeWidth="1.5" />
+    <div className="relative flex flex-col sm:flex-row items-center justify-center gap-12 w-full max-w-4xl mx-auto">
+      
+      {tooltip.visible && (
+        <div 
+          className="fixed z-50 px-3 py-2 bg-brand-gray-dark border border-brand-black-border text-white text-xs rounded-lg pointer-events-none shadow-glow-sm"
+          style={{ left: tooltip.x + 15, top: tooltip.y + 15 }}
+        >
+          {tooltip.text}
+        </div>
+      )}
 
-      {/* Zonas musculares coloreadas */}
-      <Zone groupKey="espalda" d={CENTER_ZONE_PATHS.espalda} />
-      <Zone groupKey="pecho" d={CENTER_ZONE_PATHS.pecho} />
-      <Zone groupKey="core" d={CENTER_ZONE_PATHS.core} />
-      <Zone groupKey="gluteos" d={CENTER_ZONE_PATHS.gluteos} />
-      <MirroredZone groupKey="hombro" />
-      <MirroredZone groupKey="biceps" />
-      <MirroredZone groupKey="triceps" />
-      <MirroredZone groupKey="cuadriceps" />
-      <MirroredZone groupKey="isquiotibiales" />
-      <MirroredZone groupKey="gemelos" />
-    </svg>
+      <div className="flex flex-col items-center">
+        <h4 className="text-sm font-bold text-brand-gray-muted mb-4 uppercase tracking-wider">Frontal</h4>
+        <svg
+          width={size}
+          viewBox="0 0 100 220"
+          className="drop-shadow-lg"
+          style={{ maxWidth: '100%' }}
+          onMouseLeave={handleMouseLeave}
+        >
+          {anteriorData.map(item => (
+            <g key={item.muscle}>
+              {item.svgPoints.map((points, idx) => {
+                const group = muscleToGroup[item.muscle];
+                return (
+                  <polygon
+                    key={idx}
+                    points={points}
+                    fill={getColor(item.muscle)}
+                    stroke="#1A1C20"
+                    strokeWidth="0.5"
+                    className="transition-colors duration-300 hover:brightness-110 cursor-pointer"
+                    onMouseMove={group ? (e) => handleMouseMove(e, group) : undefined}
+                  />
+                );
+              })}
+            </g>
+          ))}
+        </svg>
+      </div>
+      
+      <div className="flex flex-col items-center">
+        <h4 className="text-sm font-bold text-brand-gray-muted mb-4 uppercase tracking-wider">Dorsal</h4>
+        <svg
+          width={size}
+          viewBox="0 0 100 220"
+          className="drop-shadow-lg"
+          style={{ maxWidth: '100%' }}
+          onMouseLeave={handleMouseLeave}
+        >
+          {posteriorData.map(item => (
+            <g key={item.muscle}>
+              {item.svgPoints.map((points, idx) => {
+                const group = muscleToGroup[item.muscle];
+                return (
+                  <polygon
+                    key={idx}
+                    points={points}
+                    fill={getColor(item.muscle)}
+                    stroke="#1A1C20"
+                    strokeWidth="0.5"
+                    className="transition-colors duration-300 hover:brightness-110 cursor-pointer"
+                    onMouseMove={group ? (e) => handleMouseMove(e, group) : undefined}
+                  />
+                );
+              })}
+            </g>
+          ))}
+        </svg>
+      </div>
+    </div>
   );
 }
 
 export function MuscleHeatmapLegend() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+    <div className="flex items-center gap-2.5 text-xs text-brand-gray-muted flex-wrap justify-center mt-6">
       <span>0</span>
       {[0, 1, 2, 3, 4].map(n => (
-        <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: colorForCount(n), border: '1px solid #94A3B8', display: 'inline-block' }} />
+        <div key={n} className="flex items-center gap-1">
+          <span 
+            className="w-3 h-3 rounded-sm border border-brand-black-border inline-block"
+            style={{ background: colorForCount(n) }} 
+          />
         </div>
       ))}
       <span>4+ ejercicios</span>

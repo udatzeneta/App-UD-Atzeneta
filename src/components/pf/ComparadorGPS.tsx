@@ -31,33 +31,42 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
     jugadores.filter(j => selectedPlayerIds.includes(j.id)),
   [jugadores, selectedPlayerIds]);
 
-  // Aggregate metrics (average) for each selected player to compare
   const comparisonData = useMemo(() => {
     if (selectedPlayers.length === 0) return { radar: [], bars: [] };
 
-    const radarData = metrics.map(m => {
-      const dataPoint: any = { metric: m.label, fullMark: 100 };
-      
-      // Calculate max for normalization if needed, but for simple radar, just raw values or scaled
-      // We will use raw averages
-      selectedPlayers.forEach((player, index) => {
+    const computeAverages = (m: any) => {
+      return selectedPlayers.map(player => {
         const playerRecords = gpsRecords.filter(r => r.jugador_id === player.id && r[m.key] != null);
-        const avg = playerRecords.length > 0 
+        return playerRecords.length > 0 
           ? playerRecords.reduce((sum, r) => sum + Number(r[m.key] || 0), 0) / playerRecords.length
           : 0;
-        dataPoint[`player_${index}`] = Number(avg.toFixed(2));
+      });
+    };
+
+    const radarData = metrics.map(m => {
+      const dataPoint: any = { metric: m.label, fullMark: 100 };
+      const averages = computeAverages(m);
+      const maxVal = Math.max(...averages, 0);
+      const reference = maxVal > 0 ? maxVal : 1;
+      
+      selectedPlayers.forEach((player, index) => {
+        const raw = averages[index];
+        dataPoint[`player_${index}`] = Number(((raw / reference) * 100).toFixed(1));
+        dataPoint[`raw_player_${index}`] = Number(raw.toFixed(2));
       });
       return dataPoint;
     });
 
     const barsData = metrics.map(m => {
       const dataPoint: any = { name: m.label };
+      const averages = computeAverages(m);
+      const maxVal = Math.max(...averages, 0);
+      const reference = maxVal > 0 ? maxVal : 1;
+
       selectedPlayers.forEach((player, index) => {
-        const playerRecords = gpsRecords.filter(r => r.jugador_id === player.id && r[m.key] != null);
-        const avg = playerRecords.length > 0 
-          ? playerRecords.reduce((sum, r) => sum + Number(r[m.key] || 0), 0) / playerRecords.length
-          : 0;
-        dataPoint[`player_${index}`] = Number(avg.toFixed(2));
+        const raw = averages[index];
+        dataPoint[`player_${index}`] = Number(((raw / reference) * 100).toFixed(1));
+        dataPoint[`raw_player_${index}`] = Number(raw.toFixed(2));
       });
       return dataPoint;
     });
@@ -142,8 +151,19 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                   <RadarChart cx="50%" cy="50%" outerRadius="80%" data={comparisonData.radar}>
                     <PolarGrid stroke="#333" />
                     <PolarAngleAxis dataKey="metric" tick={{ fill: '#888', fontSize: 10 }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={{ fill: '#888', fontSize: 10 }} />
-                    <RechartsTooltip contentStyle={{ backgroundColor: '#111', borderColor: '#333', color: '#fff', fontSize: 12, borderRadius: 8 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#888', fontSize: 10 }} />
+                    <RechartsTooltip 
+                      contentStyle={{ backgroundColor: '#111', borderColor: '#333', color: '#fff', fontSize: 12, borderRadius: 8 }} 
+                      formatter={(value, name, props) => {
+                        const dataKey = props.dataKey as string;
+                        if (dataKey && dataKey.startsWith('player_')) {
+                          const rawKey = `raw_${dataKey}`;
+                          const rawValue = props.payload[rawKey];
+                          return [`${rawValue} (${value}%)`, name];
+                        }
+                        return [value, name];
+                      }}
+                    />
                     <Legend wrapperStyle={{ fontSize: '12px' }} formatter={(value, entry, index) => {
                       const p = selectedPlayers[index];
                       return p ? `${p.dorsal || '-'}. ${p.nickname || p.full_name}` : value;
@@ -169,9 +189,20 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={comparisonData.bars} layout="vertical" margin={{ top: 5, right: 20, left: 40, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#333" horizontal={true} vertical={false} />
-                    <XAxis type="number" tick={{ fill: '#888', fontSize: 10 }} />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fill: '#888', fontSize: 10 }} />
                     <YAxis type="category" dataKey="name" tick={{ fill: '#888', fontSize: 10 }} width={100} />
-                    <RechartsTooltip contentStyle={{ backgroundColor: '#111', borderColor: '#333', color: '#fff', fontSize: 12, borderRadius: 8 }} />
+                    <RechartsTooltip 
+                      contentStyle={{ backgroundColor: '#111', borderColor: '#333', color: '#fff', fontSize: 12, borderRadius: 8 }} 
+                      formatter={(value, name, props) => {
+                        const dataKey = props.dataKey as string;
+                        if (dataKey && dataKey.startsWith('player_')) {
+                          const rawKey = `raw_${dataKey}`;
+                          const rawValue = props.payload[rawKey];
+                          return [`${rawValue} (${value}%)`, name];
+                        }
+                        return [value, name];
+                      }}
+                    />
                     <Legend wrapperStyle={{ fontSize: '12px' }} formatter={(value, entry, index) => {
                       const p = selectedPlayers[index];
                       return p ? `${p.dorsal || '-'}. ${p.nickname || p.full_name}` : value;

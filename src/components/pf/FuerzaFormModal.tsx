@@ -8,9 +8,9 @@ interface FuerzaFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   catalogoEjercicios: any[];
+  editData?: any;
 }
-
-export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClose, catalogoEjercicios }) => {
+export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClose, catalogoEjercicios, editData }) => {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -18,30 +18,66 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
   const [tipo, setTipo] = useState<'tabata' | 'repeticiones'>('repeticiones');
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   
-  // Guardamos un array de ejercicios seleccionados.
-  const [ejerciciosSeleccionados, setEjerciciosSeleccionados] = useState<string[]>([]);
+  // Guardamos un array de ejercicios seleccionados con sus metadatos.
+  const [ejerciciosSeleccionados, setEjerciciosSeleccionados] = useState<{ id: string; repeticiones: string; tiempo: string; comentarios: string }[]>([]);
   const [currentSelection, setCurrentSelection] = useState('');
+
+  React.useEffect(() => {
+    if (isOpen && editData) {
+      setPlantilla(editData.plantilla || 'primer_equipo');
+      setTipo(editData.tipo || 'repeticiones');
+      setFecha(editData.fecha ? editData.fecha.split('T')[0] : new Date().toISOString().split('T')[0]);
+      // editData.ejercicios might be an array of objects now, or just IDs if legacy
+      if (editData.ejercicios && editData.ejercicios.length > 0) {
+        if (typeof editData.ejercicios[0] === 'string') {
+          setEjerciciosSeleccionados(editData.ejercicios.map((id: string) => ({ id, repeticiones: '', tiempo: '', comentarios: '' })));
+        } else {
+          setEjerciciosSeleccionados(editData.ejercicios);
+        }
+      } else {
+        setEjerciciosSeleccionados([]);
+      }
+    } else if (isOpen && !editData) {
+      setPlantilla('primer_equipo');
+      setTipo('repeticiones');
+      setFecha(new Date().toISOString().split('T')[0]);
+      setEjerciciosSeleccionados([]);
+    }
+  }, [isOpen, editData]);
 
   const mutation = useMutation({
     mutationFn: async () => {
-      // 1. Insertar la sesión de fuerza
-      const { data: sesionData, error: sesionError } = await supabase
-        .from('fuerza_sesiones')
-        .insert({
-          plantilla,
-          tipo,
-          fecha
-        })
-        .select('id')
-        .single();
+      let sessionId = editData?.id;
+
+      if (sessionId) {
+        const { error: sesionError } = await supabase
+          .from('fuerza_sesiones')
+          .update({ plantilla, tipo, fecha })
+          .eq('id', sessionId);
+        if (sesionError) throw sesionError;
         
-      if (sesionError) throw sesionError;
+        const { error: delError } = await supabase
+          .from('fuerza_sesion_ejercicios')
+          .delete()
+          .eq('sesion_id', sessionId);
+        if (delError) throw delError;
+      } else {
+        const { data: sesionData, error: sesionError } = await supabase
+          .from('fuerza_sesiones')
+          .insert({ plantilla, tipo, fecha })
+          .select('id')
+          .single();
+        if (sesionError) throw sesionError;
+        sessionId = sesionData.id;
+      }
       
-      // 2. Si hay ejercicios, insertar en la tabla de relación
       if (ejerciciosSeleccionados.length > 0) {
-        const registrosEjercicios = ejerciciosSeleccionados.map(ej_id => ({
-          sesion_id: sesionData.id,
-          ejercicio_id: ej_id
+        const registrosEjercicios = ejerciciosSeleccionados.map(ej => ({
+          sesion_id: sessionId,
+          ejercicio_id: ej.id,
+          repeticiones: ej.repeticiones || null,
+          tiempo: ej.tiempo || null,
+          comentarios: ej.comentarios || null
         }));
         
         const { error: ejerciciosError } = await supabase
@@ -54,7 +90,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fuerza_sesiones'] });
       queryClient.invalidateQueries({ queryKey: ['fuerza_sesion_ejercicios'] });
-      showToast('success', 'Sesión de fuerza registrada');
+      showToast('success', editData ? 'Sesión de fuerza actualizada' : 'Sesión de fuerza registrada');
       onClose();
       // Reset form
       setEjerciciosSeleccionados([]);
@@ -67,14 +103,18 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
   });
 
   const handleAddEjercicio = () => {
-    if (currentSelection && !ejerciciosSeleccionados.includes(currentSelection)) {
-      setEjerciciosSeleccionados([...ejerciciosSeleccionados, currentSelection]);
+    if (currentSelection && !ejerciciosSeleccionados.some(e => e.id === currentSelection)) {
+      setEjerciciosSeleccionados([...ejerciciosSeleccionados, { id: currentSelection, repeticiones: '', tiempo: '', comentarios: '' }]);
       setCurrentSelection('');
     }
   };
 
   const handleRemoveEjercicio = (id: string) => {
-    setEjerciciosSeleccionados(ejerciciosSeleccionados.filter(e => e !== id));
+    setEjerciciosSeleccionados(ejerciciosSeleccionados.filter(e => e.id !== id));
+  };
+
+  const updateEjercicioData = (id: string, field: 'repeticiones' | 'tiempo' | 'comentarios', value: string) => {
+    setEjerciciosSeleccionados(ejerciciosSeleccionados.map(e => e.id === id ? { ...e, [field]: value } : e));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,7 +123,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Registrar Sesión de Fuerza" maxWidth="max-w-xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={editData ? "Editar Sesión de Fuerza" : "Registrar Sesión de Fuerza"} maxWidth="max-w-xl">
       <form onSubmit={handleSubmit} className="space-y-5">
         
         <div className="grid grid-cols-2 gap-4">
@@ -132,7 +172,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
             >
               <option value="">-- Seleccionar Ejercicio --</option>
               {catalogoEjercicios.map(ex => (
-                <option key={ex.id} value={ex.id} disabled={ejerciciosSeleccionados.includes(ex.id)}>
+                <option key={ex.id} value={ex.id} disabled={ejerciciosSeleccionados.some(e => e.id === ex.id)}>
                   {ex.nombre}
                 </option>
               ))}
@@ -148,23 +188,57 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
           </div>
 
           {ejerciciosSeleccionados.length > 0 ? (
-            <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 no-scrollbar">
-              {ejerciciosSeleccionados.map(id => {
-                const ex = catalogoEjercicios.find(e => e.id === id);
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
+              {ejerciciosSeleccionados.map(item => {
+                const ex = catalogoEjercicios.find(e => e.id === item.id);
                 return (
-                  <li key={id} className="flex justify-between items-center bg-brand-black-card border border-brand-black-border p-2.5 rounded-lg text-sm text-brand-gray-light">
-                    <span>{ex?.nombre}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveEjercicio(id)}
-                      className="text-brand-red-600 hover:text-brand-red-500 text-xs font-semibold"
-                    >
-                      Quitar
-                    </button>
-                  </li>
+                  <div key={item.id} className="bg-brand-black-card border border-brand-black-border p-4 rounded-lg flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-gray-light font-semibold text-sm">{ex?.nombre}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEjercicio(item.id)}
+                        className="text-brand-red-600 hover:text-brand-red-500 text-xs font-bold"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-brand-gray-muted mb-1">Repeticiones / Series</label>
+                        <input
+                          type="text"
+                          className="w-full bg-brand-black border border-brand-black-border text-white text-xs rounded-lg p-2 focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                          value={item.repeticiones}
+                          onChange={(e) => updateEjercicioData(item.id, 'repeticiones', e.target.value)}
+                          placeholder="Ej. 4x10"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-brand-gray-muted mb-1">Tiempo / Descanso</label>
+                        <input
+                          type="text"
+                          className="w-full bg-brand-black border border-brand-black-border text-white text-xs rounded-lg p-2 focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                          value={item.tiempo}
+                          onChange={(e) => updateEjercicioData(item.id, 'tiempo', e.target.value)}
+                          placeholder="Ej. 40s / 20s descanso"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-brand-gray-muted mb-1">Comentarios / Observaciones</label>
+                      <input
+                        type="text"
+                        className="w-full bg-brand-black border border-brand-black-border text-white text-xs rounded-lg p-2 focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                        value={item.comentarios}
+                        onChange={(e) => updateEjercicioData(item.id, 'comentarios', e.target.value)}
+                        placeholder="Ej. Carga moderada, cuidar espalda..."
+                      />
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           ) : (
             <p className="text-xs text-brand-gray-muted italic bg-brand-black p-3 rounded-lg text-center">
               No has añadido ejercicios a esta sesión.
@@ -177,7 +251,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
             Cancelar
           </button>
           <button type="submit" disabled={mutation.isPending} className="px-6 py-2 bg-brand-red-600 hover:bg-brand-red-700 text-white rounded-lg text-sm font-semibold shadow-glow-red disabled:opacity-50">
-            {mutation.isPending ? 'Guardando...' : 'Registrar Sesión'}
+            {mutation.isPending ? 'Guardando...' : (editData ? 'Actualizar Sesión' : 'Registrar Sesión')}
           </button>
         </div>
       </form>

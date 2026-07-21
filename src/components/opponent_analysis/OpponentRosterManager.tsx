@@ -16,29 +16,23 @@ export const OpponentRosterManager: React.FC<Props> = ({ players, onChange, oppo
     queryFn: () => dataService.getScouting()
   });
 
-  const importFromScouting = () => {
-    if (!opponentName) return;
-    const teamPlayers = scoutingPlayers.filter(p => p.team?.toLowerCase() === opponentName.toLowerCase());
-    
-    if (teamPlayers.length === 0) return;
+  const importSingleScoutingPlayer = (spId: string) => {
+    if (!spId) return;
+    const sp = scoutingPlayers.find(p => p.id === spId);
+    if (!sp) return;
 
-    // Evitar duplicados por nombre
-    const existingNames = new Set(players.map(p => p.name.toLowerCase()));
-    
-    const newRosterPlayers: OpponentRosterPlayer[] = teamPlayers
-      .filter(sp => !existingNames.has(sp.player_name.toLowerCase()))
-      .map(sp => ({
-        id: `player-${Date.now()}-${Math.random()}`,
-        name: sp.player_name,
-        number: sp.dorsal || undefined,
-        position: sp.position || 'DF',
-        comments: sp.notes || '',
-        photo_url: sp.photo_url
-      }));
+    const exists = players.some(p => p.name.toLowerCase() === sp.player_name.toLowerCase());
+    if (exists) return;
 
-    if (newRosterPlayers.length > 0) {
-      onChange([...players, ...newRosterPlayers]);
-    }
+    const newPlayer: OpponentRosterPlayer = {
+      id: `player-${Date.now()}-${Math.random()}`,
+      name: sp.player_name,
+      number: sp.dorsal || undefined,
+      position: sp.position || 'DF',
+      comments: sp.notes || '',
+      photo_url: sp.photo_url
+    };
+    onChange([...players, newPlayer]);
   };
 
   const addPlayer = () => {
@@ -71,14 +65,24 @@ export const OpponentRosterManager: React.FC<Props> = ({ players, onChange, oppo
         </div>
         <div className="flex gap-2">
           {teamHasScoutingData && (
-            <button
-              type="button"
-              onClick={importFromScouting}
-              className="btn-secondary py-2 px-4 text-xs bg-brand-red-600/10 text-brand-red-500 border-brand-red-600/30 hover:bg-brand-red-600 hover:text-white transition-colors"
+            <select
+              className="btn-secondary py-2 px-2 text-xs bg-brand-red-600/10 text-brand-red-500 border-brand-red-600/30 outline-none w-48 truncate cursor-pointer"
+              onChange={(e) => {
+                importSingleScoutingPlayer(e.target.value);
+                e.target.value = '';
+              }}
+              defaultValue=""
             >
-              <DownloadCloud className="w-4 h-4 mr-1" />
-              Importar de Scouting
-            </button>
+              <option value="" disabled>+ De Scouting...</option>
+              {scoutingPlayers
+                .filter(p => p.team?.toLowerCase() === opponentName?.toLowerCase())
+                .filter(p => !players.some(rp => rp.name.toLowerCase() === p.player_name.toLowerCase()))
+                .map(sp => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.player_name} {sp.dorsal ? `(#${sp.dorsal})` : ''}
+                  </option>
+                ))}
+            </select>
           )}
           <button
             type="button"
