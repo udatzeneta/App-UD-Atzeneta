@@ -1141,14 +1141,29 @@ export const exportSquadToPDF = async (
     p.physical_status || 'Disponible'
   ]);
 
+  // Cálculo dinámico para que quepa en 1 página
+  const startY = 35;
+  const bottomMargin = 10;
+  const headerHeight = 8;
+  const availableHeight = doc.internal.pageSize.height - startY - bottomMargin - headerHeight; 
+  
+  // Altura máxima por fila
+  let rowHeight = Math.floor(availableHeight / Math.max(players.length, 1));
+  if (rowHeight > 14) rowHeight = 14; 
+  if (rowHeight < 6) rowHeight = 6; 
+
+  const photoSize = Math.max(4, rowHeight - 2);
+  const paddingY = Math.max(0.5, (rowHeight - 6) / 2);
+
   autoTable(doc, {
     head: [headers],
     body: rows,
-    startY: 40,
-    styles: { fontSize: 10, cellPadding: 3, minCellHeight: 15, valign: 'middle' },
+    startY: startY,
+    margin: { bottom: bottomMargin },
+    styles: { fontSize: rowHeight < 8 ? 8 : 9, cellPadding: { top: paddingY, bottom: paddingY, left: 2, right: 2 }, minCellHeight: rowHeight, valign: 'middle' },
     columnStyles: {
-      0: { cellWidth: 20, halign: 'center' },
-      1: { cellWidth: 20, halign: 'center' },
+      0: { cellWidth: 16, halign: 'center' },
+      1: { cellWidth: 16, halign: 'center' },
       2: { halign: 'left' },
       3: { halign: 'left' },
       4: { halign: 'center' }
@@ -1165,7 +1180,10 @@ export const exportSquadToPDF = async (
           const match = photoData.match(/^data:image\/(png|jpeg|jpg);/);
           const format = match ? match[1].toUpperCase() : 'PNG';
           
-          doc.addImage(photoData, format, data.cell.x + 4, data.cell.y + 1.5, 12, 12, undefined, 'FAST');
+          const imgX = data.cell.x + (data.cell.width - photoSize) / 2;
+          const imgY = data.cell.y + (data.cell.height - photoSize) / 2;
+          
+          doc.addImage(photoData, format, imgX, imgY, photoSize, photoSize, undefined, 'FAST');
         }
       }
     }

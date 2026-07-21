@@ -831,28 +831,46 @@ export const dataService = {
 
       if (profilesError) throw profilesError;
 
-      // Query 3: Obtener jugadores (para obtener nickname y dorsal)
+      // Query 3: Obtener jugadores (para obtener nickname, dorsal y fallbacks)
       const { data: playersData, error: playersError } = await supabase
         .from('players')
-        .select('profile_id, nickname, dorsal');
+        .select('*');
 
       if (playersError) throw playersError;
 
       // Combinar datos manualmente
       const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
-      const playersMap = new Map(playersData?.map(p => [p.profile_id, p]) || []);
+      const playersByProfileMap = new Map(playersData?.map(p => [p.profile_id, p]) || []);
+      const playersByIdMap = new Map(playersData?.map(p => [p.id, p]) || []);
 
       const result = finesData?.map(f => {
         const profile = profilesMap.get(f.user_id);
-        const player = playersMap.get(f.user_id);
-        return {
-          ...f,
-          profiles: profile ? {
-            ...profile,
-            nickname: player?.nickname || profile.full_name,
-            dorsal: player?.dorsal
-          } : undefined
-        };
+        const playerByProfile = playersByProfileMap.get(f.user_id);
+        const playerById = playersByIdMap.get(f.user_id);
+        
+        if (profile) {
+          return {
+            ...f,
+            profiles: {
+              ...profile,
+              nickname: playerByProfile?.nickname || profile.full_name,
+              dorsal: playerByProfile?.dorsal
+            }
+          };
+        } else if (playerById) {
+          return {
+            ...f,
+            profiles: {
+              id: playerById.id,
+              role_id: 3,
+              full_name: playerById.full_name,
+              nickname: playerById.nickname,
+              dorsal: playerById.dorsal,
+              avatar_url: playerById.photo_url
+            }
+          };
+        }
+        return { ...f, profiles: undefined };
       }).filter(f => f.profiles !== undefined);
 
       return result as Fine[];
@@ -956,14 +974,45 @@ export const dataService = {
       
       if (profilesError) throw profilesError;
 
+      // Query 3: Obtener jugadores (para obtener nickname, dorsal y fallbacks)
+      const { data: playersData, error: playersError } = await supabase
+        .from('players')
+        .select('*');
+
+      if (playersError) throw playersError;
+
       const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+      const playersByProfileMap = new Map(playersData?.map(p => [p.profile_id, p]) || []);
+      const playersByIdMap = new Map(playersData?.map(p => [p.id, p]) || []);
 
       const result = pointsData?.map(p => {
         const profile = profilesMap.get(p.user_id);
-        return {
-          ...p,
-          profiles: profile
-        };
+        const playerByProfile = playersByProfileMap.get(p.user_id);
+        const playerById = playersByIdMap.get(p.user_id);
+        
+        if (profile) {
+          return {
+            ...p,
+            profiles: {
+              ...profile,
+              nickname: playerByProfile?.nickname || profile.full_name,
+              dorsal: playerByProfile?.dorsal
+            }
+          };
+        } else if (playerById) {
+          return {
+            ...p,
+            profiles: {
+              id: playerById.id,
+              role_id: 3,
+              full_name: playerById.full_name,
+              nickname: playerById.nickname,
+              dorsal: playerById.dorsal,
+              avatar_url: playerById.photo_url
+            }
+          };
+        }
+        return { ...p, profiles: undefined };
       }).filter(p => p.profiles !== undefined);
 
       return result as PointLog[];

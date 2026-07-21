@@ -88,8 +88,10 @@ export const PlayerFullPrintView: React.FC<PlayerFullPrintViewProps> = ({
               <div className="text-4xl font-black text-gray-300">{(player.nickname || player.full_name)[0]}</div>
             )}
             {player.dorsal && (
-              <div className="absolute top-0 right-0 bg-[#C1121F] text-white text-xs font-black px-2 py-0.5 rounded-bl-lg">
-                #{player.dorsal}
+              <div className="absolute top-0 right-0 bg-[#C1121F] text-white w-9 h-9 flex items-center justify-center rounded-bl-2xl shadow-sm">
+                <span className="font-serif italic font-black text-xl leading-none translate-x-[1px] -translate-y-2">
+                  {player.dorsal}
+                </span>
               </div>
             )}
           </div>

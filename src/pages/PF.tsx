@@ -122,7 +122,7 @@ function ComparadorTab() {
 }
 
 function DashboardGPS() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -130,6 +130,9 @@ function DashboardGPS() {
   const [jugadorId, setJugadorId] = useState('');
   const [sessionFilter, setSessionFilter] = useState('todos'); // 'todos' | 'entrenamiento' | 'partido'
   const [metric, setMetric] = useState('distancia_total');
+  
+  const initialTeam = (user?.team_category === 'Juvenil') ? 'Juvenil' : 'Primer Equipo';
+  const [plantilla, setPlantilla] = useState<'Primer Equipo' | 'Juvenil'>(initialTeam);
 
   // Queries
   const { data: jugadores = [] } = useQuery({
@@ -171,43 +174,47 @@ function DashboardGPS() {
     }
   });
 
-  const jugadoresOrdenados = [...jugadores].sort((a, b) => {
-    return (a.dorsal || 999) - (b.dorsal || 999);
-  });
+  const jugadoresOrdenados = [...jugadores]
+    .filter(j => (j.team_category || 'Primer Equipo') === plantilla)
+    .sort((a, b) => {
+      return (a.dorsal || 999) - (b.dorsal || 999);
+    });
 
-  const jugadorData = gpsRecords
-    .filter(g => {
-      if (g.jugador_id !== jugadorId) return false;
-      if (sessionFilter !== 'todos' && g.session_type !== sessionFilter) return false;
-      return true;
-    })
-    .map(g => {
-      const session = g.session_type === 'entrenamiento'
-        ? entrenamientos.find(e => e.id === g.session_id)
-        : partidos.find(p => p.id === g.session_id);
-      
-      const fecha = session?.date || session?.fecha || '0000-00-00';
-      return {
-        ...g,
-        fecha,
-        label: session ? formatDate(fecha) : '?',
-        sessionLabel: g.session_type === 'entrenamiento'
-          ? (session ? `Ent. ${formatDate(fecha)}` : 'Ent. ?')
-          : (session ? `vs. ${session.rival || '?'} ${formatDate(fecha)}` : 'Part. ?'),
-      };
-    })
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const chartData = React.useMemo(() => {
+    return gpsRecords
+      .filter(g => {
+        if (g.jugador_id !== jugadorId) return false;
+        if (sessionFilter !== 'todos' && g.session_type !== sessionFilter) return false;
+        return true;
+      })
+      .map(g => {
+        const session = g.session_type === 'entrenamiento'
+          ? entrenamientos.find(e => e.id === g.session_id)
+          : partidos.find(p => p.id === g.session_id);
+        
+        const fecha = session?.date || session?.fecha || '0000-00-00';
+        return {
+          ...g,
+          fecha,
+          label: session ? formatDate(fecha) : '?',
+          sessionLabel: g.session_type === 'entrenamiento'
+            ? (session ? `Ent. ${formatDate(fecha)}` : 'Ent. ?')
+            : (session ? `vs. ${session.rival || '?'} ${formatDate(fecha)}` : 'Part. ?'),
+        };
+      })
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }, [gpsRecords, jugadorId, sessionFilter, entrenamientos, partidos]);
 
   const selectedJugador = jugadores.find(j => j.id === jugadorId);
   const selectedMetric = METRICS.find(m => m.key === metric);
 
-  const hasData = jugadorData.length > 0;
+  const hasData = chartData.length > 0;
 
-  const lastValue = hasData ? jugadorData[jugadorData.length - 1][metric as keyof typeof jugadorData[0]] : null;
-  const maxValue = hasData ? Math.max(...jugadorData.map(d => (d[metric as keyof typeof d] as number) || 0)) : null;
-  const validDataCount = jugadorData.filter(d => d[metric as keyof typeof d] != null).length;
+  const lastValue = hasData ? chartData[chartData.length - 1][metric as keyof typeof chartData[0]] : null;
+  const maxValue = hasData ? Math.max(...chartData.map(d => (d[metric as keyof typeof d] as number) || 0)) : null;
+  const validDataCount = chartData.filter(d => d[metric as keyof typeof d] != null).length;
   const avgValue = hasData && validDataCount > 0
-    ? (jugadorData.reduce((s, d) => s + ((d[metric as keyof typeof d] as number) || 0), 0) / validDataCount).toFixed(1)
+    ? (chartData.reduce((s, d) => s + ((d[metric as keyof typeof d] as number) || 0), 0) / validDataCount).toFixed(1)
     : null;
 
   const deleteMutation = useMutation({
@@ -278,6 +285,22 @@ function DashboardGPS() {
   return (
     <div className="space-y-6">
       <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex flex-wrap gap-4 items-end">
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Equipo</label>
+          <select
+            className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5 outline-none"
+            value={plantilla}
+            onChange={(e) => {
+              setPlantilla(e.target.value as any);
+              setJugadorId(''); // reset player selection when team changes
+            }}
+            disabled={user?.role_id === 2 && user?.team_category === 'Juvenil'}
+          >
+            <option value="Primer Equipo">Primer Equipo</option>
+            <option value="Juvenil">Juvenil</option>
+          </select>
+        </div>
+
         <div className="flex-1 min-w-[240px]">
           <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Jugador</label>
           <PlayerSelect 
@@ -352,7 +375,7 @@ function DashboardGPS() {
         </div>
       ) : !hasData ? (
         <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
-          <p className="text-brand-gray-muted">No hay datos GPS para <strong>{selectedJugador?.full_name}</strong> con los filtros actuales.</p>
+          <p className="text-brand-gray-muted">No hay datos GPS con los filtros actuales.</p>
         </div>
       ) : (
         <>
@@ -376,12 +399,14 @@ function DashboardGPS() {
 
           <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-4">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-white">{selectedMetric?.label} — {selectedJugador?.full_name}</h3>
-              <span className="text-xs bg-brand-black-border px-2 py-1 rounded text-brand-gray-light">{jugadorData.length} registros</span>
+              <h3 className="text-lg font-bold text-white">
+                {selectedMetric?.label} — {selectedJugador?.full_name}
+              </h3>
+              <span className="text-xs bg-brand-black-border px-2 py-1 rounded text-brand-gray-light">{chartData.length} registros</span>
             </div>
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={jugadorData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                   <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} />
                   <YAxis tick={{ fill: '#888', fontSize: 11 }} />
@@ -406,7 +431,7 @@ function DashboardGPS() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {METRICS.map(m => (
-              <MiniChart key={m.key} title={m.label} data={jugadorData} dataKey={m.key} color={m.color} />
+              <MiniChart key={m.key} title={m.label} data={chartData} dataKey={m.key} color={m.color} />
             ))}
           </div>
         </>
@@ -426,7 +451,7 @@ function DashboardGPS() {
           <div id="pdf-gps-player-container">
             <GPSPlayerPrintView
               jugador={selectedJugador}
-              jugadorData={jugadorData}
+              jugadorData={chartData}
               metrics={METRICS}
               selectedMetric={selectedMetric}
             />

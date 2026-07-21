@@ -56,6 +56,12 @@ export const Dashboard: React.FC = () => {
     enabled: canManageMatches || canManageFines || canManageTrainings || isPlayer
   });
 
+  const { data: fines = [] } = useQuery({
+    queryKey: ['fines'],
+    queryFn: () => dataService.getFines(),
+    enabled: true
+  });
+
   const sortedMatches = React.useMemo(() => {
     const now = new Date().getTime();
     return [...matches].sort((a, b) => {
@@ -162,8 +168,35 @@ export const Dashboard: React.FC = () => {
       }
     });
 
+    // 4. Deudas (Multas pendientes)
+    const pendingFines = fines.filter(f => f.status === 'Pendiente');
+    const debtsByPlayer = pendingFines.reduce((acc, fine) => {
+      acc[fine.user_id] = (acc[fine.user_id] || 0) + fine.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+    Object.entries(debtsByPlayer).forEach(([userId, amount]) => {
+      if (amount <= 0) return;
+      
+      const playerInfo = combinedPlayers.find(cp => cp.uid === userId || cp.id === userId);
+      if (!playerInfo) return;
+
+      // Si es jugador, solo ver su propia deuda
+      if (user?.role_id === 3) {
+        if (userId !== user.id && playerInfo.uid !== user.id) return;
+      }
+
+      newAlerts.push({
+        id: `${playerInfo.id}-debt`,
+        player: playerInfo,
+        type: 'sanction', // using sanction type for the icon
+        message: `Deuda pendiente: ${amount.toFixed(2)}€`,
+        color: 'text-red-500 border-red-500/30 bg-red-500/10'
+      });
+    });
+
     return newAlerts;
-  }, [dbPlayers, combinedPlayers, matchStats, matches]);
+  }, [dbPlayers, combinedPlayers, matchStats, matches, fines, user]);
 
   // ==========================================
   // FINES / PAYMENTS STATE & LOGIC

@@ -35,6 +35,190 @@ const FINE_TYPES = [
 // Importes de pago rápido
 const PAYMENT_AMOUNTS = [1, 2, 3, 4, 5, 10, 15, 20, 30, 50];
 
+const FinesList: React.FC<{
+  fines: any[];
+  canEdit: boolean;
+  canDelete: boolean;
+  handleToggleStatus: (fine: any) => void;
+  handleOpenEditModal: (fine: any) => void;
+  handleDelete: (id: string) => void;
+}> = ({ fines, canEdit, canDelete, handleToggleStatus, handleOpenEditModal, handleDelete }) => {
+  return (
+    <>
+      <div className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="table-th">Fecha</th>
+              <th className="table-th">Jugador</th>
+              <th className="table-th">Motivo de la Sanción</th>
+              <th className="table-th">Importe</th>
+              <th className="table-th">Estado de Pago</th>
+              {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
+            {fines.map((fine) => {
+              const isPending = fine.status === 'Pendiente';
+              const isAbono = fine.reason.toLowerCase().startsWith('abono');
+
+              return (
+                <tr key={fine.id} className={`hover:bg-brand-black-hover/20 transition-colors ${isPending ? 'text-red-500' : ''}`}>
+                  <td className={`table-td font-semibold ${isPending ? 'text-brand-red-400' : 'text-brand-gray-light'}`}>{fine.date}</td>
+                  <td className="table-td font-semibold text-brand-gray-light">
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={fine.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
+                        alt="avatar"
+                        className="w-6 h-6 rounded-full border border-brand-black-border object-cover"
+                      />
+                      <div className="flex items-center gap-2">
+                        {fine.profiles?.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{fine.profiles.dorsal}</span>}
+                        <span className={isPending ? 'text-brand-red-400' : ''}>
+                          {fine.profiles ? (fine.profiles.role_id === 3 ? (fine.profiles.nickname || fine.profiles.full_name) : fine.profiles.full_name) : 'Desconocido'}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className={`table-td ${isPending ? 'text-brand-red-400' : 'text-brand-gray-light'}`}>
+                    {isAbono ? (
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                        <Check className="w-3.5 h-3.5" /> Abono de Deuda
+                      </span>
+                    ) : (
+                      fine.reason
+                    )}
+                  </td>
+                  <td className={`table-td font-bold text-base ${isAbono ? 'text-emerald-500' : 'text-brand-red-600'}`}>
+                    {isAbono ? '+' : ''}{Number(fine.amount).toFixed(2)} €
+                  </td>
+                  <td className="table-td">
+                    {isAbono ? (
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border bg-emerald-950/20 text-emerald-400 border-emerald-900/30">
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>Completado</span>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleStatus(fine)}
+                        disabled={!canEdit}
+                        className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                          !isPending
+                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30'
+                            : 'bg-red-950/20 text-brand-red-600 border-brand-red-600/30'
+                        } ${canEdit ? 'hover:scale-[1.03] cursor-pointer' : 'cursor-default'}`}
+                      >
+                        {!isPending ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Pagado</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-3 h-3 text-brand-red-600" />
+                            <span>Pendiente</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </td>
+                  {(canEdit || canDelete) && (
+                    <td className="table-td text-right">
+                      <div className="flex gap-2 justify-end">
+                        {canEdit && (
+                          <button 
+                            onClick={() => handleOpenEditModal(fine)}
+                            className="text-brand-gray-muted hover:text-brand-gray-light p-1.5 rounded bg-brand-black-hover hover:bg-brand-black-border border border-brand-black-border transition-all"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button 
+                            onClick={() => handleDelete(fine.id)}
+                            className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded bg-brand-black-hover hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/20 transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="md:hidden space-y-3">
+        {fines.map((fine) => {
+          const isPending = fine.status === 'Pendiente';
+          const isAbono = fine.reason.toLowerCase().startsWith('abono');
+          
+          return (
+            <div key={fine.id} className={`bg-brand-black-card border ${isPending ? 'border-brand-red-600/30 shadow-[0_0_15px_rgba(220,38,38,0.1)]' : 'border-brand-black-border'} rounded-xl p-4 shadow-premium space-y-3`}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className={`text-sm font-semibold ${isPending ? 'text-brand-red-400' : 'text-brand-gray-light'} ${isAbono ? 'text-emerald-400 flex items-center gap-1.5' : ''}`}>
+                    {isAbono ? <><Check className="w-4 h-4" /> Abono de Deuda</> : fine.reason}
+                  </h4>
+                  <span className={`text-[11px] ${isPending ? 'text-brand-red-400/80' : 'text-brand-gray-muted'} flex items-center gap-1 mt-1`}>
+                    <Calendar className="w-3.5 h-3.5" /> {fine.date} | <User className="w-3.5 h-3.5" /> {fine.profiles?.dorsal && `#${fine.profiles.dorsal} `}{fine.profiles ? (fine.profiles.role_id === 3 ? (fine.profiles.nickname || fine.profiles.full_name) : fine.profiles.full_name) : 'Desconocido'}
+                  </span>
+                </div>
+                <span className={`text-sm font-bold px-2 py-0.5 rounded border ${isAbono ? 'text-emerald-500 bg-emerald-500/5 border-emerald-500/10' : 'text-brand-red-600 bg-brand-red-600/5 border-brand-red-600/10'}`}>
+                  {isAbono ? '+' : ''}{Number(fine.amount).toFixed(2)} €
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-brand-black-border pt-3">
+                {isAbono ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border bg-emerald-950/20 text-emerald-400 border-emerald-900/30">
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>Completado</span>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handleToggleStatus(fine)}
+                    disabled={!canEdit}
+                    className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
+                      !isPending
+                        ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30'
+                        : 'bg-red-950/20 text-brand-red-600 border-brand-red-600/30'
+                    }`}
+                  >
+                    {fine.status}
+                  </button>
+                )}
+
+                <div className="flex gap-2">
+                  {canEdit && (
+                    <button 
+                      onClick={() => handleOpenEditModal(fine)}
+                      className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1"
+                    >
+                      <Edit2 className="w-3 h-3" /> Editar
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button 
+                      onClick={() => handleDelete(fine.id)}
+                      className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-red-600 flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" /> Borrar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+};
+
 export const Fines: React.FC = () => {
   const queryClient = useQueryClient();
   const { hasPermission, roleSlug, user } = usePermissions();
@@ -70,25 +254,38 @@ export const Fines: React.FC = () => {
     queryFn: () => dataService.getFines()
   });
 
+  const { data: trainings = [] } = useQuery({
+    queryKey: ['trainings'],
+    queryFn: () => dataService.getTrainings()
+  });
+
+  const { data: matches = [] } = useQuery({
+    queryKey: ['matches'],
+    queryFn: () => dataService.getMatches()
+  });
+
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
-      // Roles: 2=Entrenador, 3=Jugador, 4=Directivo
-      const allProfiles = await dataService.getProfilesByRoles([2, 3, 4]);
-      if (isMockMode) {
-        return allProfiles;
-      }
-      // Obtener nickname y dorsal de la tabla players
-      const { data: players } = await supabase.from('players').select('profile_id, nickname, dorsal');
-      const playersMap = new Map(players?.map(p => [p.profile_id, p]) || []);
-      return allProfiles.map(p => {
-        const player = playersMap.get(p.id);
-        return {
-          ...p,
-          nickname: player?.nickname || p.full_name,
-          dorsal: player?.dorsal
-        };
-      });
+      // 1. Obtener solo entrenadores y directivos (roles 2 y 4) de la tabla profiles
+      const staffProfiles = await dataService.getProfilesByRoles([2, 4]);
+      
+      // 2. Obtener todos los jugadores directamente de la tabla players
+      const { data: players } = await supabase.from('players').select('*');
+      
+      // 3. Crear perfiles "ficticios" para los jugadores basándonos en sus datos reales de la plantilla
+      const playerProfiles = (players || []).map(player => ({
+        id: player.profile_id || player.id, // Usar profile_id si lo tiene, sino el ID del jugador
+        role_id: 3,
+        full_name: player.full_name,
+        nickname: player.nickname,
+        dorsal: player.dorsal,
+        avatar_url: player.photo_url,
+        team_category: player.team_category,
+        email: '' // Los jugadores sin cuenta no tendrán email
+      }));
+      
+      return [...staffProfiles, ...playerProfiles];
     },
     enabled: canCreate || canEdit
   });
@@ -123,14 +320,14 @@ export const Fines: React.FC = () => {
     onError: (err) => showToast('error', 'Error', err.message)
   });
 
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = (paymentMode: boolean = false) => {
     setEditingFine(null);
     setTargetUserId(profiles.length > 0 ? profiles[0].id : '');
     setDate(new Date().toISOString().split('T')[0]);
     setReason('');
     setAmount('10.00');
-    setStatus('Pendiente');
-    setIsPaymentMode(false);
+    setStatus(paymentMode ? 'Pagado' : 'Pendiente');
+    setIsPaymentMode(paymentMode);
     setIsModalOpen(true);
   };
 
@@ -260,8 +457,9 @@ export const Fines: React.FC = () => {
 
   // Filtrado de la lista en pantalla (Búsqueda + Estado)
   const filteredFines = userFines.filter(f => {
+    const fName = f.profiles ? (f.profiles.role_id === 3 ? (f.profiles.nickname || f.profiles.full_name) : f.profiles.full_name) : '';
     const matchSearch = 
-      (f.profiles?.full_name || '').toLowerCase().includes(search.toLowerCase()) || 
+      fName.toLowerCase().includes(search.toLowerCase()) || 
       f.reason.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'Todos' || f.status === filterStatus;
     return matchSearch && matchStatus;
@@ -272,7 +470,7 @@ export const Fines: React.FC = () => {
   const buildExportRows = (): ExportCell[][] =>
     filteredFines.map(f => [
       f.date,
-      f.profiles?.nickname || f.profiles?.full_name || 'Desconocido',
+      f.profiles ? (f.profiles.role_id === 3 ? (f.profiles.nickname || f.profiles.full_name) : f.profiles.full_name) : 'Desconocido',
       f.reason,
       f.amount,
       f.status,
@@ -296,12 +494,27 @@ export const Fines: React.FC = () => {
     showToast('success', 'PDF Descargado', 'Se ha generado el informe de sanciones.');
   };
 
-  const months = [
-    { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' },
-    { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
-    { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' },
-    { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' }
-  ];
+  const dynamicMonths = React.useMemo(() => {
+    const defaultMonths = [
+      { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' },
+      { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
+      { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' },
+      { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' }
+    ];
+
+    let startMonth = 8; // Default Agosto
+    const allDates = [...trainings.map(t => t.date), ...matches.map(m => m.date)].filter(Boolean);
+    if (allDates.length > 0) {
+      const earliest = new Date(Math.min(...allDates.map(d => new Date(d).getTime())));
+      startMonth = earliest.getMonth() + 1;
+    }
+
+    return [...defaultMonths].sort((a, b) => {
+      const aVal = a.value >= startMonth ? a.value - startMonth : a.value + 12 - startMonth;
+      const bVal = b.value >= startMonth ? b.value - startMonth : b.value + 12 - startMonth;
+      return aVal - bVal;
+    });
+  }, [trainings, matches]);
 
   const isLoading = loadingFines || (loadingProfiles && (canCreate || canEdit));
 
@@ -345,7 +558,7 @@ export const Fines: React.FC = () => {
   const totalDebt = playerStats.reduce((acc, stat) => acc + stat.pendingAmount, 0);
   const monthlyFinesAmount = realFines.filter(f => filterByDate(f.date)).reduce((acc, f) => acc + Number(f.amount), 0);
 
-  const finesByMonthData = months.map(m => {
+  const finesByMonthData = dynamicMonths.map(m => {
     const mRealFines = realFines.filter(f => new Date(f.date).getMonth() + 1 === m.value && new Date(f.date).getFullYear() === selectedYear);
     const mTotal = mRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
     return {
@@ -381,9 +594,14 @@ export const Fines: React.FC = () => {
             </>
           )}
           {canCreate && (
-            <button onClick={handleOpenCreateModal} className="btn-primary py-2 text-xs font-semibold">
-              <Plus className="w-3.5 h-3.5" /> Aplicar Multa
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => handleOpenCreateModal(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 shadow-lg py-2 px-3 sm:px-4 text-xs font-semibold rounded flex items-center gap-1.5 transition-all">
+                <CreditCard className="w-3.5 h-3.5" /> Pagar Multa
+              </button>
+              <button onClick={() => handleOpenCreateModal(false)} className="btn-primary py-2 text-xs font-semibold">
+                <Plus className="w-3.5 h-3.5" /> Agregar Multa
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -419,7 +637,7 @@ export const Fines: React.FC = () => {
                 onChange={(e) => setSelectedMonth(Number(e.target.value))}
                 className="bg-transparent text-[10px] text-brand-gray-light border-none p-0 focus:ring-0 cursor-pointer"
               >
-                {months.map(m => <option key={m.value} value={m.value} className="bg-brand-black-card text-brand-gray-light">{m.label}</option>)}
+                {dynamicMonths.map(m => <option key={m.value} value={m.value} className="bg-brand-black-card text-brand-gray-light">{m.label}</option>)}
               </select>
               <select 
                 value={selectedYear}
@@ -485,7 +703,7 @@ export const Fines: React.FC = () => {
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
                   className="bg-brand-black-bg border border-brand-black-border rounded px-2 py-1 text-xs text-brand-gray-light focus:ring-1 focus:ring-brand-red-600 focus:border-brand-red-600 transition-all"
                 >
-                  {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  {dynamicMonths.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
                 <select 
                   value={selectedYear}
@@ -529,7 +747,7 @@ export const Fines: React.FC = () => {
                         />
                         <div className="flex items-center gap-2">
                           {stat.profile.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{stat.profile.dorsal}</span>}
-                          <span>{stat.profile.nickname || stat.profile.full_name}</span>
+                          <span>{stat.profile.role_id === 3 ? (stat.profile.nickname || stat.profile.full_name) : stat.profile.full_name}</span>
                         </div>
                       </div>
                     </td>
@@ -581,151 +799,50 @@ export const Fines: React.FC = () => {
       </div>
 
       {/* =====================================================================
-          TABLA O VISTA CARDS
+          TABLAS DE MULTAS Y LOG
           ===================================================================== */}
       {isLoading ? (
         <TableSkeleton />
-      ) : filteredFines.length === 0 ? (
-        <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center">
-          <p className="text-sm text-brand-gray-muted">No se registran multas con los filtros aplicados.</p>
-        </div>
       ) : (
-        <>
-          {/* Escritorio */}
-          <div className="hidden md:block bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className="table-th">Fecha</th>
-                  <th className="table-th">Jugador</th>
-                  <th className="table-th">Motivo de la Sanción</th>
-                  <th className="table-th">Importe</th>
-                  <th className="table-th">Estado de Pago</th>
-                  {(canEdit || canDelete) && <th className="table-th text-right">Acciones</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-brand-black-border bg-brand-black-card/10">
-                {filteredFines.map((fine) => (
-                  <tr key={fine.id} className="hover:bg-brand-black-hover/20 transition-colors">
-                    <td className="table-td font-semibold text-brand-gray-light">{fine.date}</td>
-                    <td className="table-td font-semibold text-brand-gray-light">
-                      <div className="flex items-center gap-2">
-                        <img
-                          src={fine.profiles?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
-                          alt="avatar"
-                          className="w-6 h-6 rounded-full border border-brand-black-border object-cover"
-                        />
-                        <div className="flex items-center gap-2">
-                          {fine.profiles?.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{fine.profiles.dorsal}</span>}
-                          <span>{fine.profiles?.nickname || fine.profiles?.full_name || 'Desconocido'}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="table-td text-brand-gray-light">{fine.reason}</td>
-                    <td className="table-td text-brand-red-600 font-bold text-base">{Number(fine.amount).toFixed(2)} €</td>
-                    <td className="table-td">
-                      <button
-                        onClick={() => handleToggleStatus(fine)}
-                        disabled={!canEdit}
-                        className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                          fine.status === 'Pagado'
-                            ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30'
-                            : 'bg-red-950/20 text-brand-red-600 border-brand-red-600/30'
-                        } ${canEdit ? 'hover:scale-[1.03] cursor-pointer' : 'cursor-default'}`}
-                      >
-                        {fine.status === 'Pagado' ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span>Pagado</span>
-                          </>
-                        ) : (
-                          <>
-                            <AlertTriangle className="w-3 h-3 text-brand-red-600" />
-                            <span>Pendiente</span>
-                          </>
-                        )}
-                      </button>
-                    </td>
-                    {(canEdit || canDelete) && (
-                      <td className="table-td text-right">
-                        <div className="flex gap-2 justify-end">
-                          {canEdit && (
-                            <button 
-                              onClick={() => handleOpenEditModal(fine)}
-                              className="text-brand-gray-muted hover:text-brand-gray-light p-1.5 rounded bg-brand-black-hover hover:bg-brand-black-border border border-brand-black-border transition-all"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button 
-                              onClick={() => handleDelete(fine.id)}
-                              className="text-brand-gray-muted hover:text-brand-red-600 p-1.5 rounded bg-brand-black-hover hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/20 transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Cards responsivas */}
-          <div className="md:hidden space-y-3">
-            {filteredFines.map((fine) => (
-              <div key={fine.id} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 shadow-premium space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="text-sm font-semibold text-brand-gray-light">{fine.reason}</h4>
-                    <span className="text-[11px] text-brand-gray-muted flex items-center gap-1 mt-1">
-                      <Calendar className="w-3.5 h-3.5" /> {fine.date} | <User className="w-3.5 h-3.5" /> {fine.profiles?.dorsal && `#${fine.profiles.dorsal} `}{fine.profiles?.nickname || fine.profiles?.full_name || 'Desconocido'}
-                    </span>
-                  </div>
-                  <span className="text-sm font-bold text-brand-red-600 bg-brand-red-600/5 px-2 py-0.5 rounded border border-brand-red-600/10">
-                    {Number(fine.amount).toFixed(2)} €
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-brand-black-border pt-3">
-                  <button
-                    onClick={() => handleToggleStatus(fine)}
-                    disabled={!canEdit}
-                    className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                      fine.status === 'Pagado'
-                        ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30'
-                        : 'bg-red-950/20 text-brand-red-600 border-brand-red-600/30'
-                    }`}
-                  >
-                    {fine.status}
-                  </button>
-
-                  <div className="flex gap-2">
-                    {canEdit && (
-                      <button 
-                        onClick={() => handleOpenEditModal(fine)}
-                        className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-gray-light flex items-center gap-1"
-                      >
-                        <Edit2 className="w-3 h-3" /> Editar
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button 
-                        onClick={() => handleDelete(fine.id)}
-                        className="text-xs text-brand-gray-muted bg-brand-black px-3 py-1.5 rounded border border-brand-black-border hover:text-brand-red-600 flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3 h-3" /> Borrar
-                      </button>
-                    )}
-                  </div>
-                </div>
+        <div className="space-y-8">
+          {/* Tabla de Multas Pendientes */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-brand-gray-light">Multas Pendientes de Pago</h3>
+            {filteredFines.filter(f => f.status === 'Pendiente').length === 0 ? (
+              <div className="bg-brand-black border border-brand-black-border p-8 rounded-xl text-center">
+                <p className="text-sm text-brand-gray-muted">No hay multas pendientes con los filtros aplicados.</p>
               </div>
-            ))}
+            ) : (
+              <FinesList 
+                fines={filteredFines.filter(f => f.status === 'Pendiente')} 
+                canEdit={canEdit} 
+                canDelete={canDelete} 
+                handleToggleStatus={handleToggleStatus} 
+                handleOpenEditModal={handleOpenEditModal} 
+                handleDelete={handleDelete} 
+              />
+            )}
           </div>
-        </>
+
+          {/* Tabla Historial Completo */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-brand-gray-light">Historial de Acciones y Pagos</h3>
+            {filteredFines.length === 0 ? (
+              <div className="bg-brand-black border border-brand-black-border p-8 rounded-xl text-center">
+                <p className="text-sm text-brand-gray-muted">No se registran multas ni pagos con los filtros aplicados.</p>
+              </div>
+            ) : (
+              <FinesList 
+                fines={filteredFines} 
+                canEdit={canEdit} 
+                canDelete={canDelete} 
+                handleToggleStatus={handleToggleStatus} 
+                handleOpenEditModal={handleOpenEditModal} 
+                handleDelete={handleDelete} 
+              />
+            )}
+          </div>
+        </div>
       )}
 
       {/* =====================================================================
@@ -734,7 +851,7 @@ export const Fines: React.FC = () => {
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        title={editingFine ? 'Modificar Sanción' : 'Aplicar Nueva Multa Interna'}
+        title={editingFine ? 'Modificar Sanción' : (isPaymentMode ? 'Registrar Pago de Multas' : 'Aplicar Nueva Multa Interna')}
       >
         <form onSubmit={handleSave} className="space-y-4">
           <div>
@@ -747,15 +864,16 @@ export const Fines: React.FC = () => {
               <option value="">-- Seleccionar Jugador --</option>
               {profiles.map(p => (
                 <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
-                  {p.dorsal ? `#${p.dorsal} ` : ''}{p.nickname || p.full_name} ({p.email})
+                  {p.dorsal ? `#${p.dorsal} ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Tipos de multa predefinidos */}
-          <div>
-            <label className="form-label">Tipo de Infracción (acceso rápido)</label>
+          {/* Tipos de multa predefinidos - Oculto en modo pago */}
+          {!isPaymentMode && (
+            <div>
+              <label className="form-label">Tipo de Infracción (acceso rápido)</label>
             <div className="flex flex-wrap gap-1.5 mt-1.5 max-h-36 overflow-y-auto pr-1 no-scrollbar">
               {FINE_TYPES.map((ft) => (
                 <button
@@ -781,6 +899,7 @@ export const Fines: React.FC = () => {
               ))}
             </div>
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -806,23 +925,26 @@ export const Fines: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <label className="form-label">
-              Motivo o Descripción de la Falta
-              {reason === '' && <span className="text-brand-gray-muted text-[10px] ml-1">(Personalizado)</span>}
-            </label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder={reason === '' ? "Escribe el motivo personalizado..." : "Retraso de 15 minutos en la convocatoria o usar móvil"}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
+          {!isPaymentMode && (
+            <div>
+              <label className="form-label">
+                Motivo o Descripción de la Falta
+                {reason === '' && <span className="text-brand-gray-muted text-[10px] ml-1">(Personalizado)</span>}
+              </label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder={reason === '' ? "Escribe el motivo personalizado..." : "Retraso de 15 minutos en la convocatoria o usar móvil"}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          )}
 
-          {/* Importes de pago rápido */}
-          <div>
-            <label className="form-label">Pago Rápido (registrar importe pagado)</label>
+          {/* Importes de pago rápido - Solo visible en modo pago */}
+          {isPaymentMode && (
+            <div>
+              <label className="form-label">Pago Rápido (registrar importe pagado)</label>
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {PAYMENT_AMOUNTS.map((pa) => (
                 <button
@@ -843,26 +965,35 @@ export const Fines: React.FC = () => {
                 </button>
               ))}
             </div>
-          </div>
+            </div>
+          )}
 
-          <div>
-            <label className="form-label">Estado de la Multa</label>
+          {!isPaymentMode && (
+            <div>
+              <label className="form-label">Estado de la Multa</label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as any)}
               className="form-input bg-brand-black-bg"
             >
               <option value="Pendiente">Pendiente de Pago</option>
-              <option value="Pagado">Pagado</option>
             </select>
-          </div>
+            </div>
+          )}
 
           <div className="flex gap-2 pt-4 justify-end">
             <button type="button" onClick={handleCloseModal} className="btn-secondary py-2 text-xs">
               Cancelar
             </button>
-            <button type="submit" className="btn-primary py-2 text-xs font-semibold">
-              Aplicar Sanción
+            <button 
+              type="submit" 
+              className={`py-2 px-4 text-xs font-semibold rounded flex items-center justify-center transition-all ${
+                isPaymentMode 
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 shadow-lg' 
+                  : 'btn-primary'
+              }`}
+            >
+              {isPaymentMode ? 'Registrar Pago' : (editingFine ? 'Guardar Cambios' : 'Aplicar Sanción')}
             </button>
           </div>
         </form>

@@ -15,6 +15,11 @@ const COLORS = ['#CC0000', '#2563EB', '#16A34A', '#D97706', '#7C3AED'];
 
 export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsRecords, metrics }) => {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
+  const [plantilla, setPlantilla] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
+  
+  const filteredJugadores = useMemo(() => 
+    jugadores.filter(j => (j.team_category || 'Primer Equipo') === plantilla),
+  [jugadores, plantilla]);
 
   // Toggle selection
   const handlePlayerToggle = (id: string) => {
@@ -34,6 +39,13 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
   const comparisonData = useMemo(() => {
     if (selectedPlayers.length === 0) return { radar: [], bars: [] };
 
+    // Calcular los máximos globales de TODO el equipo para tener una referencia absoluta
+    const globalMax: Record<string, number> = {};
+    metrics.forEach(m => {
+      const allVals = gpsRecords.map(r => Number(r[m.key] || 0));
+      globalMax[m.key] = Math.max(...allVals, 0);
+    });
+
     const computeAverages = (m: any) => {
       return selectedPlayers.map(player => {
         const playerRecords = gpsRecords.filter(r => r.jugador_id === player.id && r[m.key] != null);
@@ -46,7 +58,7 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
     const radarData = metrics.map(m => {
       const dataPoint: any = { metric: m.label, fullMark: 100 };
       const averages = computeAverages(m);
-      const maxVal = Math.max(...averages, 0);
+      const maxVal = globalMax[m.key];
       const reference = maxVal > 0 ? maxVal : 1;
       
       selectedPlayers.forEach((player, index) => {
@@ -60,7 +72,7 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
     const barsData = metrics.map(m => {
       const dataPoint: any = { name: m.label };
       const averages = computeAverages(m);
-      const maxVal = Math.max(...averages, 0);
+      const maxVal = globalMax[m.key];
       const reference = maxVal > 0 ? maxVal : 1;
 
       selectedPlayers.forEach((player, index) => {
@@ -94,10 +106,20 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
   return (
     <div className="space-y-6">
       <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-white mb-4">Seleccionar Jugadores (Máx 5)</h3>
+        <div className="flex-1">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+            <h3 className="text-sm font-bold text-white">Seleccionar Jugadores (Máx 5)</h3>
+            <select
+              className="bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2 outline-none"
+              value={plantilla}
+              onChange={(e) => setPlantilla(e.target.value as any)}
+            >
+              <option value="Primer Equipo">Primer Equipo</option>
+              <option value="Juvenil">Juvenil</option>
+            </select>
+          </div>
           <div className="flex flex-wrap gap-2">
-          {jugadores.map(j => (
+          {filteredJugadores.map(j => (
             <button
               key={j.id}
               onClick={() => handlePlayerToggle(j.id)}
@@ -164,14 +186,11 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                         return [value, name];
                       }}
                     />
-                    <Legend wrapperStyle={{ fontSize: '12px' }} formatter={(value, entry, index) => {
-                      const p = selectedPlayers[index];
-                      return p ? `${p.dorsal || '-'}. ${p.nickname || p.full_name}` : value;
-                    }} />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
                     {selectedPlayers.map((p, i) => (
                       <Radar
                         key={p.id}
-                        name={p.nickname || p.full_name}
+                        name={`${p.dorsal ? `${p.dorsal}. ` : ''}${p.nickname || p.full_name}`}
                         dataKey={`player_${i}`}
                         stroke={COLORS[i % COLORS.length]}
                         fill={COLORS[i % COLORS.length]}
@@ -203,12 +222,9 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                         return [value, name];
                       }}
                     />
-                    <Legend wrapperStyle={{ fontSize: '12px' }} formatter={(value, entry, index) => {
-                      const p = selectedPlayers[index];
-                      return p ? `${p.dorsal || '-'}. ${p.nickname || p.full_name}` : value;
-                    }} />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
                     {selectedPlayers.map((p, i) => (
-                      <Bar key={p.id} dataKey={`player_${i}`} name={p.nickname || p.full_name} fill={COLORS[i % COLORS.length]} radius={[0, 4, 4, 0]} />
+                      <Bar key={p.id} dataKey={`player_${i}`} name={`${p.dorsal ? `${p.dorsal}. ` : ''}${p.nickname || p.full_name}`} fill={COLORS[i % COLORS.length]} radius={[0, 4, 4, 0]} />
                     ))}
                   </BarChart>
                 </ResponsiveContainer>

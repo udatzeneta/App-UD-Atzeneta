@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
 import { authService } from '../services/auth';
+import { supabase, isMockMode } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
@@ -49,7 +50,27 @@ export const Points: React.FC = () => {
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
-    queryFn: () => dataService.getProfilesByRoles([2, 3]),
+    queryFn: async () => {
+      // 1. Obtener solo entrenadores (rol 2) de la tabla profiles
+      const staffProfiles = await dataService.getProfilesByRoles([2]);
+      
+      // 2. Obtener todos los jugadores directamente de la tabla players
+      const { data: players } = await supabase.from('players').select('*');
+      
+      // 3. Crear perfiles "ficticios" para los jugadores basándonos en sus datos reales de la plantilla
+      const playerProfiles = (players || []).map(player => ({
+        id: player.profile_id || player.id, // Usar profile_id si lo tiene, sino el ID del jugador
+        role_id: 3,
+        full_name: player.full_name,
+        nickname: player.nickname,
+        dorsal: player.dorsal,
+        avatar_url: player.photo_url,
+        team_category: player.team_category,
+        email: ''
+      }));
+      
+      return [...staffProfiles, ...playerProfiles];
+    },
     enabled: canCreate || canEdit
   });
 
@@ -146,8 +167,9 @@ export const Points: React.FC = () => {
 
   // 2. Filtrado final en pantalla (búsqueda)
   const filteredLogs = visibleLogs.filter(p => {
+    const pName = p.profiles ? (p.profiles.role_id === 3 ? (p.profiles.nickname || p.profiles.full_name) : p.profiles.full_name) : '';
     const matchSearch = 
-      (p.profiles?.full_name || '').toLowerCase().includes(search.toLowerCase()) ||
+      pName.toLowerCase().includes(search.toLowerCase()) ||
       p.reason.toLowerCase().includes(search.toLowerCase());
     return matchSearch;
   });
@@ -165,7 +187,7 @@ export const Points: React.FC = () => {
       // Solo jugadores en la tabla de posiciones
       if (p.role_id === 3) {
         playerPointsMap[p.id] = {
-          name: p.full_name,
+          name: p.nickname || p.full_name,
           email: p.email,
           avatar: p.avatar_url || '',
           points: 0
@@ -202,7 +224,7 @@ export const Points: React.FC = () => {
   const buildExportRows = (): ExportCell[][] =>
     filteredLogs.map(p => [
       p.date,
-      p.profiles?.full_name || 'Desconocido',
+      p.profiles ? (p.profiles.role_id === 3 ? (p.profiles.nickname || p.profiles.full_name) : p.profiles.full_name) : 'Desconocido',
       p.reason,
       p.points,
     ]);
@@ -428,7 +450,7 @@ export const Points: React.FC = () => {
                             {!isPlayer && (
                               <>
                                 <span>•</span>
-                                <User className="w-3 h-3" /> {log.profiles?.full_name}
+                                <User className="w-3 h-3" /> {log.profiles ? (log.profiles.role_id === 3 ? (log.profiles.nickname || log.profiles.full_name) : log.profiles.full_name) : ''}
                               </>
                             )}
                           </span>
@@ -491,7 +513,7 @@ export const Points: React.FC = () => {
               <option value="">-- Seleccionar Jugador --</option>
               {profiles.map(p => (
                 <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
-                  {p.full_name} ({p.email})
+                  {p.dorsal ? `#${p.dorsal} ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
                 </option>
               ))}
             </select>
