@@ -419,11 +419,11 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                   const d = playerRef.current?.duration || playerRef.current?.getDuration?.();
                   if (d && d > 0) setDuration(d);
                 }}
-                onDurationChange={(e) => {
+                onDurationChange={(e: any) => {
                   const d = e.currentTarget.duration;
                   if (d && !isNaN(d)) setDuration(d);
                 }}
-                onTimeUpdate={(e) => {
+                onTimeUpdate={(e: any) => {
                   const t = e.currentTarget.currentTime;
                   setCurrentTime(t);
                   

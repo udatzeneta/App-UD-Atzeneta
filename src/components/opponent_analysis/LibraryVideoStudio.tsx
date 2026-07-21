@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ReactPlayer from 'react-player';
 import type { OpponentLibraryVideo, OpponentVideoClip } from '../../types';
@@ -137,16 +137,17 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                   onTimeUpdate={(e: any) => {
                     const t = e.currentTarget.currentTime;
                     // Auto-pause logic
-                    const clipToPause = video.clips.find(c =>
-                      c.annotations && c.annotations.length > 0 &&
-                      t >= c.freezeTime && t < c.freezeTime + 0.3
-                    );
+                    const clipToPause = video.clips.find(c => {
+                      const ft = c.freezeTime ?? c.start;
+                      return c.annotations && c.annotations.length > 0 &&
+                             t >= ft && t < ft + 0.3;
+                    });
 
                     if (clipToPause && !hasAutoPausedRef.current.has(clipToPause.id)) {
                       hasAutoPausedRef.current.add(clipToPause.id);
                       setPlaying(false);
                       if (playerRef.current) {
-                        try { playerRef.current.currentTime = clipToPause.freezeTime; } catch { /* noop */ }
+                        try { playerRef.current.currentTime = clipToPause.freezeTime ?? clipToPause.start; } catch { /* noop */ }
                       }
                       setActiveOverlayClip(clipToPause);
 
@@ -159,7 +160,8 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                     // Reset auto-pause if user seeks way back before the clip
                     if (hasAutoPausedRef.current.size > 0) {
                       video.clips.forEach(c => {
-                        if (t < c.freezeTime - 2 && hasAutoPausedRef.current.has(c.id)) {
+                        const ft = c.freezeTime ?? c.start;
+                        if (t < ft - 2 && hasAutoPausedRef.current.has(c.id)) {
                           hasAutoPausedRef.current.delete(c.id);
                         }
                       });
@@ -172,7 +174,7 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                     cw={dims.cw}
                     ch={dims.ch}
                     videoUrl={validUrl}
-                    freezeTime={activeOverlayClip.freezeTime}
+                    freezeTime={activeOverlayClip.freezeTime ?? activeOverlayClip.start}
                   />
                 )}
               </>
