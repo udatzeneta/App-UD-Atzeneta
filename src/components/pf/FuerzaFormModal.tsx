@@ -19,7 +19,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   
   // Guardamos un array de ejercicios seleccionados con sus metadatos.
-  const [ejerciciosSeleccionados, setEjerciciosSeleccionados] = useState<{ id: string; repeticiones: string; tiempo: string; comentarios: string }[]>([]);
+  const [ejerciciosSeleccionados, setEjerciciosSeleccionados] = useState<{ tempId: string; id: string; repeticiones: string; tiempo: string; comentarios: string }[]>([]);
   const [currentSelection, setCurrentSelection] = useState('');
 
   React.useEffect(() => {
@@ -30,9 +30,9 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
       // editData.ejercicios might be an array of objects now, or just IDs if legacy
       if (editData.ejercicios && editData.ejercicios.length > 0) {
         if (typeof editData.ejercicios[0] === 'string') {
-          setEjerciciosSeleccionados(editData.ejercicios.map((id: string) => ({ id, repeticiones: '', tiempo: '', comentarios: '' })));
+          setEjerciciosSeleccionados(editData.ejercicios.map((id: string) => ({ tempId: crypto.randomUUID(), id, repeticiones: '', tiempo: '', comentarios: '' })));
         } else {
-          setEjerciciosSeleccionados(editData.ejercicios);
+          setEjerciciosSeleccionados(editData.ejercicios.map((ej: any) => ({ ...ej, tempId: ej.tempId || crypto.randomUUID() })));
         }
       } else {
         setEjerciciosSeleccionados([]);
@@ -103,18 +103,18 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
   });
 
   const handleAddEjercicio = () => {
-    if (currentSelection && !ejerciciosSeleccionados.some(e => e.id === currentSelection)) {
-      setEjerciciosSeleccionados([...ejerciciosSeleccionados, { id: currentSelection, repeticiones: '', tiempo: '', comentarios: '' }]);
+    if (currentSelection) {
+      setEjerciciosSeleccionados([...ejerciciosSeleccionados, { tempId: crypto.randomUUID(), id: currentSelection, repeticiones: '', tiempo: '', comentarios: '' }]);
       setCurrentSelection('');
     }
   };
 
-  const handleRemoveEjercicio = (id: string) => {
-    setEjerciciosSeleccionados(ejerciciosSeleccionados.filter(e => e.id !== id));
+  const handleRemoveEjercicio = (tempId: string) => {
+    setEjerciciosSeleccionados(ejerciciosSeleccionados.filter(e => e.tempId !== tempId));
   };
 
-  const updateEjercicioData = (id: string, field: 'repeticiones' | 'tiempo' | 'comentarios', value: string) => {
-    setEjerciciosSeleccionados(ejerciciosSeleccionados.map(e => e.id === id ? { ...e, [field]: value } : e));
+  const updateEjercicioData = (tempId: string, field: 'repeticiones' | 'tiempo' | 'comentarios', value: string) => {
+    setEjerciciosSeleccionados(ejerciciosSeleccionados.map(e => e.tempId === tempId ? { ...e, [field]: value } : e));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -172,7 +172,7 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
             >
               <option value="">-- Seleccionar Ejercicio --</option>
               {catalogoEjercicios.map(ex => (
-                <option key={ex.id} value={ex.id} disabled={ejerciciosSeleccionados.some(e => e.id === ex.id)}>
+                <option key={ex.id} value={ex.id}>
                   {ex.nombre}
                 </option>
               ))}
@@ -189,50 +189,54 @@ export const FuerzaFormModal: React.FC<FuerzaFormModalProps> = ({ isOpen, onClos
 
           {ejerciciosSeleccionados.length > 0 ? (
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
-              {ejerciciosSeleccionados.map(item => {
+              {ejerciciosSeleccionados.map((item, index) => {
                 const ex = catalogoEjercicios.find(e => e.id === item.id);
                 return (
-                  <div key={item.id} className="bg-brand-black-card border border-brand-black-border p-4 rounded-lg flex flex-col gap-3">
+                  <div key={item.tempId} className="bg-brand-black-card border border-brand-black-border p-4 rounded-lg flex flex-col gap-3">
                     <div className="flex justify-between items-center">
-                      <span className="text-brand-gray-light font-semibold text-sm">{ex?.nombre}</span>
+                      <span className="text-brand-gray-light font-semibold text-sm">
+                        <span className="text-brand-red-600 mr-2">{index + 1}.</span>{ex?.nombre}
+                      </span>
                       <button
                         type="button"
-                        onClick={() => handleRemoveEjercicio(item.id)}
-                        className="text-brand-red-600 hover:text-brand-red-500 text-xs font-bold"
+                        onClick={() => handleRemoveEjercicio(item.tempId)}
+                        className="text-brand-gray-light hover:text-brand-red-600 transition-colors text-xs"
                       >
-                        Quitar
+                        Eliminar
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-brand-gray-muted mb-1">Repeticiones / Series</label>
+                        <label className="block text-[10px] font-medium text-brand-gray-muted uppercase mb-1">Repeticiones / Series</label>
                         <input
                           type="text"
-                          className="w-full bg-brand-black border border-brand-black-border text-white text-xs rounded-lg p-2 focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                          className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light rounded p-2 text-sm focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                          placeholder="Ej: 4x10"
                           value={item.repeticiones}
-                          onChange={(e) => updateEjercicioData(item.id, 'repeticiones', e.target.value)}
-                          placeholder="Ej. 4x10"
+                          onChange={(e) => updateEjercicioData(item.tempId, 'repeticiones', e.target.value)}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-brand-gray-muted mb-1">Tiempo / Descanso</label>
+                        <label className="block text-[10px] font-medium text-brand-gray-muted uppercase mb-1">Tiempo de trabajo</label>
                         <input
                           type="text"
-                          className="w-full bg-brand-black border border-brand-black-border text-white text-xs rounded-lg p-2 focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                          className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light rounded p-2 text-sm focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                          placeholder="Ej: 30s"
                           value={item.tiempo}
-                          onChange={(e) => updateEjercicioData(item.id, 'tiempo', e.target.value)}
-                          placeholder="Ej. 40s / 20s descanso"
+                          onChange={(e) => updateEjercicioData(item.tempId, 'tiempo', e.target.value)}
                         />
                       </div>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-medium text-brand-gray-muted mb-1">Comentarios / Observaciones</label>
+                      <label className="block text-[10px] font-medium text-brand-gray-muted uppercase mb-1">Observaciones</label>
                       <input
                         type="text"
-                        className="w-full bg-brand-black border border-brand-black-border text-white text-xs rounded-lg p-2 focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                        className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light rounded p-2 text-sm focus:border-brand-red-600 focus:ring-1 focus:ring-brand-red-600 outline-none"
+                        placeholder="Opcional..."
                         value={item.comentarios}
-                        onChange={(e) => updateEjercicioData(item.id, 'comentarios', e.target.value)}
-                        placeholder="Ej. Carga moderada, cuidar espalda..."
+                        onChange={(e) => updateEjercicioData(item.tempId, 'comentarios', e.target.value)}
                       />
                     </div>
                   </div>

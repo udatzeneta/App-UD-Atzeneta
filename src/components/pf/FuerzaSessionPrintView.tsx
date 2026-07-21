@@ -62,15 +62,15 @@ export const FuerzaSessionPrintView: React.FC<FuerzaSessionPrintViewProps> = ({ 
                 </div>
 
                 {/* Info */}
-                <div className="flex-1 min-w-0 flex flex-col justify-between">
+                <div className="flex-1 min-w-0 flex flex-col">
                   <div>
-                    <h3 className="text-sm font-black text-[#0f0f0f] leading-tight truncate" title={ej.nombre}>
+                    <h3 className="text-sm font-black text-[#0f0f0f] pb-1" title={ej.nombre}>
                       <span className="text-[#C1121F] mr-1">{idx + 1}.</span>
                       {ej.nombre}
                     </h3>
                     
                     {ej.tags && ej.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
+                      <div className="flex flex-wrap gap-1 mt-1 mb-2">
                         {ej.tags.slice(0, 3).map((t: string) => (
                           <span key={t} className="text-[8px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-bold uppercase">{t}</span>
                         ))}
@@ -78,21 +78,21 @@ export const FuerzaSessionPrintView: React.FC<FuerzaSessionPrintViewProps> = ({ 
                     )}
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1">
+                  <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 mb-2">
                     <div>
-                      <span className="text-[9px] font-bold text-gray-500 uppercase block leading-none">Reps/Series</span>
-                      <span className="text-xs font-bold text-gray-900 truncate block">{ej.repeticiones || '—'}</span>
+                      <span className="text-[9px] font-bold text-gray-500 uppercase block">Reps/Series</span>
+                      <span className="text-xs font-bold text-gray-900 block">{ej.repeticiones || '—'}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] font-bold text-gray-500 uppercase block leading-none">Tiempo</span>
-                      <span className="text-xs font-bold text-gray-900 truncate block">{ej.tiempo || '—'}</span>
+                      <span className="text-[9px] font-bold text-gray-500 uppercase block">Tiempo</span>
+                      <span className="text-xs font-bold text-gray-900 block">{ej.tiempo || '—'}</span>
                     </div>
                   </div>
                   
                   {ej.comentarios && (
-                    <div className="mt-1">
-                      <span className="text-[9px] font-bold text-gray-500 uppercase block leading-none">Observaciones</span>
-                      <span className="text-[10px] text-gray-700 block truncate">{ej.comentarios}</span>
+                    <div className="mt-auto pt-1 border-t border-gray-200">
+                      <span className="text-[9px] font-bold text-gray-500 uppercase block">Observaciones</span>
+                      <span className="text-[10px] text-gray-700 block mt-0.5">{ej.comentarios}</span>
                     </div>
                   )}
                 </div>
