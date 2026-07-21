@@ -75,7 +75,9 @@ export const EjercicioFuerzaFormModal: React.FC<EjercicioFuerzaFormModalProps> =
       onClose();
       // Reset form
       setNombre('');
-      setGrupos('');
+      setGruposSeleccionados([]);
+      setTags([]);
+      setExplicacion('');
       setImagenUrl('');
       setZona('ambos');
       setTren('superior');

@@ -386,7 +386,7 @@ export const PlayerDetail: React.FC = () => {
       const opt = {
         margin:       0,
         filename:     `informe_${player.nickname || player.full_name.replace(/\s+/g, '_')}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
+        image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { scale: 2, useCORS: true, scrollY: 0, logging: false },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak:    { mode: ['css', 'legacy'] }
@@ -396,7 +396,7 @@ export const PlayerDetail: React.FC = () => {
       const originalDisplay = (firstChild as HTMLElement).style.display;
       (firstChild as HTMLElement).style.display = 'block';
 
-      html2pdf().set(opt).from(firstChild).save().then(() => {
+      html2pdf().set(opt).from(firstChild as HTMLElement).save().then(() => {
         (firstChild as HTMLElement).style.display = originalDisplay;
         showToast('success', 'PDF Generado', 'El informe completo se ha descargado correctamente.');
       }).catch((err: any) => {
@@ -442,7 +442,7 @@ export const PlayerDetail: React.FC = () => {
         goals: s.goals || 0,
         assists: s.assists || 0,
         yellows: s.yellow_cards || 0,
-        reds: s.red_cards || 0
+        reds: s.red_card || 0
       };
     });
     const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');

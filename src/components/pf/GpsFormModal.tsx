@@ -31,7 +31,6 @@ export const GpsFormModal: React.FC<GpsFormModalProps> = ({ isOpen, onClose, jug
     aceleraciones: '',
     deceleraciones: '',
     distancia_por_minuto: '',
-    distancia_por_minuto: '',
     equilibrio_pasos: ''
   });
 
