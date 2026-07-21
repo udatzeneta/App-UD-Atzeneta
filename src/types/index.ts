@@ -274,6 +274,15 @@ export interface ClipAnnotation {
   zoom?: number;      // magnifier: factor de ampliación (2, 3...)
 }
 
+export type OpponentPhase = 'con_balon' | 'sin_balon' | 'abp';
+
+// Catalogación de un clip: a qué fase/subcategoría del mural pertenece.
+export interface ClipCategory {
+  phase: OpponentPhase;
+  sub: string;                    // clave de subcategoría (ver opponentTaxonomy)
+  side?: 'ofensivo' | 'defensivo'; // solo aplica a la fase 'abp'
+}
+
 export interface OpponentVideoClip {
   id: string;
   title: string;
@@ -284,12 +293,61 @@ export interface OpponentVideoClip {
   annotations?: ClipAnnotation[]; // telestración del clip
   description?: string;           // Breve comentario del clip
   board?: string;                 // Campograma adjunto al clip
+  category?: ClipCategory;        // catalogación del clip (para enviarlo a su sección)
 }
 
 export interface OpponentVideo {
   id: string;
   url: string;
   clips: OpponentVideoClip[];
+}
+
+// Vídeo de la videoteca central del rival. Admite YouTube/Vimeo/MP4·M3U8
+// (clippable) y embeds tipo Veo/Hudl por iframe (no recortables).
+export interface OpponentLibraryVideo {
+  id: string;
+  url: string;
+  title: string;
+  provider?: 'youtube' | 'vimeo' | 'direct' | 'embed';
+  clippable: boolean;
+  added_at?: string;
+  clips: OpponentVideoClip[];
+}
+
+// Contenido textual + campograma de una subsección del mural (keyed por catKey).
+export interface OpponentSubSection {
+  description?: string;
+  board?: string;
+}
+
+// Un ocupante de un puesto del sistema (un puesto puede tener varios).
+export interface FormationOccupant {
+  id: string;
+  name: string;
+  number?: number;
+  photo_url?: string;
+  scouting_id?: string;
+}
+
+// Puesto del campograma interactivo (coordenadas 0-100). Puede estar ocupado
+// por uno o varios jugadores (p. ej. dos candidatos para la misma demarcación).
+export interface FormationPlayer {
+  id: string;
+  label?: string;   // demarcación abreviada del slot (GK, DFC, LI, DC...)
+  role?: string;    // demarcación descriptiva del slot (Lateral Izquierdo...)
+  x: number;
+  y: number;
+  occupants?: FormationOccupant[]; // jugadores asignados a este puesto
+  // Legacy (compat con datos ya guardados de un solo jugador):
+  number?: number;
+  name?: string;
+  photo_url?: string;
+}
+
+// Alineación / sistema de juego del rival (campograma arrastrable).
+export interface OpponentFormation {
+  system: string;                 // p. ej. '4-4-2' o 'Libre'
+  players: FormationPlayer[];
 }
 
 export interface OpponentRosterPlayer {
@@ -325,6 +383,10 @@ export interface OpponentAnalysis {
   with_ball_blocks?: OpponentAnalysisBlock[];
   without_ball_blocks?: OpponentAnalysisBlock[];
   abp_blocks?: OpponentAnalysisBlock[];
+  // Nueva estructura: videoteca central + contenido por subsección.
+  library_videos?: OpponentLibraryVideo[];
+  sub_sections?: Record<string, OpponentSubSection>;
+  general_formation?: OpponentFormation; // sistema de juego (campograma arrastrable)
 }
 
 export interface Settings {

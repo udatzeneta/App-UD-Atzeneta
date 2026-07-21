@@ -1,15 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactPlayer from 'react-player';
-import { OpponentVideoClip, ClipAnnotation, ClipAnnotationType } from '../../types';
+import { OpponentVideoClip, ClipAnnotation, ClipAnnotationType, ClipCategory } from '../../types';
+import { ClipCategorySelector } from './ClipCategorySelector';
+import { ClipAnnotationRenderer } from './ClipAnnotationRenderer';
 import {
-  X, Save, Trash2, MousePointer2, Sun, UserCircle2,
-  ArrowUpRight, Lasso, Waypoints, Search as MagnifierIcon, Type,
-  Play, Pause, Snowflake, Eraser, Check
-} from 'lucide-react';
-
-// ViewBox 16:9 en el que dibujamos las anotaciones (independiente de píxeles).
-const VBW = 160;
-const VBH = 90;
 
 const COLORS = ['#ef4444', '#eab308', '#22c55e', '#3b82f6', '#ffffff', '#f97316'];
 
@@ -45,67 +40,6 @@ type DragState =
   | { mode: 'arrow-end'; id: string }
   | { mode: 'freehand'; id: string };
 
-// ---------------------------------------------------------------------------
-// Lupa: segundo reproductor del mismo vídeo, congelado y ampliado dentro de un
-// círculo. Se sincroniza al mismo segundo (freezeTime) que el reproductor
-// principal. Funciona sobre un frame quieto (no en reproducción).
-// ---------------------------------------------------------------------------
-const MagnifierLens: React.FC<{
-  a: ClipAnnotation;
-  videoUrl: string;
-  freezeTime: number;
-  cw: number;
-  ch: number;
-}> = ({ a, videoUrl, freezeTime, cw, ch }) => {
-  const ref = useRef<HTMLVideoElement>(null);
-  const zoom = a.zoom || 2;
-  const r = (a.radius || 0.1);
-  const lensD = r * 2 * cw; // diámetro en px
-
-  const seek = () => {
-    if (ref.current) {
-      try { ref.current.currentTime = freezeTime; } catch { /* noop */ }
-    }
-  };
-  useEffect(() => { seek(); }, [freezeTime]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (cw === 0) return null;
-
-  return (
-    <div
-      className="absolute rounded-full overflow-hidden pointer-events-none shadow-[0_0_0_3px_rgba(255,255,255,0.9),0_8px_24px_rgba(0,0,0,0.6)]"
-      style={{
-        width: lensD,
-        height: lensD,
-        left: a.x * cw - lensD / 2,
-        top: a.y * ch - lensD / 2,
-      }}
-    >
-      <div
-        className="absolute"
-        style={{
-          width: cw * zoom,
-          height: ch * zoom,
-          left: -(a.x * cw * zoom) + lensD / 2,
-          top: -(a.y * ch * zoom) + lensD / 2,
-        }}
-      >
-        <ReactPlayer
-          ref={ref}
-          src={videoUrl}
-          width="100%"
-          height="100%"
-          controls={false}
-          playing={false}
-          muted
-          onReady={seek}
-        />
-      </div>
-      {/* Aro de la lente */}
-      <div className="absolute inset-0 rounded-full border-2" style={{ borderColor: a.color }} />
-    </div>
-  );
-};
 
 export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips = [], onSave, onClose, readOnly = false }) => {
   const [annotations, setAnnotations] = useState<ClipAnnotation[]>(clip.annotations || []);
@@ -120,8 +54,11 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   const [dims, setDims] = useState({ cw: 0, ch: 0 });
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState<number>(clip.freezeTime ?? clip.start ?? 0);
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [showCategoryPrompt, setShowCategoryPrompt] = useState(false);
+  const [tempCategory, setTempCategory] = useState<ClipCategory | undefined>(clip.category);
 
-  const playerRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<any>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState>(null);
@@ -333,7 +270,15 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   }, [selectedId, readOnly, drawingLineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = () => {
-    onSave({ ...clip, start: Math.round(start), end: Math.round(end), freezeTime, pauseDuration, annotations });
+    if (!tempCategory?.phase) {
+      setShowCategoryPrompt(true);
+      return;
+    }
+    commitSave(tempCategory);
+  };
+
+  const commitSave = (cat?: ClipCategory) => {
+    onSave({ ...clip, start: Math.round(start), end: Math.round(end), freezeTime, pauseDuration, annotations, category: cat });
     onClose();
   };
 
@@ -395,8 +340,8 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
 
   const spotlights = annotations.filter(a => a.type === 'spotlight');
 
-  return (
-    <div className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-sm flex flex-col animate-fade-in">
+  const content = (
+    <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex flex-col animate-fade-in">
       {/* Barra superior */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-brand-black-border bg-brand-black">
         <div className="flex items-center gap-3 min-w-0">
@@ -410,8 +355,8 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
               <Save className="w-4 h-4 mr-1" /> Guardar Clip
             </button>
           )}
-          <button type="button" onClick={onClose} className="p-2 text-brand-gray-muted hover:text-white rounded-lg hover:bg-brand-black-hover">
-            <X className="w-5 h-5" />
+          <button type="button" onClick={onClose} className="flex items-center gap-2 px-4 py-2 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white border border-brand-red-600/30 rounded-lg transition-colors font-bold uppercase text-xs tracking-wide shadow-lg">
+            <X className="w-5 h-5" /> Cerrar
           </button>
         </div>
       </div>
@@ -455,23 +400,32 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
         <div className="flex-1 flex items-center justify-center p-4 min-h-0">
           <div className="w-full max-w-5xl">
             <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden border border-brand-black-border">
-              <ReactPlayer
-                ref={playerRef}
+              {(() => {
+                const Player: any = ReactPlayer;
+                return (
+                  <Player
+                    ref={playerRef}
                 src={videoUrl}
                 width="100%"
                 height="100%"
                 controls={false}
                 playing={playing}
-                onReady={() => { if (frozen) seekToFreeze(); }}
-                onDurationChange={() => setDuration(playerRef.current?.duration || 0)}
-                onLoadedMetadata={() => setDuration(playerRef.current?.duration || 0)}
-                onTimeUpdate={() => {
-                  const t = playerRef.current?.currentTime || 0;
-                  if (!frozen) setCurrentTime(t);
-
+                onReady={() => { 
+                  if (frozen) seekToFreeze(); 
+                  const d = playerRef.current?.duration || playerRef.current?.getDuration?.();
+                  if (d && d > 0) setDuration(d);
+                }}
+                onDurationChange={(e) => {
+                  const d = e.currentTarget.duration;
+                  if (d && !isNaN(d)) setDuration(d);
+                }}
+                onTimeUpdate={(e) => {
+                  const t = e.currentTarget.currentTime;
+                  setCurrentTime(t);
+                  
                   // 1. Loop/Boundaries en reproducción
                   if (!frozen) {
-                    if (t > end) {
+                    if (t >= end) {
                       seekTo(start, false);
                       return;
                     }
@@ -481,7 +435,7 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                     }
 
                     // 2. Auto-pausa en anotaciones
-                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.5) {
+                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.3) {
                       setPlaying(false); // esto hará frozen=true y mostrará el dibujo
                       setHasAutoPaused(true);
                       seekToFreeze(); // asegura que clavemos el tiempo exacto
@@ -493,116 +447,19 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                   }
                 }}
               />
+                );
+              })()}
 
               {/* Capa de anotaciones (visible sólo congelado) */}
               {frozen && (
-                <>
-                  <svg
-                    viewBox={`0 0 ${VBW} ${VBH}`}
-                    preserveAspectRatio="none"
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                  >
-                    <defs>
-                      {spotlights.length > 0 && (
-                        <mask id="spotmask">
-                          <rect x="0" y="0" width={VBW} height={VBH} fill="white" />
-                          {spotlights.map(s => (
-                            <circle key={s.id} cx={s.x * VBW} cy={s.y * VBH} r={(s.radius || 0.1) * VBW} fill="black" />
-                          ))}
-                        </mask>
-                      )}
-                      <marker id="arrowhead" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
-                        <polygon points="0 0, 4 2, 0 4" fill="context-stroke" />
-                      </marker>
-                    </defs>
-
-                    {/* Oscurecido del foco */}
-                    {spotlights.length > 0 && (
-                      <rect x="0" y="0" width={VBW} height={VBH} fill="black" opacity="0.6" mask="url(#spotmask)" />
-                    )}
-                    {spotlights.map(s => (
-                      <circle key={`ring-${s.id}`} cx={s.x * VBW} cy={s.y * VBH} r={(s.radius || 0.1) * VBW}
-                        fill="none" stroke={s.color} strokeWidth={selectedId === s.id ? 1.4 : 0.8}
-                        strokeDasharray={selectedId === s.id ? '2 1.5' : undefined} />
-                    ))}
-
-                    {/* Zonas (polígono a mano alzada; rect para datos antiguos) */}
-                    {annotations.filter(a => a.type === 'zone').map(z => (
-                      z.points && z.points.length >= 2 ? (
-                        <polygon key={z.id}
-                          points={z.points.map(p => `${p.x * VBW},${p.y * VBH}`).join(' ')}
-                          fill={z.color} fillOpacity="0.2" stroke={z.color}
-                          strokeWidth={selectedId === z.id ? 1.6 : 1} strokeLinejoin="round" />
-                      ) : (
-                        <rect key={z.id} x={z.x * VBW} y={z.y * VBH} width={(z.w || 0) * VBW} height={(z.h || 0) * VBH}
-                          fill={z.color} fillOpacity="0.18" stroke={z.color}
-                          strokeWidth={selectedId === z.id ? 1.4 : 0.9} rx="1" />
-                      )
-                    ))}
-
-                    {/* Líneas que enlazan jugadores */}
-                    {annotations.filter(a => a.type === 'line' && a.points && a.points.length > 0).map(l => (
-                      <g key={l.id}>
-                        {l.points!.length > 1 && (
-                          <polyline points={l.points!.map(p => `${p.x * VBW},${p.y * VBH}`).join(' ')}
-                            fill="none" stroke={l.color} strokeWidth={selectedId === l.id ? 1.8 : 1.3}
-                            strokeLinejoin="round" strokeLinecap="round" />
-                        )}
-                        {l.points!.map((p, i) => (
-                          <circle key={i} cx={p.x * VBW} cy={p.y * VBH} r={1.6}
-                            fill={l.color} stroke="black" strokeWidth={0.5} />
-                        ))}
-                      </g>
-                    ))}
-
-                    {/* Flechas */}
-                    {annotations.filter(a => a.type === 'arrow').map(a => (
-                      <line key={a.id} x1={a.x * VBW} y1={a.y * VBH} x2={(a.x2 || a.x) * VBW} y2={(a.y2 || a.y) * VBH}
-                        stroke={a.color} strokeWidth={selectedId === a.id ? 2 : 1.4} strokeLinecap="round"
-                        markerEnd="url(#arrowhead)" />
-                    ))}
-
-                    {/* Marcadores de jugador: anillo (perspectiva) que rodea al jugador */}
-                    {annotations.filter(a => a.type === 'player').map(p => {
-                      const r = p.radius || 0.05;
-                      const ry = r * VBW * 0.5;
-                      return (
-                        <g key={p.id}>
-                          <ellipse cx={p.x * VBW} cy={p.y * VBH} rx={r * VBW} ry={ry}
-                            fill={p.color} fillOpacity="0.1" stroke={p.color}
-                            strokeWidth={selectedId === p.id ? 1.8 : 1.2} />
-                          {p.label ? (
-                            <text x={p.x * VBW} y={p.y * VBH - ry - 2} fill={p.color}
-                              fontSize="5.5" fontWeight="800" textAnchor="middle"
-                              style={{ paintOrder: 'stroke' }} stroke="black" strokeWidth="1">
-                              {p.label}
-                            </text>
-                          ) : null}
-                        </g>
-                      );
-                    })}
-
-                    {/* Texto */}
-                    {annotations.filter(a => a.type === 'text').map(t => (
-                      <text key={t.id} x={t.x * VBW} y={t.y * VBH} fill={t.color} fontSize="6" fontWeight="800"
-                        textAnchor="middle" style={{ paintOrder: 'stroke' }} stroke="black" strokeWidth="1.2">
-                        {t.label || 'Texto'}
-                      </text>
-                    ))}
-
-                    {/* Aros de referencia de la lupa */}
-                    {annotations.filter(a => a.type === 'magnifier').map(m => (
-                      <circle key={m.id} cx={m.x * VBW} cy={m.y * VBH} r={(m.radius || 0.11) * VBW}
-                        fill="none" stroke={selectedId === m.id ? m.color : 'transparent'} strokeWidth="1"
-                        strokeDasharray="2 1.5" />
-                    ))}
-                  </svg>
-
-                  {/* Lupas (HTML, encima del SVG) */}
-                  {dims.cw > 0 && annotations.filter(a => a.type === 'magnifier').map(m => (
-                    <MagnifierLens key={m.id} a={m} videoUrl={videoUrl} freezeTime={freezeTime} cw={dims.cw} ch={dims.ch} />
-                  ))}
-                </>
+                <ClipAnnotationRenderer
+                  annotations={annotations}
+                  selectedId={selectedId}
+                  cw={dims.cw}
+                  ch={dims.ch}
+                  videoUrl={videoUrl}
+                  freezeTime={freezeTime}
+                />
               )}
 
               {/* Capa de captura de puntero (edición) */}
@@ -637,12 +494,14 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
 
             {/* Línea de tiempo */}
             <div className="mt-3">
-              <div
-                ref={timelineRef}
-                onPointerDown={(e) => onTlDown(e, 'scrub')}
-                className="relative h-9 bg-black border border-brand-black-border rounded-lg select-none"
-                style={{ touchAction: 'none', cursor: duration ? 'pointer' : 'default' }}
-              >
+              <div className="overflow-x-auto no-scrollbar border border-brand-black-border rounded-lg bg-black">
+                <div style={{ width: `${timelineZoom * 100}%`, minWidth: '100%' }}>
+                  <div
+                    ref={timelineRef}
+                    onPointerDown={(e) => onTlDown(e, 'scrub')}
+                    className="relative h-9 select-none"
+                    style={{ touchAction: 'none', cursor: duration ? 'pointer' : 'default' }}
+                  >
                 {duration === 0 ? (
                   <div className="absolute inset-0 flex items-center justify-center text-[11px] text-brand-gray-dark">
                     Cargando duración del vídeo…
@@ -650,14 +509,26 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                 ) : (
                   <>
                     {/* Otros cortes del vídeo (referencia) */}
-                    {allClips.filter(c => c.id !== clip.id).map(c => (
-                      <div
-                        key={c.id}
-                        className="absolute top-1.5 bottom-1.5 bg-brand-gray-dark/40 border border-brand-gray-dark/40 rounded"
-                        style={{ left: `${(c.start / duration) * 100}%`, width: `${(Math.max(0, c.end - c.start) / duration) * 100}%` }}
-                        title={`${c.title} (${fmt(c.start)}–${fmt(c.end)})`}
-                      />
-                    ))}
+                    {allClips.filter(c => c.id !== clip.id).map(c => {
+                      const hasDrawings = c.annotations && c.annotations.length > 0;
+                      return (
+                        <React.Fragment key={c.id}>
+                          <div
+                            className="absolute top-1.5 bottom-1.5 bg-brand-gray-dark/40 border border-brand-gray-dark/40 rounded"
+                            style={{ left: `${(c.start / duration) * 100}%`, width: `${(Math.max(0, c.end - c.start) / duration) * 100}%` }}
+                            title={`${c.title} (${fmt(c.start)}–${fmt(c.end)})`}
+                          />
+                          {hasDrawings && (
+                            <div 
+                              className="absolute top-0 bottom-0 w-1 flex items-center justify-center z-10 pointer-events-none"
+                              style={{ left: `${((c.freezeTime ?? c.start) / duration) * 100}%` }}
+                            >
+                              <div className="w-1.5 h-1.5 rounded-full bg-brand-gray-light shadow-[0_0_2px_black]" title="Contiene dibujos" />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
 
                     {/* Corte actual (editable): arrastrar el cuerpo lo mueve entero */}
                     <div
@@ -689,21 +560,23 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                       </div>
                     )}
 
-                    {/* Marca del fotograma congelado */}
+                    {/* Marca del fotograma congelado / con dibujos */}
                     <div
-                      className="absolute top-0 bottom-0 w-px bg-white/70 pointer-events-none"
+                      className={`absolute top-0 bottom-0 w-px pointer-events-none z-20 ${annotations.length > 0 ? 'bg-yellow-400' : 'bg-white/70'}`}
                       style={{ left: `${(freezeTime / duration) * 100}%` }}
                     >
-                      <div className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-white" />
+                      <div className={`absolute -top-1 -left-1 w-2 h-2 rounded-full ${annotations.length > 0 ? 'bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)]' : 'bg-white'}`} title={annotations.length > 0 ? "Fotograma con dibujos" : "Fotograma congelado"} />
                     </div>
 
                     {/* Cabezal de reproducción */}
                     <div
-                      className="absolute top-0 bottom-0 w-0.5 bg-brand-red-500 pointer-events-none"
+                      className="absolute top-0 bottom-0 w-0.5 bg-brand-red-500 pointer-events-none z-30"
                       style={{ left: `${((frozen ? freezeTime : currentTime) / duration) * 100}%` }}
                     />
                   </>
                 )}
+                  </div>
+                </div>
               </div>
               {duration > 0 && (
                 <div className="flex justify-between mt-1 text-[10px] text-brand-gray-dark font-mono">
@@ -765,6 +638,20 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                   />
                 </div>
               )}
+
+              {/* Slider de Zoom del timeline */}
+              <div className="flex items-center gap-2 bg-black border border-brand-black-border rounded-lg px-3 py-1.5 ml-2">
+                <span className="text-xs text-brand-gray-muted whitespace-nowrap" title="Ampliar dimensiones de la línea de tiempo">Zoom:</span>
+                <input
+                  type="range"
+                  min="1" max="20" step="0.5"
+                  value={timelineZoom}
+                  onChange={(e) => setTimelineZoom(Number(e.target.value))}
+                  className="w-24 accent-brand-red-600"
+                  title="Zoom en la línea de tiempo"
+                />
+                <span className="text-xs text-brand-gray-muted font-mono w-6 text-right">{timelineZoom}x</span>
+              </div>
 
               {!readOnly && selected && (
                 <button
@@ -853,8 +740,31 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
           </div>
         )}
       </div>
+
+      {/* Modal de categorización al guardar */}
+      {showCategoryPrompt && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-6 w-full max-w-sm flex flex-col gap-4 animate-fade-in shadow-premium">
+            <h3 className="text-lg font-bold text-white uppercase tracking-wider">Catalogar el Corte</h3>
+            <p className="text-sm text-brand-gray-light leading-relaxed">Por favor, asigna una sección a este corte antes de guardarlo para que quede correctamente organizado.</p>
+            <div className="bg-black border border-brand-black-border p-4 rounded-xl">
+              <ClipCategorySelector value={tempCategory} onChange={setTempCategory} />
+            </div>
+            <div className="flex justify-end gap-3 mt-2">
+              <button onClick={() => commitSave(clip.category)} className="text-brand-gray-muted hover:text-white text-xs px-2 py-2 transition-colors">
+                Guardar sin catalogar
+              </button>
+              <button onClick={() => { if (tempCategory?.phase) commitSave(tempCategory); }} className="btn-primary py-2 px-6 text-sm flex items-center gap-2" disabled={!tempCategory?.phase}>
+                <Check className="w-4 h-4" /> Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  return createPortal(content, document.body);
 };
 
 // Distancia de un punto a un segmento (para seleccionar flechas y líneas).

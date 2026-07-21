@@ -5,6 +5,8 @@ import { Plus, Trash2, Link, Play, Scissors, Clock, Wand2, X, Zap } from 'lucide
 import { ClipAnnotationEditor } from './ClipAnnotationEditor';
 import { FastClipperModal } from './FastClipperModal';
 import { TaskBoardEditor } from '../TaskBoardEditor';
+import { ClipCategorySelector } from './ClipCategorySelector';
+import { catLabel } from '../../constants/opponentTaxonomy';
 
 interface Props {
   videos?: OpponentVideo[];
@@ -18,7 +20,7 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [isFastClipping, setIsFastClipping] = useState(false);
-  const playerRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<any>(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId);
   const editingClip = activeVideo?.clips.find(c => c.id === editingClipId) || null;
@@ -53,7 +55,7 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
 
   const addClip = () => {
     if (!activeVideoId) return;
-    const currentTime = playerRef.current?.currentTime || 0;
+    const currentTime = playerRef.current?.currentTime || playerRef.current?.getCurrentTime?.() || 0;
     const newClip: OpponentVideoClip = {
       id: `clip-${Date.now()}`,
       title: 'Nuevo Clip',
@@ -102,14 +104,12 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
   };
 
   const captureTime = (clipId: string, field: 'start' | 'end') => {
-    const currentTime = playerRef.current?.currentTime || 0;
-    updateClip(clipId, { [field]: Math.floor(currentTime) });
+    const time = playerRef.current?.getCurrentTime() || 0;
+    updateClip(clipId, { [field]: Math.floor(time) });
   };
 
   const playClip = (clip: OpponentVideoClip) => {
     if (playerRef.current) {
-      playerRef.current.currentTime = clip.start;
-      playerRef.current.play?.();
       // No programamos pausa automática por simplicidad, pero el usuario puede verlo
     }
   };
@@ -291,105 +291,134 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
             {activeVideo.clips.length === 0 ? (
               <p className="text-xs text-brand-gray-dark italic">No hay cortes definidos.</p>
             ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
-                {activeVideo.clips.map(clip => (
-                  <React.Fragment key={clip.id}>
-                    <div className="flex items-start gap-2 bg-black p-2 rounded-lg border border-brand-black-border">
-                    {/* Reproducir Clip */}
-                    <button
-                      type="button"
-                      onClick={() => playClip(clip)}
-                      className="p-1.5 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white rounded transition-colors shrink-0"
-                      title="Ir a este momento"
-                    >
-                      <Play className="w-3 h-3" />
-                    </button>
+              <div className="space-y-3 pr-2 overflow-y-auto max-h-48 no-scrollbar">
+                {(() => {
+                  const groupedClips = activeVideo.clips.reduce((acc, clip) => {
+                    const label = catLabel(clip.category);
+                    if (!acc[label]) acc[label] = [];
+                    acc[label].push(clip);
+                    return acc;
+                  }, {} as Record<string, OpponentVideoClip[]>);
+                  
+                  const sortedLabels = Object.keys(groupedClips).sort((a, b) => {
+                    if (a === 'Sin catalogar') return 1;
+                    if (b === 'Sin catalogar') return -1;
+                    return a.localeCompare(b);
+                  });
 
-
-
-                      {/* Editor profesional del clip (telestración) */}
-                      {(!readOnly || (clip.annotations && clip.annotations.length > 0)) && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingClipId(clip.id)}
-                          className="mt-1 relative p-1.5 bg-brand-black-card text-brand-gray-muted hover:text-white rounded transition-colors shrink-0"
-                          title={readOnly ? 'Ver clip anotado' : 'Editar clip (focos, lupa, jugadores)'}
-                        >
-                          <Wand2 className="w-3 h-3" />
-                          {clip.annotations && clip.annotations.length > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-brand-red-600 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
-                              {clip.annotations.length}
-                            </span>
-                          )}
-                        </button>
-                      )}
-
-                      <div className="flex-1 flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={clip.title}
-                            onChange={(e) => updateClip(clip.id, { title: e.target.value })}
-                            className="flex-1 min-w-[80px] bg-transparent text-xs text-brand-gray-light outline-none placeholder:text-brand-gray-dark"
-                            placeholder="Nombre del corte..."
-                          />
-                          
-                          <div className="flex items-center gap-1 shrink-0 bg-brand-black-card rounded p-1">
-                            <button type="button" onClick={() => captureTime(clip.id, 'start')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
-                              <Clock className="w-3 h-3" />
-                            </button>
-                            <input
-                              type="number"
-                              value={clip.start}
-                              onChange={(e) => updateClip(clip.id, { start: parseInt(e.target.value) || 0 })}
-                              className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
-                            />
-                            <span className="text-brand-gray-dark text-[10px]">-</span>
-                            <input
-                              type="number"
-                              value={clip.end}
-                              onChange={(e) => updateClip(clip.id, { end: parseInt(e.target.value) || 0 })}
-                              className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
-                            />
-                            <button type="button" onClick={() => captureTime(clip.id, 'end')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
-                              <Clock className="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          <button type="button" onClick={() => removeClip(clip.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        <div className="flex flex-col gap-2 border-t border-brand-black-border/50 pt-2">
-                          <textarea
-                            value={clip.description || ''}
-                            onChange={(e) => updateClip(clip.id, { description: e.target.value })}
-                            placeholder="Comentario del clip..."
-                            className="w-full bg-brand-black-card border border-brand-black-border rounded p-1.5 text-[11px] text-brand-gray-light outline-none focus:border-brand-red-600 min-h-[40px] resize-y"
-                          />
+                  return sortedLabels.map(label => (
+                    <div key={label} className="space-y-2 mb-4">
+                      <h4 className="text-[10px] font-bold text-brand-red-500 uppercase tracking-wider sticky top-0 bg-[#1a1a1a] py-1 z-10 border-b border-brand-red-600/20">
+                        {label} <span className="ml-1 opacity-60 text-brand-gray-muted">({groupedClips[label].length})</span>
+                      </h4>
+                      {groupedClips[label].map(clip => (
+                        <React.Fragment key={clip.id}>
+                          <div className="flex items-start gap-2 bg-black p-2 rounded-lg border border-brand-black-border">
+                          {/* Reproducir Clip */}
                           <button
                             type="button"
-                            onClick={() => setExpandedClipId(expandedClipId === clip.id ? null : clip.id)}
-                            className="text-[10px] font-semibold text-brand-gray-muted hover:text-white self-start"
+                            onClick={() => playClip(clip)}
+                            className="p-1.5 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white rounded transition-colors shrink-0"
+                            title="Ir a este momento"
                           >
-                            {expandedClipId === clip.id ? '- Ocultar Campograma' : '+ Añadir/Editar Campograma'}
+                            <Play className="w-3 h-3" />
                           </button>
-                        </div>
-                      </div>
+
+                          {/* Editor profesional del clip (telestración) */}
+                          {(!readOnly || (clip.annotations && clip.annotations.length > 0)) && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingClipId(clip.id)}
+                              className="mt-1 relative p-1.5 bg-brand-black-card text-brand-gray-muted hover:text-white rounded transition-colors shrink-0"
+                              title={readOnly ? 'Ver clip anotado' : 'Editar clip (focos, lupa, jugadores)'}
+                            >
+                              <Wand2 className="w-3 h-3" />
+                              {clip.annotations && clip.annotations.length > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-brand-red-600 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+                                  {clip.annotations.length}
+                                </span>
+                              )}
+                            </button>
+                          )}
+
+                          <div className="flex-1 flex flex-col gap-2">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                              <input
+                                type="text"
+                                value={clip.title}
+                                onChange={(e) => updateClip(clip.id, { title: e.target.value })}
+                                className="flex-1 min-w-[80px] w-full sm:w-auto bg-transparent text-xs text-brand-gray-light outline-none placeholder:text-brand-gray-dark"
+                                placeholder="Nombre del corte..."
+                              />
+                              
+                              <div className="flex items-center gap-1 shrink-0 bg-brand-black-card rounded p-1 self-start sm:self-auto">
+                                <button type="button" onClick={() => captureTime(clip.id, 'start')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
+                                  <Clock className="w-3 h-3" />
+                                </button>
+                                <input
+                                  type="number"
+                                  value={clip.start}
+                                  onChange={(e) => updateClip(clip.id, { start: parseInt(e.target.value) || 0 })}
+                                  className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
+                                />
+                                <span className="text-brand-gray-dark text-[10px]">-</span>
+                                <input
+                                  type="number"
+                                  value={clip.end}
+                                  onChange={(e) => updateClip(clip.id, { end: parseInt(e.target.value) || 0 })}
+                                  className="w-10 bg-transparent text-center text-xs text-brand-gray-light outline-none"
+                                />
+                                <button type="button" onClick={() => captureTime(clip.id, 'end')} className="p-1 hover:text-brand-red-600 text-brand-gray-muted" title="Fijar tiempo actual">
+                                  <Clock className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <button type="button" onClick={() => removeClip(clip.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0 self-start sm:self-auto">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex flex-col gap-2 border-t border-brand-black-border/50 pt-2 mt-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                {readOnly ? (
+                                  <span className="inline-block text-[10px] bg-brand-red-600/10 text-brand-red-500 border border-brand-red-600/20 px-2 py-0.5 rounded-full font-semibold">
+                                    {catLabel(clip.category)}
+                                  </span>
+                                ) : (
+                                  <ClipCategorySelector value={clip.category} onChange={cat => updateClip(clip.id, { category: cat })} />
+                                )}
+                              </div>
+                              <textarea
+                                value={clip.description || ''}
+                                onChange={(e) => updateClip(clip.id, { description: e.target.value })}
+                                placeholder="Comentario del clip..."
+                                className="w-full bg-brand-black-card border border-brand-black-border rounded p-1.5 text-[11px] text-brand-gray-light outline-none focus:border-brand-red-600 min-h-[40px] resize-y"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setExpandedClipId(expandedClipId === clip.id ? null : clip.id)}
+                                className="text-[10px] font-semibold text-brand-gray-muted hover:text-white self-start"
+                              >
+                                {expandedClipId === clip.id ? '- Ocultar Campograma' : '+ Añadir/Editar Campograma'}
+                              </button>
+                            </div>
+                          </div>
+                          </div>
+                          
+                          {expandedClipId === clip.id && (
+                            <div className="p-2 bg-brand-black border border-brand-black-border rounded-lg mt-1 mb-3">
+                              <TaskBoardEditor
+                                value={clip.board || ''}
+                                onChange={(board) => updateClip(clip.id, { board })}
+                                readOnly={readOnly}
+                              />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      ))}
                     </div>
-                    
-                    {expandedClipId === clip.id && (
-                      <div className="p-2 bg-brand-black border border-brand-black-border rounded-lg mt-1 mb-3">
-                        <TaskBoardEditor
-                          value={clip.board || ''}
-                          onChange={(board) => updateClip(clip.id, { board })}
-                          readOnly={readOnly}
-                        />
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))}
+                  ));
+                })()}
               </div>
             )}
           </div>

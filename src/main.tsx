@@ -7,8 +7,12 @@ import { MockDatabase } from './services/mockData.ts'
 // Migrar/resetear caché de datos mock si la versión es obsoleta (borra permisos desactualizados)
 MockDatabase.checkAndMigrateCache();
 
+import { ErrorBoundary } from './ErrorBoundary.tsx';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )

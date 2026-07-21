@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactPlayer from 'react-player';
 import { X, Scissors, Info } from 'lucide-react';
 import { OpponentVideoClip } from '../../types';
@@ -55,7 +56,7 @@ export const FastClipperModal: React.FC<Props> = ({ videoUrl, onAddClip, onClose
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-  return (
+  const content = (
     <div className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-md flex flex-col animate-fade-in">
       {/* Cabecera */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-brand-black-border bg-brand-black">
@@ -71,9 +72,9 @@ export const FastClipperModal: React.FC<Props> = ({ videoUrl, onAddClip, onClose
         </div>
         <button
           onClick={onClose}
-          className="p-2 text-brand-gray-muted hover:text-white rounded-lg hover:bg-brand-black-hover transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white border border-brand-red-600/30 rounded-lg transition-colors font-bold uppercase text-xs tracking-wide shadow-lg"
         >
-          <X className="w-6 h-6" />
+          <X className="w-5 h-5" /> Cerrar
         </button>
       </div>
 
@@ -114,4 +115,6 @@ export const FastClipperModal: React.FC<Props> = ({ videoUrl, onAddClip, onClose
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 };
