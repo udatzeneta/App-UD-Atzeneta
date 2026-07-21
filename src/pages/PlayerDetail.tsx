@@ -388,7 +388,7 @@ export const PlayerDetail: React.FC = () => {
         filename:     `informe_${player.nickname || player.full_name.replace(/\s+/g, '_')}.pdf`,
         image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { scale: 2, useCORS: true, scrollY: 0, logging: false },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
         pagebreak:    { mode: ['css', 'legacy'] }
       };
 
@@ -439,10 +439,10 @@ export const PlayerDetail: React.FC = () => {
         minutes: s.minutes_played || 0, 
         label: `J.${s.matchday}`, 
         rival: s.rival,
-        goals: s.goals || 0,
-        assists: s.assists || 0,
-        yellows: s.yellow_cards || 0,
-        reds: s.red_card || 0
+        goals: Number(s.goals) || 0,
+        assists: Number(s.assists) || 0,
+        yellows: Number(s.yellow_cards) || 0,
+        reds: Number(s.red_card) || 0
       };
     });
     const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');

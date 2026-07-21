@@ -186,7 +186,7 @@ export const PlayerFullPrintView: React.FC<PlayerFullPrintViewProps> = ({
               const points = sortedStats.map((s, idx) => {
                 const x = padX + (idx / Math.max(sortedStats.length - 1, 1)) * chartW;
                 const y = padY + chartH - ((s.minutes_played || 0) / maxMins) * chartH;
-                return { x, y, minutes: s.minutes_played || 0, label: `J.${s.matchday}`, rival: s.rival, goals: s.goals || 0, assists: s.assists || 0, yellows: s.yellow_cards || 0, reds: s.red_card || 0 };
+                return { x, y, minutes: s.minutes_played || 0, label: `J.${s.matchday}`, rival: s.rival, goals: Number(s.goals) || 0, assists: Number(s.assists) || 0, yellows: Number(s.yellow_cards) || 0, reds: Number(s.red_card) || 0 };
               });
               const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
