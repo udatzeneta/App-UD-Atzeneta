@@ -1039,7 +1039,7 @@ export const Fines: React.FC = () => {
                 const paidAmount = playerRealFines.filter(f => f.status === 'Pagado').reduce((acc, f) => acc + Number(f.amount), 0) + playerAbonos.reduce((acc, f) => acc + Number(f.amount), 0);
                 const pendingAmount = totalAmount - paidAmount;
 
-                const playerFinesByMonthData = months.map(m => {
+                const playerFinesByMonthData = dynamicMonths.map(m => {
                   const mRealFines = playerRealFines.filter(f => new Date(f.date).getMonth() + 1 === m.value && new Date(f.date).getFullYear() === selectedYear);
                   const mTotal = mRealFines.reduce((acc, f) => acc + Number(f.amount), 0);
                   return {
