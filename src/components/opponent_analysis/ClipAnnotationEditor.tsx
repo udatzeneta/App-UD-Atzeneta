@@ -5,6 +5,10 @@ import { OpponentVideoClip, ClipAnnotation, ClipAnnotationType, ClipCategory } f
 import { ClipCategorySelector } from './ClipCategorySelector';
 import { ClipAnnotationRenderer } from './ClipAnnotationRenderer';
 import {
+  X, Save, Trash2, MousePointer2, Sun, UserCircle2,
+  ArrowUpRight, Lasso, Waypoints, Search as MagnifierIcon, Type,
+  Play, Pause, Snowflake, Eraser, Check
+} from 'lucide-react';
 
 const COLORS = ['#ef4444', '#eab308', '#22c55e', '#3b82f6', '#ffffff', '#f97316'];
 
