@@ -72,6 +72,7 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   const [pauseDuration, setPauseDuration] = useState<number>(clip.pauseDuration ?? 3);
   const [hasAutoPaused, setHasAutoPaused] = useState(false);
   const autoPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isSeekingRef = useRef(false);
 
   const frozen = !playing; // mientras no reproducimos, mostramos el frame congelado + anotaciones
 
@@ -90,7 +91,11 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   // Congelar en el segundo elegido cuando estamos parados.
   const seekToFreeze = () => {
     if (playerRef.current) {
-      try { playerRef.current.currentTime = freezeTime; } catch { /* noop */ }
+      if (typeof playerRef.current.seekTo === 'function') {
+        try { playerRef.current.seekTo(freezeTime, 'seconds'); } catch { /* noop */ }
+      } else {
+        try { playerRef.current.currentTime = freezeTime; } catch { /* noop */ }
+      }
     }
   };
   useEffect(() => {
@@ -289,12 +294,18 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   // Mueve el vídeo a un segundo concreto (scrub). Si estamos congelados, ese
   // pasa a ser el fotograma sobre el que se anota.
   const seekTo = (t: number, freeze = frozen) => {
-    const clamped = Math.max(0, duration ? Math.min(t, duration) : t);
-    setCurrentTime(clamped);
-    if (playerRef.current) {
-      try { playerRef.current.currentTime = clamped; } catch { /* noop */ }
-    }
+    const clamped = Math.max(0, Math.min(t, duration));
     if (freeze) setFreezeTime(clamped);
+    else setCurrentTime(clamped);
+    if (playerRef.current) {
+      isSeekingRef.current = true;
+      if (typeof playerRef.current.seekTo === 'function') {
+        try { playerRef.current.seekTo(clamped, 'seconds'); } catch { /* noop */ }
+      } else {
+        try { playerRef.current.currentTime = clamped; } catch { /* noop */ }
+      }
+      setTimeout(() => { isSeekingRef.current = false; }, 500);
+    }
     if (t < freezeTime) {
       setHasAutoPaused(false);
     }
@@ -302,6 +313,7 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
       clearTimeout(autoPauseTimerRef.current);
       autoPauseTimerRef.current = null;
     }
+    setTimeout(() => { isSeekingRef.current = false; }, 500);
   };
 
   // ----- Timeline (barra de tiempo) -----
@@ -409,37 +421,41 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                 return (
                   <Player
                     ref={playerRef}
-                src={videoUrl}
+                url={videoUrl}
                 width="100%"
                 height="100%"
                 controls={false}
                 playing={playing}
-                onReady={() => { 
+                onReady={() => {
+                  const d = playerRef.current?.duration || (playerRef.current?.getDuration ? playerRef.current.getDuration() : 0);
+                  if (d > 0) setDuration(d);
                   if (frozen) seekToFreeze(); 
-                  const d = playerRef.current?.duration || playerRef.current?.getDuration?.();
-                  if (d && d > 0) setDuration(d);
                 }}
-                onDurationChange={(e: any) => {
-                  const d = e.currentTarget.duration;
-                  if (d && !isNaN(d)) setDuration(d);
-                }}
-                onTimeUpdate={(e: any) => {
-                  const t = e.currentTarget.currentTime;
+                progressInterval={100}
+                onProgress={({ playedSeconds }: { playedSeconds: number }) => {
+                  if (isSeekingRef.current) return;
+                  
+                  const t = playedSeconds;
                   setCurrentTime(t);
                   
-                  // 1. Loop/Boundaries en reproducción
+                  // 1. Limpiar auto-pausa si retrocedemos
+                  if (t < freezeTime) {
+                    setHasAutoPaused(false);
+                  }
+
+                  // 2. Loop/Boundaries en reproducción
                   if (!frozen) {
                     if (t >= end) {
                       seekTo(start, false);
                       return;
                     }
-                    if (t < start) {
+                    if (t < start - 0.5) {
                       seekTo(start, false);
                       return;
                     }
 
                     // 2. Auto-pausa en anotaciones
-                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.3) {
+                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime) {
                       setPlaying(false); // esto hará frozen=true y mostrará el dibujo
                       setHasAutoPaused(true);
                       seekToFreeze(); // asegura que clavemos el tiempo exacto

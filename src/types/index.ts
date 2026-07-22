@@ -348,6 +348,7 @@ export interface FormationPlayer {
 export interface OpponentFormation {
   system: string;                 // p. ej. '4-4-2' o 'Libre'
   players: FormationPlayer[];
+  label?: string;                 // nombre de una alternativa (p. ej. 'Repliegue 4-4-2')
 }
 
 export interface OpponentRosterPlayer {
@@ -387,6 +388,46 @@ export interface OpponentAnalysis {
   library_videos?: OpponentLibraryVideo[];
   sub_sections?: Record<string, OpponentSubSection>;
   general_formation?: OpponentFormation; // sistema de juego (campograma arrastrable)
+  alternative_formations?: OpponentFormation[]; // sistemas alternativos (campogramas pequeños)
+  presentations?: OpponentPresentation[]; // presentaciones a pantalla completa por bloques
+}
+
+// =====================================================================
+// Presentaciones: diapositivas ordenadas por bloques para reproducir a
+// pantalla completa (clips anotados, campogramas, informes de texto y
+// portadas de bloque).
+// =====================================================================
+export type PresentationSlideType = 'cover' | 'formation' | 'board' | 'text' | 'clip' | 'general_summary';
+export type PresentationBlock = 'generales' | 'jugadores' | 'con_balon' | 'sin_balon' | 'abp';
+
+export interface PresentationSlide {
+  id: string;
+  sourceKey?: string;                // clave del catálogo para sincronizar cambios
+  type: PresentationSlideType;
+  block: PresentationBlock;          // agrupación / orden
+  title?: string;                    // encabezado mostrado en la diapositiva
+  subtitle?: string;
+  text?: string;                     // type 'text'
+  board?: string;                    // type 'board' (valor de TaskBoardEditor)
+  formation?: OpponentFormation;     // type 'formation' (snapshot)
+  videoId?: string;                  // type 'clip' → resolver en library_videos
+  clipId?: string;                   // type 'clip'
+  summaryData?: {
+    mainFormation?: OpponentFormation;
+    alternativeFormations?: OpponentFormation[];
+    strengths?: string[];
+    weaknesses?: string[];
+    keyPlayers?: string[];
+    observations?: string;
+    rosterComments?: OpponentRosterPlayer[];
+  };
+}
+
+export interface OpponentPresentation {
+  id: string;
+  title: string;
+  created_at?: string;
+  slides: PresentationSlide[];
 }
 
 export interface Settings {

@@ -22,7 +22,7 @@ interface Props {
 // Estudio a pantalla completa: reproduce un vídeo de la videoteca, permite
 // crear/editar clips, catalogarlos y anotarlos (telestración).
 export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, readOnly = false }) => {
-  const playerRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<any>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
   const [isFastClipping, setIsFastClipping] = useState(false);
@@ -89,13 +89,23 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
   };
 
   const captureTime = (clipId: string, field: 'start' | 'end') => {
-    updateClip(clipId, { [field]: Math.floor(playerRef.current?.currentTime || 0) });
+    const player = playerRef.current;
+    if (!player) return;
+    const time = typeof player.getCurrentTime === 'function' 
+      ? player.getCurrentTime() 
+      : (player.currentTime || 0);
+    updateClip(clipId, { [field]: Math.floor(time) });
   };
 
   const playClip = (clip: OpponentVideoClip) => {
-    if (playerRef.current) {
-      playerRef.current.currentTime = clip.start;
-      playerRef.current.play?.();
+    const player = playerRef.current;
+    if (player) {
+      if (typeof player.seekTo === 'function') {
+        player.seekTo(clip.start, 'seconds');
+      } else {
+        try { player.currentTime = clip.start; } catch { /* noop */ }
+      }
+      setPlaying(true);
     }
   };
 
@@ -125,17 +135,20 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
           <div ref={wrapperRef} className="w-full aspect-video bg-black rounded-xl overflow-hidden border border-brand-black-border shadow-2xl relative">
             {video.clippable ? (
               <>
-                <ReactPlayer 
-                  ref={playerRef as any} 
-                  src={validUrl} 
-                  width="100%" 
-                  height="100%" 
-                  controls 
+                {(() => {
+                  const Player: any = ReactPlayer;
+                  return (
+                    <Player 
+                      ref={playerRef} 
+                      url={validUrl} 
+                      width="100%" 
+                      height="100%" 
+                      controls 
                   playing={playing}
                   onPlay={() => setPlaying(true)}
                   onPause={() => setPlaying(false)}
-                  onTimeUpdate={(e: any) => {
-                    const t = e.currentTarget.currentTime;
+                  onProgress={(state: any) => {
+                    const t = state.playedSeconds;
                     // Auto-pause logic
                     const clipToPause = video.clips.find(c => {
                       const ft = c.freezeTime ?? c.start;
@@ -147,7 +160,12 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                       hasAutoPausedRef.current.add(clipToPause.id);
                       setPlaying(false);
                       if (playerRef.current) {
-                        try { playerRef.current.currentTime = clipToPause.freezeTime ?? clipToPause.start; } catch { /* noop */ }
+                        const target = clipToPause.freezeTime ?? clipToPause.start;
+                        if (typeof playerRef.current.seekTo === 'function') {
+                          playerRef.current.seekTo(target, 'seconds');
+                        } else {
+                          try { playerRef.current.currentTime = target; } catch { /* noop */ }
+                        }
                       }
                       setActiveOverlayClip(clipToPause);
 
@@ -168,6 +186,8 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                     }
                   }}
                 />
+                  );
+                })()}
                 {activeOverlayClip && (
                   <ClipAnnotationRenderer
                     annotations={activeOverlayClip.annotations || []}

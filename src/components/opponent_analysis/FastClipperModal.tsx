@@ -14,21 +14,30 @@ export const FastClipperModal: React.FC<Props> = ({ videoUrl, onAddClip, onClose
   const playerRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
   const [lastClipInfo, setLastClipInfo] = useState<{ time: number, id: string } | null>(null);
+  const [clipName, setClipName] = useState('');
+  const [count, setCount] = useState(0);
 
   // Genera un clip al vuelo con +5s de margen
   const handleFastClip = () => {
     if (!playerRef.current) return;
     const currentTime = playerRef.current.currentTime;
-    
+
+    // Nombre: base + numeración automática si el usuario escribió un nombre;
+    // si no, se mantiene el fallback por hora.
+    const base = clipName.trim();
+    const nextNumber = count + 1;
+    const title = base ? `${base} ${nextNumber}` : `Corte ${new Date().toLocaleTimeString()}`;
+
     // Crear el clip: de t a t+5
     const newClip: Partial<OpponentVideoClip> = {
-      title: `Corte ${new Date().toLocaleTimeString()}`,
+      title,
       start: Math.round(currentTime),
       end: Math.round(currentTime + 5)
     };
 
     onAddClip(newClip);
-    
+    setCount(nextNumber);
+
     // Feedback visual
     const id = Date.now().toString();
     setLastClipInfo({ time: currentTime, id });
@@ -60,15 +69,30 @@ export const FastClipperModal: React.FC<Props> = ({ videoUrl, onAddClip, onClose
     <div className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-md flex flex-col animate-fade-in">
       {/* Cabecera */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-brand-black-border bg-brand-black">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Scissors className="w-5 h-5 text-brand-red-600" />
             Modo Extracción Rápida
           </h2>
-          <p className="text-xs text-brand-gray-muted mt-1 flex items-center gap-1">
-            <Info className="w-3.5 h-3.5" />
+          <p className="text-xs text-brand-gray-muted mt-1 flex items-center gap-1 flex-wrap">
+            <Info className="w-3.5 h-3.5 shrink-0" />
             Pulsa <kbd className="bg-brand-black-border px-1.5 rounded text-white font-mono">C</kbd> para generar un corte (+5 seg). Pulsa <kbd className="bg-brand-black-border px-1.5 rounded text-white font-mono">Espacio</kbd> para pausar.
           </p>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="text"
+              value={clipName}
+              onChange={e => setClipName(e.target.value)}
+              placeholder="Nombre base de los cortes (ej. Presión rival)…"
+              className="w-64 max-w-full bg-black border border-brand-black-border rounded-lg px-3 py-1.5 text-xs text-brand-gray-light focus:border-brand-red-600 outline-none"
+            />
+            {clipName.trim() && (
+              <span className="text-[11px] text-brand-gray-muted">
+                Siguiente: <span className="text-brand-red-500 font-semibold">{clipName.trim()} {count + 1}</span>
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-brand-gray-dark mt-1">Escribe el nombre y luego haz clic en el botón (o quita el foco del campo y pulsa <kbd className="bg-brand-black-border px-1 rounded text-white font-mono">C</kbd>).</p>
         </div>
         <button
           onClick={onClose}

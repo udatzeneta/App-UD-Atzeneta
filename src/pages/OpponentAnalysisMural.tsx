@@ -2,15 +2,16 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
-import { OpponentAnalysis, OpponentLibraryVideo, OpponentSubSection, OpponentFormation } from '../types';
+import { OpponentAnalysis, OpponentLibraryVideo, OpponentSubSection, OpponentFormation, OpponentPresentation } from '../types';
 import {
   ArrowLeft, ShieldAlert, Award, FileText, Settings as TacticalIcon,
-  Edit2, Save, X, Users, Film, Swords, Shield, Flag,
+  Edit2, Save, X, Users, Film, Swords, Shield, Flag, Presentation, Plus, Trash2,
 } from 'lucide-react';
 import { OpponentRosterManager } from '../components/opponent_analysis/OpponentRosterManager';
 import { OpponentVideoLibrary } from '../components/opponent_analysis/OpponentVideoLibrary';
 import { PhaseSection } from '../components/opponent_analysis/PhaseSection';
 import { FormationPitch } from '../components/opponent_analysis/FormationPitch';
+import { OpponentPresentationBuilder } from '../components/opponent_analysis/OpponentPresentationBuilder';
 import { detectVideoProvider } from '../utils/opponentVideo';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
@@ -22,6 +23,7 @@ const NAV = [
   { id: 'con_balon', label: 'Con Balón', icon: Swords },
   { id: 'sin_balon', label: 'Sin Balón', icon: Shield },
   { id: 'abp', label: 'ABP', icon: Flag },
+  { id: 'presentacion', label: 'Presentación', icon: Presentation },
   { id: 'videoteca', label: 'Videoteca', icon: Film },
 ];
 
@@ -48,6 +50,14 @@ export const OpponentAnalysisMural: React.FC = () => {
   // --- Estado local del campograma/sistema de juego (guardado con debounce) ---
   const [formation, setFormation] = useState<OpponentFormation>({ system: 'Libre', players: [] });
   const formationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // --- Sistemas de juego alternativos (guardado con debounce) ---
+  const [altFormations, setAltFormations] = useState<OpponentFormation[]>([]);
+  const altTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // --- Presentaciones (guardado con debounce) ---
+  const [presentations, setPresentations] = useState<OpponentPresentation[]>([]);
+  const presTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Estado de edición del bloque General ---
   const [editingGeneral, setEditingGeneral] = useState(false);
@@ -106,6 +116,8 @@ export const OpponentAnalysisMural: React.FC = () => {
   useEffect(() => {
     if (!analysis) return;
     setFormation(analysis.general_formation || { system: 'Libre', players: [] });
+    setAltFormations(analysis.alternative_formations || []);
+    setPresentations(analysis.presentations || []);
   }, [analysis?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Guardado con debounce del campograma.
@@ -114,6 +126,34 @@ export const OpponentAnalysisMural: React.FC = () => {
     if (formationTimer.current) clearTimeout(formationTimer.current);
     formationTimer.current = setTimeout(() => {
       updateMutation.mutate({ general_formation: data });
+    }, 700);
+  };
+
+  // Guardado con debounce de los sistemas alternativos.
+  const handleAltFormationsChange = (data: OpponentFormation[]) => {
+    setAltFormations(data);
+    if (altTimer.current) clearTimeout(altTimer.current);
+    altTimer.current = setTimeout(() => {
+      updateMutation.mutate({ alternative_formations: data });
+    }, 700);
+  };
+
+  const updateAltFormation = (idx: number, updates: Partial<OpponentFormation>) => {
+    handleAltFormationsChange(altFormations.map((f, i) => (i === idx ? { ...f, ...updates } : f)));
+  };
+  const addAltFormation = () => {
+    handleAltFormationsChange([...altFormations, { system: 'Libre', players: [], label: `Alternativa ${altFormations.length + 1}` }]);
+  };
+  const removeAltFormation = (idx: number) => {
+    handleAltFormationsChange(altFormations.filter((_, i) => i !== idx));
+  };
+
+  // Guardado con debounce de las presentaciones.
+  const handlePresentationsChange = (data: OpponentPresentation[]) => {
+    setPresentations(data);
+    if (presTimer.current) clearTimeout(presTimer.current);
+    presTimer.current = setTimeout(() => {
+      updateMutation.mutate({ presentations: data });
     }, 700);
   };
 
@@ -293,8 +333,40 @@ export const OpponentAnalysisMural: React.FC = () => {
                   <label className="form-label flex items-center gap-2"><FileText className="w-4 h-4 text-brand-gray-light" /> Observaciones Generales</label>
                   <textarea className="form-input h-28 resize-none" value={editData.observations || ''} onChange={e => setEditData({ ...editData, observations: e.target.value })} />
                 </div>
+
+                {/* Sistemas de juego alternativos */}
+                <div className="border-t border-brand-black-border pt-5">
+                  <label className="form-label flex items-center gap-2"><TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistemas de juego alternativos</label>
+                  <p className="text-[11px] text-brand-gray-muted mb-3">Variantes al sistema principal (repliegue, con balón, etc.). Se muestran en campogramas pequeños.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {altFormations.map((f, idx) => (
+                      <div key={idx} className="bg-brand-black border border-brand-black-border rounded-xl p-3 space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={f.label || ''}
+                            onChange={e => updateAltFormation(idx, { label: e.target.value })}
+                            placeholder="Nombre de la alternativa"
+                            className="flex-1 min-w-0 bg-black border border-brand-black-border rounded px-2 py-1 text-xs text-brand-gray-light outline-none focus:border-brand-red-600"
+                          />
+                          <button type="button" onClick={() => removeAltFormation(idx)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                        <FormationPitch compact value={f} onChange={data => updateAltFormation(idx, data)} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addAltFormation}
+                      className="flex flex-col items-center justify-center gap-2 min-h-[160px] border-2 border-dashed border-brand-black-border rounded-xl text-brand-gray-muted hover:text-white hover:border-brand-red-600 transition-colors"
+                    >
+                      <Plus className="w-6 h-6" />
+                      <span className="text-xs font-semibold">Añadir alternativa</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
+              <>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-brand-black-card border border-brand-black-border rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -340,6 +412,24 @@ export const OpponentAnalysisMural: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Sistemas de juego alternativos (vista) */}
+              {altFormations.length > 0 && (
+                <div className="mt-6 bg-brand-black-card border border-brand-black-border rounded-xl p-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-4">
+                    <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistemas de juego alternativos
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {altFormations.map((f, idx) => (
+                      <div key={idx} className="flex flex-col items-center gap-2">
+                        <FormationPitch compact readOnly value={f} onChange={() => {}} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
+                        <span className="text-[11px] font-semibold text-brand-gray-light text-center leading-tight">{f.label || f.system}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              </>
             )}
           </div>
 
@@ -403,13 +493,25 @@ export const OpponentAnalysisMural: React.FC = () => {
 
           {/* 3, 4 y 5. Fases con subcategorías */}
           <div id="con_balon" className="scroll-mt-24">
-            <PhaseSection phase="con_balon" subSections={subSections} libraryVideos={libraryVideos} canEdit={canEdit} onChange={handleSubSectionsChange} />
+            <PhaseSection phase="con_balon" subSections={subSections} libraryVideos={libraryVideos} canEdit={canEdit} onChange={handleSubSectionsChange} onUpdateLibraryVideos={handleLibraryChange} />
           </div>
           <div id="sin_balon" className="scroll-mt-24">
-            <PhaseSection phase="sin_balon" subSections={subSections} libraryVideos={libraryVideos} canEdit={canEdit} onChange={handleSubSectionsChange} />
+            <PhaseSection phase="sin_balon" subSections={subSections} libraryVideos={libraryVideos} canEdit={canEdit} onChange={handleSubSectionsChange} onUpdateLibraryVideos={handleLibraryChange} />
           </div>
           <div id="abp" className="scroll-mt-24">
-            <PhaseSection phase="abp" subSections={subSections} libraryVideos={libraryVideos} canEdit={canEdit} onChange={handleSubSectionsChange} />
+            <PhaseSection phase="abp" subSections={subSections} libraryVideos={libraryVideos} canEdit={canEdit} onChange={handleSubSectionsChange} onUpdateLibraryVideos={handleLibraryChange} />
+          </div>
+
+          {/* 6. Presentación a pantalla completa */}
+          <div id="presentacion" className="scroll-mt-24 mb-14">
+            <SectionTitle title="Presentación" anchor="presentacion" />
+            <OpponentPresentationBuilder
+              analysis={analysis}
+              presentations={presentations}
+              libraryVideos={libraryVideos}
+              canEdit={canEdit}
+              onChange={handlePresentationsChange}
+            />
           </div>
         </div>
 

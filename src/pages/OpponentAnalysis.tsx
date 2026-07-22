@@ -219,11 +219,25 @@ export const OpponentAnalysisPage: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6">
-          {filteredList.map((analysis) => (
-            <div key={analysis.id} className="dashboard-card flex flex-col justify-between p-0 overflow-hidden">
+          {filteredList.map((analysis) => {
+            const teamInfo = teamsList.find(t => t.name.toLowerCase() === analysis.opponent.toLowerCase());
+
+            return (
+            <div key={analysis.id} className="dashboard-card flex flex-col justify-between p-0 overflow-hidden relative group z-0">
               
+              {/* Escudo diagonal de fondo */}
+              {teamInfo?.shield_url && (
+                <div className="absolute -right-12 sm:-right-24 -bottom-12 sm:-bottom-24 w-64 sm:w-[400px] aspect-square opacity-[0.05] group-hover:opacity-[0.08] pointer-events-none transition-opacity duration-500 transform -rotate-[25deg] -z-10">
+                  <img 
+                    src={teamInfo.shield_url} 
+                    alt={analysis.opponent} 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              )}
+
               <div 
-                className="p-6 space-y-6 cursor-pointer hover:bg-brand-black-hover transition-colors"
+                className="p-6 space-y-6 cursor-pointer hover:bg-brand-black-hover/40 transition-colors"
                 onClick={() => navigate(`/opponent-analysis/${analysis.id}`)}
               >
                 {/* Bloque Cabecera Ficha */}
@@ -333,7 +347,7 @@ export const OpponentAnalysisPage: React.FC = () => {
                 </div>
               )}
             </div>
-          ))}
+          )})}
         </div>
       )}
 

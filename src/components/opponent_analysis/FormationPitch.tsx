@@ -12,6 +12,8 @@ interface Props {
   readOnly?: boolean;
   opponentName?: string;
   rosterPlayers?: OpponentRosterPlayer[];
+  compact?: boolean; // versión reducida (campograma pequeño para alternativas)
+  fitHeight?: boolean; // ocupa toda la altura disponible (presentación a pantalla completa)
 }
 
 const EMPTY: OpponentFormation = { system: 'Libre', players: [] };
@@ -23,7 +25,7 @@ const defaultNumber = (idx: number) => idx + 1;
 // arrastra las fichas de los jugadores del rival. Componente controlado.
 // Los nombres/fotos se rellenan desde la base de datos de scouting (por
 // equipo) o manualmente (con foto).
-export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = false, opponentName, rosterPlayers = [] }) => {
+export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = false, opponentName, rosterPlayers = [], compact = false, fitHeight = false }) => {
   const data = {
     system: value?.system || EMPTY.system,
     players: value?.players || EMPTY.players,
@@ -173,7 +175,7 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
   const pickerPlayer = data.players.find(p => p.id === pickerId) || null;
 
   return (
-    <div className="space-y-3">
+    <div className={fitHeight ? 'h-full flex items-center justify-center' : 'space-y-3'}>
       {/* Controles */}
       {!readOnly && (
         <div className="bg-brand-black border border-brand-black-border p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
@@ -212,7 +214,13 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
       {/* Campo */}
       <div
         ref={pitchRef}
-        className="relative w-full max-w-md mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/30 rounded-2xl overflow-hidden shadow-2xl select-none"
+        className={`relative mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-emerald-100/30 overflow-hidden shadow-2xl select-none ${
+          fitHeight
+            ? 'h-full w-auto max-w-none border-4 rounded-2xl'
+            : compact
+              ? 'w-full max-w-[220px] border-2 rounded-xl'
+              : 'w-full max-w-md border-4 rounded-2xl'
+        }`}
       >
         {/* Franjas del césped */}
         <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5">
@@ -252,24 +260,24 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
             onClick={() => handleTokenClick(player.id)}
             className="absolute z-10 group flex flex-col items-center select-none"
           >
-            {isStar && (
+            {isStar && !compact && (
               <div className="absolute -top-1 -right-1 bg-amber-500 text-white rounded-full p-[2px] shadow-md border border-amber-900 z-20" title="Jugador Destacado">
                 <Star className="w-3 h-3 fill-white" />
               </div>
             )}
-            <div className={`relative w-10 h-10 rounded-full bg-brand-red-600 border-2 shadow-premium flex items-center justify-center overflow-visible group-hover:scale-110 transition-transform duration-150 ${pickerId === player.id ? 'border-white ring-2 ring-white/50' : 'border-white/70'}`}>
+            <div className={`relative rounded-full bg-brand-red-600 border-2 shadow-premium flex items-center justify-center overflow-visible group-hover:scale-110 transition-transform duration-150 ${compact ? 'w-6 h-6' : 'w-10 h-10'} ${pickerId === player.id ? 'border-white ring-2 ring-white/50' : 'border-white/70'}`}>
               {player.photo_url ? (
                 <img src={player.photo_url} alt={player.name || ''} className="w-full h-full object-cover rounded-full pointer-events-none" />
               ) : (
-                <span className="text-white font-black text-sm font-mono pointer-events-none">{player.number}</span>
+                <span className={`text-white font-black font-mono pointer-events-none ${compact ? 'text-[9px]' : 'text-sm'}`}>{player.number}</span>
               )}
-              {player.photo_url && (
+              {player.photo_url && !compact && (
                 <span className="absolute -bottom-1 -right-1 bg-brand-red-600 text-white font-mono text-[9px] font-black w-4 h-4 rounded-full border border-emerald-950 flex items-center justify-center">
                   {player.number}
                 </span>
               )}
             </div>
-            {player.name && (
+            {player.name && !compact && (
               <span className="mt-1 bg-brand-black/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow border border-brand-black-border max-w-[85px] truncate text-center leading-none">
                 {player.name}
               </span>
