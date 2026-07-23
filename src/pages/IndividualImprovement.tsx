@@ -80,6 +80,20 @@ export const IndividualImprovement: React.FC = () => {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [staffTab, setStaffTab] = useState<'players' | 'stats'>('players');
 
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
+  const filteredPlayers = players.filter(p => (p.team_category || 'Primer Equipo') === filterTeam);
+  const filteredAnalyses = analyses.filter(a => {
+    const p = players.find(player => player.id === a.player_id);
+    return p && (p.team_category || 'Primer Equipo') === filterTeam;
+  });
+
   // Carga inicial
   useEffect(() => {
     (async () => {
@@ -170,6 +184,24 @@ export const IndividualImprovement: React.FC = () => {
         {user?.id && <NotificationBell userId={user.id} onOpenAnalysis={openAnalysis} />}
       </div>
 
+      {/* Pestañas de Equipo (solo para staff) */}
+      {isStaff && (user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-6 mt-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
       {view === 'list' && isStaff && (
         <div>
           <div className="flex gap-1 mb-5 p-1 bg-brand-black-card border border-brand-black-border rounded-lg w-fit">
@@ -186,14 +218,14 @@ export const IndividualImprovement: React.FC = () => {
 
           {staffTab === 'players' ? (
             <CoachPanel
-              players={players}
-              analyses={analyses}
+              players={filteredPlayers}
+              analyses={filteredAnalyses}
               onOpenPlayer={openPlayer}
               onOpenAnalysis={(id) => openAnalysis(id, 'list')}
               currentUserId={user?.id || ''}
             />
           ) : (
-            <CoachStats players={players} analyses={analyses} />
+            <CoachStats players={filteredPlayers} analyses={filteredAnalyses} />
           )}
         </div>
       )}

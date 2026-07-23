@@ -195,9 +195,9 @@ export const OpponentAnalysisMural: React.FC = () => {
 
   const startEditingGeneral = () => {
     setEditData(analysis);
-    setStrengthsText((analysis.strengths || []).join(', '));
-    setWeaknessesText((analysis.weaknesses || []).join(', '));
-    setKeyPlayersText((analysis.key_players || []).join(', '));
+    setStrengthsText((analysis.strengths || []).join('\n'));
+    setWeaknessesText((analysis.weaknesses || []).join('\n'));
+    setKeyPlayersText((analysis.key_players || []).join('\n'));
     setEditingGeneral(true);
   };
 
@@ -207,9 +207,9 @@ export const OpponentAnalysisMural: React.FC = () => {
         general_board: editData.general_board,
         tactical_system: editData.tactical_system,
         observations: editData.observations,
-        strengths: strengthsText.split(',').map(s => s.trim()).filter(Boolean),
-        weaknesses: weaknessesText.split(',').map(s => s.trim()).filter(Boolean),
-        key_players: keyPlayersText.split(',').map(s => s.trim()).filter(Boolean),
+        strengths: strengthsText.includes('\n') ? strengthsText.split('\n').map(s => s.replace(/^[•\-\d.\s]+/, '').trim()).filter(Boolean) : strengthsText.split(',').map(s => s.trim()).filter(Boolean),
+        weaknesses: weaknessesText.includes('\n') ? weaknessesText.split('\n').map(s => s.replace(/^[•\-\d.\s]+/, '').trim()).filter(Boolean) : weaknessesText.split(',').map(s => s.trim()).filter(Boolean),
+        key_players: keyPlayersText.includes('\n') ? keyPlayersText.split('\n').map(s => s.replace(/^[•\-\d.\s]+/, '').trim()).filter(Boolean) : keyPlayersText.split(',').map(s => s.trim()).filter(Boolean),
       },
       {
         onSuccess: () => {
@@ -315,17 +315,13 @@ export const OpponentAnalysisMural: React.FC = () => {
                       <label className="form-label flex items-center gap-2"><TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistema Táctico</label>
                       <input type="text" className="form-input" value={editData.tactical_system || ''} onChange={e => setEditData({ ...editData, tactical_system: e.target.value })} />
                     </div>
-                    <div>
-                      <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas (comas)</label>
-                      <input type="text" className="form-input" value={strengthsText} onChange={e => setStrengthsText(e.target.value)} />
+                    <div className="flex-1 flex flex-col">
+                      <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas (Una por línea)</label>
+                      <textarea className="form-input flex-1 min-h-[120px] resize-none" value={strengthsText} onChange={e => setStrengthsText(e.target.value)} />
                     </div>
-                    <div>
-                      <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades (comas)</label>
-                      <input type="text" className="form-input" value={weaknessesText} onChange={e => setWeaknessesText(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="form-label flex items-center gap-2"><Award className="w-4 h-4 text-emerald-500" /> Jugadores Clave (comas)</label>
-                      <input type="text" className="form-input" value={keyPlayersText} onChange={e => setKeyPlayersText(e.target.value)} />
+                    <div className="flex-1 flex flex-col">
+                      <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades (Una por línea)</label>
+                      <textarea className="form-input flex-1 min-h-[120px] resize-none" value={weaknessesText} onChange={e => setWeaknessesText(e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -380,30 +376,23 @@ export const OpponentAnalysisMural: React.FC = () => {
                   <FormationPitch value={formation} onChange={handleFormationChange} readOnly={!canEdit} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
                 </div>
                 <div className="lg:col-span-1 flex flex-col gap-6">
-                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas</h4>
+                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex-1 min-h-[120px] overflow-y-auto no-scrollbar flex flex-col">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3 shrink-0"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas</h4>
                     <div className="flex flex-wrap gap-2">
                       {analysis.strengths.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguna</span> : analysis.strengths.map((s, i) => (
                         <span key={i} className="text-[11px] bg-red-950/20 text-brand-red-500 border border-brand-red-600/20 px-2.5 py-1 rounded-md font-medium">{s}</span>
                       ))}
                     </div>
                   </div>
-                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades</h4>
+                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex-1 min-h-[120px] overflow-y-auto no-scrollbar flex flex-col">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3 shrink-0"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades</h4>
                     <div className="flex flex-wrap gap-2">
                       {analysis.weaknesses.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguna</span> : analysis.weaknesses.map((s, i) => (
                         <span key={i} className="text-[11px] bg-amber-950/20 text-amber-500 border border-amber-500/20 px-2.5 py-1 rounded-md font-medium">{s}</span>
                       ))}
                     </div>
                   </div>
-                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3"><Award className="w-4 h-4 text-emerald-500" /> Jugadores Clave</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.key_players.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguno</span> : analysis.key_players.map((s, i) => (
-                        <span key={i} className="text-[11px] bg-emerald-950/20 text-emerald-500 border border-emerald-500/20 px-2.5 py-1 rounded-md font-medium">{s}</span>
-                      ))}
-                    </div>
-                  </div>
+
                   {analysis.observations && (
                     <div className="bg-brand-black border border-brand-black-border rounded-xl p-5">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3"><FileText className="w-4 h-4 text-brand-gray-light" /> Observaciones</h4>

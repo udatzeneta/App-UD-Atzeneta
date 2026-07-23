@@ -61,10 +61,12 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [showCategoryPrompt, setShowCategoryPrompt] = useState(false);
   const [tempCategory, setTempCategory] = useState<ClipCategory | undefined>(clip.category);
+  const [tempTitle, setTempTitle] = useState<string>(clip.title === 'Nuevo Clip' || !clip.title ? '' : clip.title);
 
   const playerRef = useRef<any>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState>(null);
   const tlDragRef = useRef<null | 'scrub' | 'start' | 'end' | 'move'>(null);
   const tlGrabRef = useRef(0); // offset (en seg) entre el puntero y el inicio del corte al arrastrarlo
@@ -72,7 +74,6 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   const [pauseDuration, setPauseDuration] = useState<number>(clip.pauseDuration ?? 3);
   const [hasAutoPaused, setHasAutoPaused] = useState(false);
   const autoPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isSeekingRef = useRef(false);
 
   const frozen = !playing; // mientras no reproducimos, mostramos el frame congelado + anotaciones
 
@@ -88,14 +89,20 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
     return () => ro.disconnect();
   }, []);
 
+  // Mantener el clip centrado en la línea de tiempo al hacer zoom
+  useEffect(() => {
+    if (!scrollContainerRef.current || !duration) return;
+    const container = scrollContainerRef.current;
+    const clipCenter = (start + end) / 2;
+    const pct = clipCenter / duration;
+    container.scrollLeft = (pct * container.scrollWidth) - (container.clientWidth / 2);
+  }, [timelineZoom, start, end, duration]);
+
+
   // Congelar en el segundo elegido cuando estamos parados.
   const seekToFreeze = () => {
     if (playerRef.current) {
-      if (typeof playerRef.current.seekTo === 'function') {
-        try { playerRef.current.seekTo(freezeTime, 'seconds'); } catch { /* noop */ }
-      } else {
-        try { playerRef.current.currentTime = freezeTime; } catch { /* noop */ }
-      }
+      try { playerRef.current.currentTime = freezeTime; } catch { /* noop */ }
     }
   };
   useEffect(() => {
@@ -279,7 +286,7 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   }, [selectedId, readOnly, drawingLineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = () => {
-    if (!tempCategory?.phase) {
+    if (!tempCategory?.phase || !tempTitle.trim()) {
       setShowCategoryPrompt(true);
       return;
     }
@@ -287,25 +294,19 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   };
 
   const commitSave = (cat?: ClipCategory) => {
-    onSave({ ...clip, start: Math.round(start), end: Math.round(end), freezeTime, pauseDuration, annotations, category: cat });
+    onSave({ ...clip, title: tempTitle.trim() || 'Sin título', start: Math.round(start), end: Math.round(end), freezeTime, pauseDuration, annotations, category: cat });
     onClose();
   };
 
   // Mueve el vídeo a un segundo concreto (scrub). Si estamos congelados, ese
   // pasa a ser el fotograma sobre el que se anota.
   const seekTo = (t: number, freeze = frozen) => {
-    const clamped = Math.max(0, Math.min(t, duration));
-    if (freeze) setFreezeTime(clamped);
-    else setCurrentTime(clamped);
+    const clamped = Math.max(0, duration ? Math.min(t, duration) : t);
+    setCurrentTime(clamped);
     if (playerRef.current) {
-      isSeekingRef.current = true;
-      if (typeof playerRef.current.seekTo === 'function') {
-        try { playerRef.current.seekTo(clamped, 'seconds'); } catch { /* noop */ }
-      } else {
-        try { playerRef.current.currentTime = clamped; } catch { /* noop */ }
-      }
-      setTimeout(() => { isSeekingRef.current = false; }, 500);
+      try { playerRef.current.currentTime = clamped; } catch { /* noop */ }
     }
+    if (freeze) setFreezeTime(clamped);
     if (t < freezeTime) {
       setHasAutoPaused(false);
     }
@@ -313,7 +314,6 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
       clearTimeout(autoPauseTimerRef.current);
       autoPauseTimerRef.current = null;
     }
-    setTimeout(() => { isSeekingRef.current = false; }, 500);
   };
 
   // ----- Timeline (barra de tiempo) -----
@@ -421,41 +421,37 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                 return (
                   <Player
                     ref={playerRef}
-                url={videoUrl}
+                src={videoUrl}
                 width="100%"
                 height="100%"
                 controls={false}
                 playing={playing}
-                onReady={() => {
-                  const d = playerRef.current?.duration || (playerRef.current?.getDuration ? playerRef.current.getDuration() : 0);
-                  if (d > 0) setDuration(d);
+                onReady={() => { 
                   if (frozen) seekToFreeze(); 
+                  const d = playerRef.current?.duration || playerRef.current?.getDuration?.();
+                  if (d && d > 0) setDuration(d);
                 }}
-                progressInterval={100}
-                onProgress={({ playedSeconds }: { playedSeconds: number }) => {
-                  if (isSeekingRef.current) return;
-                  
-                  const t = playedSeconds;
+                onDurationChange={(e: any) => {
+                  const d = e.currentTarget.duration;
+                  if (d && !isNaN(d)) setDuration(d);
+                }}
+                onTimeUpdate={(e: any) => {
+                  const t = e.currentTarget.currentTime;
                   setCurrentTime(t);
                   
-                  // 1. Limpiar auto-pausa si retrocedemos
-                  if (t < freezeTime) {
-                    setHasAutoPaused(false);
-                  }
-
-                  // 2. Loop/Boundaries en reproducción
+                  // 1. Loop/Boundaries en reproducción
                   if (!frozen) {
                     if (t >= end) {
                       seekTo(start, false);
                       return;
                     }
-                    if (t < start - 0.5) {
+                    if (t < start) {
                       seekTo(start, false);
                       return;
                     }
 
                     // 2. Auto-pausa en anotaciones
-                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime) {
+                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.3) {
                       setPlaying(false); // esto hará frozen=true y mostrará el dibujo
                       setHasAutoPaused(true);
                       seekToFreeze(); // asegura que clavemos el tiempo exacto
@@ -514,7 +510,7 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
 
             {/* Línea de tiempo */}
             <div className="mt-3">
-              <div className="overflow-x-auto no-scrollbar border border-brand-black-border rounded-lg bg-black">
+              <div ref={scrollContainerRef} className="overflow-x-auto no-scrollbar border border-brand-black-border rounded-lg bg-black">
                 <div style={{ width: `${timelineZoom * 100}%`, minWidth: '100%' }}>
                   <div
                     ref={timelineRef}
@@ -580,26 +576,30 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                       </div>
                     )}
 
-                    {/* Marca del fotograma congelado / con dibujos */}
-                    <div
-                      className={`absolute top-0 bottom-0 w-px pointer-events-none z-20 ${annotations.length > 0 ? 'bg-yellow-400' : 'bg-white/70'}`}
-                      style={{ left: `${(freezeTime / duration) * 100}%` }}
-                    >
-                      <div className={`absolute -top-1 -left-1 w-2 h-2 rounded-full ${annotations.length > 0 ? 'bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)]' : 'bg-white'}`} title={annotations.length > 0 ? "Fotograma con dibujos" : "Fotograma congelado"} />
-                    </div>
+                    {/* Marca de dibujos (sólo si hay dibujos) */}
+                    {annotations.length > 0 && (
+                      <div
+                        className="absolute top-0 bottom-0 w-px pointer-events-none z-20 bg-yellow-400"
+                        style={{ left: `${(freezeTime / duration) * 100}%` }}
+                      >
+                        <div className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.6)]" title="Fotograma con dibujos" />
+                      </div>
+                    )}
 
-                    {/* Cabezal de reproducción */}
+                    {/* Cabezal de reproducción (palo blanco) */}
                     <div
-                      className="absolute top-0 bottom-0 w-0.5 bg-brand-red-500 pointer-events-none z-30"
+                      className="absolute top-0 bottom-0 w-px bg-white pointer-events-none z-30"
                       style={{ left: `${((frozen ? freezeTime : currentTime) / duration) * 100}%` }}
-                    />
+                    >
+                      <div className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-white shadow-[0_0_4px_black]" title="Cabezal de reproducción" />
+                    </div>
                   </>
                 )}
                   </div>
                 </div>
               </div>
               {duration > 0 && (
-                <div className="flex justify-between mt-1 text-[10px] text-brand-gray-dark font-mono">
+                <div className="flex justify-between mt-1 text-[10px] text-brand-gray-light font-medium font-mono">
                   <span>{fmt(frozen ? freezeTime : currentTime)}</span>
                   <span>Corte: {fmt(start)} – {fmt(end)} ({fmt(Math.max(0, end - start))})</span>
                   <span>{fmt(duration)}</span>
@@ -765,16 +765,38 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
       {showCategoryPrompt && (
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-6 w-full max-w-sm flex flex-col gap-4 animate-fade-in shadow-premium">
-            <h3 className="text-lg font-bold text-white uppercase tracking-wider">Catalogar el Corte</h3>
-            <p className="text-sm text-brand-gray-light leading-relaxed">Por favor, asigna una sección a este corte antes de guardarlo para que quede correctamente organizado.</p>
-            <div className="bg-black border border-brand-black-border p-4 rounded-xl">
-              <ClipCategorySelector value={tempCategory} onChange={setTempCategory} />
+            <h3 className="text-lg font-bold text-white uppercase tracking-wider">Guardar Corte</h3>
+            <p className="text-sm text-brand-gray-light leading-relaxed">Asigna un título y una sección a este corte antes de guardarlo.</p>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-brand-gray-muted uppercase tracking-wider mb-1">Título del Corte</label>
+                <input
+                  type="text"
+                  value={tempTitle}
+                  onChange={(e) => setTempTitle(e.target.value)}
+                  placeholder="Ej: Robo y contraataque"
+                  className="w-full bg-black border border-brand-black-border text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-brand-red-600 transition-colors"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-brand-gray-muted uppercase tracking-wider mb-1">Catalogación</label>
+                <div className="bg-black border border-brand-black-border p-3 rounded-lg">
+                  <ClipCategorySelector value={tempCategory} onChange={setTempCategory} />
+                </div>
+              </div>
             </div>
+
             <div className="flex justify-end gap-3 mt-2">
-              <button onClick={() => commitSave(clip.category)} className="text-brand-gray-muted hover:text-white text-xs px-2 py-2 transition-colors">
-                Guardar sin catalogar
+              <button onClick={onClose} className="text-brand-gray-muted hover:text-white text-xs px-2 py-2 transition-colors">
+                Cancelar
               </button>
-              <button onClick={() => { if (tempCategory?.phase) commitSave(tempCategory); }} className="btn-primary py-2 px-6 text-sm flex items-center gap-2" disabled={!tempCategory?.phase}>
+              <button 
+                onClick={() => commitSave(tempCategory)} 
+                className="btn-primary py-2 px-6 text-sm flex items-center gap-2" 
+                disabled={!tempCategory?.phase || !tempTitle.trim()}
+              >
                 <Check className="w-4 h-4" /> Guardar
               </button>
             </div>

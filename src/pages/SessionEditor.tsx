@@ -12,11 +12,22 @@ import { TaskBoardEditor } from '../components/TaskBoardEditor';
 import { TeamsBoardEditor } from '../components/TeamsBoardEditor';
 import { SessionPrintView } from '../components/SessionPrintView';
 import { useParams, useNavigate } from 'react-router-dom';
+import { usePermissions } from '../hooks/usePermissions';
 
 export const SessionEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { user } = usePermissions();
+  
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [selectedTrainingId, setSelectedTrainingId] = useState<string>('');
   
@@ -68,6 +79,19 @@ export const SessionEditor: React.FC = () => {
     }
   }, [selectedTrainingId]);
 
+  useEffect(() => {
+    const filteredTrainings = trainings.filter(t => (t.team_category || 'Primer Equipo') === filterTeam);
+    if (filteredTrainings.length > 0) {
+      if (!selectedTrainingId || !filteredTrainings.find(t => t.id === selectedTrainingId)) {
+        const sorted = [...filteredTrainings].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const future = sorted.find(t => new Date(t.date) >= new Date());
+        setSelectedTrainingId(future ? future.id : sorted[sorted.length - 1].id);
+      }
+    } else {
+      setSelectedTrainingId('');
+    }
+  }, [trainings, filterTeam]);
+
   const loadInitialData = async () => {
     try {
       setLoading(true);
@@ -79,12 +103,6 @@ export const SessionEditor: React.FC = () => {
       setTrainings(trainingsData);
       setLibraryTasks(tasksData);
       setPlayers(playersData);
-      
-      if (trainingsData.length > 0) {
-        const sorted = [...trainingsData].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        const future = sorted.find(t => new Date(t.date) >= new Date());
-        setSelectedTrainingId(future ? future.id : sorted[sorted.length - 1].id);
-      }
     } catch (error) {
       console.error("Error loading SessionEditor data:", error);
       showToast('error', 'Error', 'Error cargando datos del editor.');
@@ -275,13 +293,14 @@ export const SessionEditor: React.FC = () => {
   const selectedTraining = trainings.find(t => t.id === selectedTrainingId);
   const filteredLibraryTasks = libraryTasks.filter(t => t.title.toLowerCase().includes(librarySearch.toLowerCase()) || t.category.toLowerCase().includes(librarySearch.toLowerCase()));
 
-  const sortedTrainingsChronologically = [...trainings].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const filteredTrainings = trainings.filter(t => (t.team_category || 'Primer Equipo') === filterTeam);
+  const sortedTrainingsChronologically = [...filteredTrainings].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const getTrainingNumber = (id: string) => {
     const index = sortedTrainingsChronologically.findIndex(t => t.id === id);
     return index !== -1 ? index + 1 : 0;
   };
   
-  const sortedTrainings = [...trainings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sortedTrainings = [...filteredTrainings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const getCategoryColor = (category: string) => {
     switch(category?.toLowerCase()) {
@@ -296,6 +315,24 @@ export const SessionEditor: React.FC = () => {
   return (
     <>
     <div className="space-y-6 print:hidden">
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>

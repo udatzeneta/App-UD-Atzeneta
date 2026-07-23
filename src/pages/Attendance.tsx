@@ -67,6 +67,13 @@ export const Attendance: React.FC = () => {
   const canExport = hasPermission('attendance', 'exportar');
 
   // ── Estado ─────────────────────────────────────────────────────────────────
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+  useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
   const [activeTab,          setActiveTab]          = useState<ActiveTab>('matrix');
   const [selectedMonth,      setSelectedMonth]      = useState(new Date().getMonth() + 1);
   const [selectedYear,       setSelectedYear]       = useState(new Date().getFullYear());
@@ -100,9 +107,11 @@ export const Attendance: React.FC = () => {
   // ── Datos derivados ────────────────────────────────────────────────────────
   const visiblePlayers: Player[] = isPlayerRole && user
     ? players.filter((p: Player) => p.profile_id === user.id || p.id === user.id)
-    : players;
+    : players.filter((p: Player) => (p.team_category || 'Primer Equipo') === filterTeam);
 
-  const monthlyTrainings = trainings
+  const filteredTrainings = trainings.filter((t: any) => (t.team_category || 'Primer Equipo') === filterTeam);
+
+  const monthlyTrainings = filteredTrainings
     .filter((t: any) => {
       const d = new Date(t.date);
       return d.getFullYear() === selectedYear && d.getMonth() + 1 === selectedMonth;
@@ -110,14 +119,19 @@ export const Attendance: React.FC = () => {
     .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   const completedTrainings    = monthlyTrainings.filter((t: any) => attendanceData.some((a: any) => a.training_id === t.id));
-  const allCompletedTrainings = trainings.filter((t: any) => allAttendanceData.some((a: any) => a.training_id === t.id));
-  const allTrainingsSorted    = [...trainings].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const allCompletedTrainings = filteredTrainings.filter((t: any) => allAttendanceData.some((a: any) => a.training_id === t.id));
+  const allTrainingsSorted    = [...filteredTrainings].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // ── Effects ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (visiblePlayers.length > 0 && !selectedPlayerId)
-      setSelectedPlayerId(visiblePlayers[0].id);
-  }, [players]);
+    if (visiblePlayers.length > 0) {
+      if (!selectedPlayerId || !visiblePlayers.find(p => p.id === selectedPlayerId)) {
+        setSelectedPlayerId(visiblePlayers[0].id);
+      }
+    } else {
+      setSelectedPlayerId('');
+    }
+  }, [players, filterTeam]);
 
   useEffect(() => {
     setSelectedTrainingId(monthlyTrainings.length > 0 ? monthlyTrainings[0].id : '');
@@ -344,6 +358,23 @@ export const Attendance: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
 
       {/* ══════ CABECERA ═════════════════════════════════════════════════════ */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

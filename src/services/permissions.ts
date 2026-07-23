@@ -141,6 +141,9 @@ export const permissionsService = {
     // Administrador (role_id === 1) tiene bypass de seguridad y acceso completo a todo siempre
     if (profile.role_id === 1) return true;
 
+    // Directivo (role_id === 4) tiene acceso completo a todo excepto ajustes
+    if (profile.role_id === 4 && page !== 'settings') return true;
+
     // Buscar el id del permiso
     const perm = allPermissions.find(p => p.page === page && p.action === action);
     if (!perm) return false;

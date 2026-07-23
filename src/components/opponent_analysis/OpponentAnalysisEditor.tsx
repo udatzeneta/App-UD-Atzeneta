@@ -48,8 +48,8 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
         setIsManualOpponent(true);
       }
       setTacticalSystem(initialData.tactical_system || '');
-      setStrengthsText((initialData.strengths || []).join(', '));
-      setWeaknessesText((initialData.weaknesses || []).join(', '));
+      setStrengthsText((initialData.strengths || []).join('\n'));
+      setWeaknessesText((initialData.weaknesses || []).join('\n'));
       setKeyPlayersText((initialData.key_players || []).join(', '));
       setObservations(initialData.observations || '');
       setGeneralBoard(initialData.general_board || '');
@@ -63,6 +63,9 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
   }, [initialData, ffcvTeams, scoutingTeams]);
 
   const parseTags = (text: string) => {
+    if (text.includes('\n')) {
+      return text.split('\n').map(x => x.replace(/^[•\-\d.\s]+/, '').trim()).filter(x => x.length > 0);
+    }
     return text.split(',').map(x => x.trim()).filter(x => x.length > 0);
   };
 
@@ -238,35 +241,22 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
             </div>
 
             <div>
-              <label className="form-label">Fortalezas del Rival (Separadas por comas)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Presión alta, Transiciones rápidas, Balón parado"
+              <label className="form-label">Fortalezas del Rival (Una por línea)</label>
+              <textarea
+                className="form-input min-h-[100px] resize-y"
+                placeholder="Presión alta&#10;Transiciones rápidas&#10;Balón parado"
                 value={strengthsText}
                 onChange={(e) => setStrengthsText(e.target.value)}
               />
             </div>
 
             <div>
-              <label className="form-label">Puntos Débiles / Falencias (Separados por comas)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Espacio a la espalda de laterales, Lentitud de centrales"
+              <label className="form-label">Puntos Débiles / Falencias (Uno por línea)</label>
+              <textarea
+                className="form-input min-h-[100px] resize-y"
+                placeholder="Espacio a la espalda de laterales&#10;Lentitud de centrales"
                 value={weaknessesText}
                 onChange={(e) => setWeaknessesText(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="form-label">Jugadores Destacados (Separados por comas)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Javi Llor (Nº 10), David Torres (Nº 9)"
-                value={keyPlayersText}
-                onChange={(e) => setKeyPlayersText(e.target.value)}
               />
             </div>
 

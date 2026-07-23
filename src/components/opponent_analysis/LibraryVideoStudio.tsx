@@ -22,9 +22,10 @@ interface Props {
 // Estudio a pantalla completa: reproduce un vídeo de la videoteca, permite
 // crear/editar clips, catalogarlos y anotarlos (telestración).
 export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, readOnly = false }) => {
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<HTMLVideoElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
+  const [draftClip, setDraftClip] = useState<OpponentVideoClip | null>(null);
   const [isFastClipping, setIsFastClipping] = useState(false);
 
   // Overlay state
@@ -50,18 +51,27 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
 
   const setClips = (clips: OpponentVideoClip[]) => onChange({ ...video, clips });
 
-  const addClip = () => {
-    const t = Math.floor(playerRef.current?.currentTime || 0);
+  const addClip = async () => {
+    const player = playerRef.current;
+    let t = 0;
+    if (player) {
+      if (typeof player.getCurrentTime === 'function') {
+        t = await player.getCurrentTime();
+      } else {
+        t = player.currentTime || 0;
+      }
+    }
+    t = Math.floor(t);
+
     const newClip: OpponentVideoClip = {
       id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      title: 'Nuevo Clip',
+      title: '',
       start: t,
       end: t + 10,
       freezeTime: t,
       annotations: [],
     };
-    setClips([...video.clips, newClip]);
-    setEditingClipId(newClip.id);
+    setDraftClip(newClip);
   };
 
   const handleFastAddClip = (clipData: Partial<OpponentVideoClip>) => {
@@ -84,28 +94,24 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
     setClips(video.clips.filter(c => c.id !== clipId));
   };
 
-  const saveClip = (updated: OpponentVideoClip) => {
-    setClips(video.clips.map(c => (c.id === updated.id ? updated : c)));
+  const handleSaveClip = (clip: OpponentVideoClip) => {
+    if (draftClip) {
+      setClips([...video.clips, clip]);
+      setDraftClip(null);
+    } else {
+      setClips(video.clips.map(c => (c.id === clip.id ? clip : c)));
+      setEditingClipId(null);
+    }
   };
 
   const captureTime = (clipId: string, field: 'start' | 'end') => {
-    const player = playerRef.current;
-    if (!player) return;
-    const time = typeof player.getCurrentTime === 'function' 
-      ? player.getCurrentTime() 
-      : (player.currentTime || 0);
-    updateClip(clipId, { [field]: Math.floor(time) });
+    updateClip(clipId, { [field]: Math.floor(playerRef.current?.currentTime || 0) });
   };
 
   const playClip = (clip: OpponentVideoClip) => {
-    const player = playerRef.current;
-    if (player) {
-      if (typeof player.seekTo === 'function') {
-        player.seekTo(clip.start, 'seconds');
-      } else {
-        try { player.currentTime = clip.start; } catch { /* noop */ }
-      }
-      setPlaying(true);
+    if (playerRef.current) {
+      playerRef.current.currentTime = clip.start;
+      playerRef.current.play?.();
     }
   };
 
@@ -135,20 +141,17 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
           <div ref={wrapperRef} className="w-full aspect-video bg-black rounded-xl overflow-hidden border border-brand-black-border shadow-2xl relative">
             {video.clippable ? (
               <>
-                {(() => {
-                  const Player: any = ReactPlayer;
-                  return (
-                    <Player 
-                      ref={playerRef} 
-                      url={validUrl} 
-                      width="100%" 
-                      height="100%" 
-                      controls 
+                <ReactPlayer 
+                  ref={playerRef as any} 
+                  src={validUrl} 
+                  width="100%" 
+                  height="100%" 
+                  controls 
                   playing={playing}
                   onPlay={() => setPlaying(true)}
                   onPause={() => setPlaying(false)}
-                  onProgress={(state: any) => {
-                    const t = state.playedSeconds;
+                  onTimeUpdate={(e: any) => {
+                    const t = e.currentTarget.currentTime;
                     // Auto-pause logic
                     const clipToPause = video.clips.find(c => {
                       const ft = c.freezeTime ?? c.start;
@@ -160,12 +163,7 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                       hasAutoPausedRef.current.add(clipToPause.id);
                       setPlaying(false);
                       if (playerRef.current) {
-                        const target = clipToPause.freezeTime ?? clipToPause.start;
-                        if (typeof playerRef.current.seekTo === 'function') {
-                          playerRef.current.seekTo(target, 'seconds');
-                        } else {
-                          try { playerRef.current.currentTime = target; } catch { /* noop */ }
-                        }
+                        try { playerRef.current.currentTime = clipToPause.freezeTime ?? clipToPause.start; } catch { /* noop */ }
                       }
                       setActiveOverlayClip(clipToPause);
 
@@ -186,8 +184,6 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                     }
                   }}
                 />
-                  );
-                })()}
                 {activeOverlayClip && (
                   <ClipAnnotationRenderer
                     annotations={activeOverlayClip.annotations || []}
@@ -355,14 +351,14 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
       </div>
 
       {/* Editor de anotaciones */}
-      {editingClip && (
+      {(draftClip || editingClip) && (
         <ClipAnnotationEditor
           videoUrl={validUrl}
-          clip={editingClip}
+          clip={(draftClip || editingClip)!}
           allClips={video.clips}
           readOnly={readOnly}
-          onSave={saveClip}
-          onClose={() => setEditingClipId(null)}
+          onSave={handleSaveClip}
+          onClose={() => { setEditingClipId(null); setDraftClip(null); }}
         />
       )}
 

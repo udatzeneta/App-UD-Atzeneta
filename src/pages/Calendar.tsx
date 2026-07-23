@@ -50,7 +50,7 @@ interface CalendarEvent {
 
 export const Calendar: React.FC = () => {
   const queryClient = useQueryClient();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, user } = usePermissions();
   const { showToast } = useToast();
 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -73,16 +73,27 @@ export const Calendar: React.FC = () => {
   const canCreateTraining = hasPermission('trainings', 'crear');
   const canCreateMatch = hasPermission('matches', 'crear');
 
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
   // Queries
-  const { data: trainings = [] } = useQuery({
+  const { data: rawTrainings = [] } = useQuery({
     queryKey: ['trainings'],
     queryFn: () => dataService.getTrainings()
   });
 
-  const { data: matches = [] } = useQuery({
+  const { data: rawMatches = [] } = useQuery({
     queryKey: ['matches'],
     queryFn: () => dataService.getMatches()
   });
+
+  const trainings = React.useMemo(() => filterTeam === 'Todos' ? rawTrainings : rawTrainings.filter(t => (t.team_category || 'Primer Equipo') === filterTeam), [rawTrainings, filterTeam]);
+  const matches = React.useMemo(() => filterTeam === 'Todos' ? rawMatches : rawMatches.filter(m => (m.team_category || 'Primer Equipo') === filterTeam), [rawMatches, filterTeam]);
 
   const { data: dbTeams = [] } = useQuery<Team[]>({
     queryKey: ['teams'],
@@ -111,10 +122,12 @@ export const Calendar: React.FC = () => {
     return '/club-logo.png';
   };
 
-  const { data: socialEvents = [] } = useQuery({
+  const { data: rawSocialEvents = [] } = useQuery({
     queryKey: ['socialEvents'],
     queryFn: () => dataService.getSocialEvents()
   });
+
+  const socialEvents = React.useMemo(() => filterTeam === 'Todos' ? rawSocialEvents : rawSocialEvents.filter(e => (e.team_category || 'Primer Equipo') === filterTeam), [rawSocialEvents, filterTeam]);
 
   // Mutaciones
   const createTrainingMutation = useMutation({
@@ -590,7 +603,31 @@ export const Calendar: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Cabecera de Página */}
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || user?.role_id === 2) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Todos' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Todos')}
+          >
+            Todos
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
+      {/* Header with Title and View Toggles */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-brand-gray-light">Calendario Deportivo</h2>

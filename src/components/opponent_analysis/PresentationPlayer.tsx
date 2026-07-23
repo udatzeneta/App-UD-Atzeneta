@@ -13,6 +13,8 @@ import {
 import { FormationPitch } from './FormationPitch';
 import { TaskBoardEditor } from '../TaskBoardEditor';
 import { ClipAnnotationRenderer } from './ClipAnnotationRenderer';
+import { YouTubePlayer } from './YouTubePlayer';
+import { detectVideoProvider } from '../../utils/opponentVideo';
 import { getValidUrl, formatTime } from '../../utils/opponentVideo';
 import { dataService } from '../../services/data';
 
@@ -80,7 +82,7 @@ const ClipSlide: React.FC<{
 
   // Interceptar teclas de control
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = async (e: KeyboardEvent) => {
       const player = playerRef.current;
       if (!player) return;
 
@@ -92,9 +94,10 @@ const ClipSlide: React.FC<{
         }
       };
 
-      const getCurrentTime = (): number => {
+      const getCurrentTime = async (): Promise<number> => {
         if (typeof player.getCurrentTime === 'function') {
-          return player.getCurrentTime() || start;
+          const val = player.getCurrentTime();
+          return (val instanceof Promise ? await val : val) || start;
         }
         return player.currentTime || start;
       };
@@ -115,7 +118,7 @@ const ClipSlide: React.FC<{
         e.stopPropagation();
         e.preventDefault();
         reachedEndRef.current = false;
-        const current = getCurrentTime();
+        const current = await getCurrentTime();
         const newTime = Math.max(start, current - 5);
         seekTo(newTime);
         setCurrentTime(newTime);
@@ -126,7 +129,7 @@ const ClipSlide: React.FC<{
         }
         e.stopPropagation();
         e.preventDefault();
-        const current = getCurrentTime();
+        const current = await getCurrentTime();
         let newTime = current + 5;
         
         if (newTime >= end) {
@@ -157,7 +160,8 @@ const ClipSlide: React.FC<{
         style={{ aspectRatio: '16/9', maxHeight: '100%', maxWidth: '100%' }}
       >
         {(() => {
-          const Player: any = ReactPlayer;
+          const provider = detectVideoProvider(validUrl).provider;
+          const Player: any = provider === 'youtube' ? YouTubePlayer : ReactPlayer;
           return (
             <Player
               ref={playerRef}
@@ -459,8 +463,7 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
         return (
           <div className="flex flex-col items-center gap-4 h-full w-full py-2">
             {s.title && <h2 className="text-xl sm:text-3xl font-black text-white uppercase tracking-wide shrink-0">{s.title}</h2>}
-            
-            <div className="flex-1 min-h-0 w-full max-w-[1600px] flex flex-col lg:flex-row gap-4 sm:gap-6">
+            <div className="flex-1 min-h-0 w-full flex flex-col lg:flex-row gap-4 sm:gap-6">
               {/* Board Area */}
               <div className="flex-1 flex flex-col min-h-0 bg-black border border-brand-black-border rounded-2xl overflow-hidden shadow-2xl">
                 <TaskBoardEditor value={s.board || ''} onChange={() => {}} readOnly hideToolbar rotateFullField={true} />
@@ -504,7 +507,7 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
         const { summaryData } = s;
         if (!summaryData) return null;
         return (
-          <div className="flex flex-col h-full w-full max-w-[1400px] gap-4 py-2">
+          <div className="flex flex-col h-full w-full gap-4 py-2">
             {s.title && <h2 className="text-xl sm:text-3xl font-black text-brand-red-500 uppercase tracking-wide shrink-0 text-center">{s.title}</h2>}
             <div className="flex-1 min-h-0 w-full flex flex-col lg:flex-row gap-6">
               {/* Columna Izquierda: Sistema Principal */}

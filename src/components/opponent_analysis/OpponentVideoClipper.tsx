@@ -261,19 +261,14 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
 
           {/* Reproductor Integrado */}
           <div className="w-full aspect-video bg-black rounded-lg overflow-hidden border border-brand-black-border relative">
-            {(() => {
-              const Player: any = ReactPlayer;
-              return (
-                <Player
-                  ref={playerRef}
-                  url={getValidUrl(activeVideo.url)}
-                  width="100%"
-                  height="100%"
-                  controls={true}
-                  playing={false}
-                />
-              );
-            })()}
+            <ReactPlayer
+              ref={playerRef}
+              src={getValidUrl(activeVideo.url)}
+              width="100%"
+              height="100%"
+              controls={true}
+              playing={false}
+            />
           </div>
 
           {/* Gestor de Clips */}

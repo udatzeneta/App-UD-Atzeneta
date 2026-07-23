@@ -17,13 +17,21 @@ import { OpponentAnalysisEditor } from '../components/opponent_analysis/Opponent
 export const OpponentAnalysisPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, user } = usePermissions();
   const { showToast } = useToast();
 
   const canCreate = hasPermission('opponent_analysis', 'crear');
   const canEdit = hasPermission('opponent_analysis', 'editar');
   const canDelete = hasPermission('opponent_analysis', 'eliminar');
   const canExport = hasPermission('opponent_analysis', 'exportar');
+
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
 
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -115,7 +123,8 @@ export const OpponentAnalysisPage: React.FC = () => {
 
     const finalPayload = {
       ...payload,
-      opponent: finalOpponent
+      opponent: finalOpponent,
+      team_category: filterTeam
     };
 
     if (editingAnalysis) {
@@ -131,20 +140,20 @@ export const OpponentAnalysisPage: React.FC = () => {
     }
   };
 
-  const filteredList = analysisList.filter(oa => 
-    oa.opponent.toLowerCase().includes(search.toLowerCase()) ||
-    oa.tactical_system.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredList = analysisList.filter(oa => {
+    if ((oa.team_category || 'Primer Equipo') !== filterTeam) return false;
+    return oa.opponent.toLowerCase().includes(search.toLowerCase()) ||
+           oa.tactical_system.toLowerCase().includes(search.toLowerCase());
+  });
 
   // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
-  const exportHeaders = ['Rival', 'Sistema Táctico', 'Fortalezas', 'Debilidades', 'Jugadores Clave', 'Observaciones'];
+  const exportHeaders = ['Rival', 'Sistema Táctico', 'Fortalezas', 'Debilidades', 'Observaciones'];
   const buildExportRows = (): ExportCell[][] =>
     filteredList.map(oa => [
       oa.opponent,
       oa.tactical_system,
       oa.strengths.join('; '),
       oa.weaknesses.join('; '),
-      oa.key_players.join('; '),
       oa.observations,
     ]);
 
@@ -168,6 +177,24 @@ export const OpponentAnalysisPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -254,8 +281,8 @@ export const OpponentAnalysisPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Bloque 3 Columnas: Fortalezas, Debilidades y Jugadores Clave */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Bloque 2 Columnas: Fortalezas y Debilidades */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
                 {/* Fortalezas (Red pills) */}
                 <div className="space-y-3">
@@ -293,23 +320,6 @@ export const OpponentAnalysisPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Jugadores Clave (Emerald pills) */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-brand-gray-muted flex items-center gap-1.5">
-                    <Award className="w-4 h-4 text-emerald-500" /> Jugadores Peligrosos
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {analysis.key_players.length === 0 ? (
-                      <span className="text-xs text-brand-gray-dark italic">Ninguno destacado</span>
-                    ) : (
-                      analysis.key_players.map((kp, idx) => (
-                        <span key={idx} className="text-[10px] bg-emerald-950/25 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">
-                          {kp}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                </div>
               </div>
 
               {/* Observaciones Estratégicas */}

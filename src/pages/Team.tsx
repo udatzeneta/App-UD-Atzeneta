@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Shield, TrendingUp, Users, Activity, Trophy, Crosshair, Target, AlertTriangle } from 'lucide-react';
 import { Match, PlayerMatchStats, Player } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Legend, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, BarChart, Bar } from 'recharts';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface DemarcationData {
   [key: string]: {
@@ -24,6 +25,14 @@ export const Team: React.FC = () => {
   const [matches, setMatches] = useState<Match[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerMatchStats[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const { user } = usePermissions();
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
 
   useEffect(() => {
     fetchData();
@@ -38,15 +47,23 @@ export const Team: React.FC = () => {
         supabase.from('players').select('*')
       ]);
 
-      if (matchesRes.data) setMatches(matchesRes.data as Match[]);
+      if (matchesRes.data) {
+        setMatches((matchesRes.data as Match[]).filter(m => (m.team_category || 'Primer Equipo') === filterTeam));
+      }
       if (statsRes.data) setPlayerStats(statsRes.data as PlayerMatchStats[]);
-      if (playersRes.data) setPlayers(playersRes.data as Player[]);
+      if (playersRes.data) {
+        setPlayers((playersRes.data as Player[]).filter(p => (p.team_category || 'Primer Equipo') === filterTeam));
+      }
     } catch (error) {
       console.error('Error fetching team data:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, [filterTeam]);
 
   if (loading) {
     return (
@@ -380,6 +397,25 @@ export const Team: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
+      {/* Header */}
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
           <Shield className="w-8 h-8 text-brand-red-600" />

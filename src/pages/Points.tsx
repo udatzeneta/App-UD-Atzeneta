@@ -22,7 +22,15 @@ export const Points: React.FC = () => {
   const { hasPermission, roleSlug, user } = usePermissions();
   const { showToast } = useToast();
 
-  const isPlayer = roleSlug === 'player';
+  const isPlayer = user?.role_id === 3;
+
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
 
   const canCreate = hasPermission('points', 'crear');
   const canEdit = hasPermission('points', 'editar');
@@ -163,7 +171,15 @@ export const Points: React.FC = () => {
   };
 
   // 1. Filtrar bitácora según visibilidad (Jugador solo ve las suyas)
-  const visibleLogs = pointsLogs.filter(p => !isPlayer || p.user_id === user?.id);
+  const visibleLogs = pointsLogs.filter(p => {
+    if (isPlayer && p.user_id !== user?.id) return false;
+    // Filtrar por equipo
+    const pProfile = profiles.find(prof => prof.id === p.user_id);
+    if (pProfile) {
+      return (pProfile.team_category || 'Primer Equipo') === filterTeam;
+    }
+    return true;
+  });
 
   // 2. Filtrado final en pantalla (búsqueda)
   const filteredLogs = visibleLogs.filter(p => {
@@ -181,7 +197,7 @@ export const Points: React.FC = () => {
     
     // Inicializar con todos los perfiles de la base de datos (o los que tienen logs)
     // Para modo Demo o Supabase real, usaremos los perfiles vinculados en los logs y los profiles disponibles
-    const allProfiles = profiles.length > 0 ? profiles : pointsLogs.map(p => p.profiles).filter(Boolean) as Profile[];
+    const allProfiles = (profiles.length > 0 ? profiles : pointsLogs.map(p => p.profiles).filter(Boolean) as Profile[]).filter(p => (p.team_category || 'Primer Equipo') === filterTeam);
 
     allProfiles.forEach(p => {
       // Solo jugadores en la tabla de posiciones
@@ -258,6 +274,24 @@ export const Points: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
       {/* Cabecera de Página */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

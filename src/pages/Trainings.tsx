@@ -43,8 +43,15 @@ export const Trainings: React.FC = () => {
   const [objective, setObjective] = useState('');
   const [observations, setObservations] = useState('');
 
-  // Query
-  const teamFilter = user?.role_id === 2 || user?.role_id === 3 ? user?.team_category : undefined;
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
+  const teamFilter = user?.role_id === 1 || user?.role_id === 4 ? filterTeam : (user?.role_id === 2 && user?.team_category === 'Primer Equipo' ? filterTeam : user?.team_category);
   
   const { data: trainings = [], isLoading } = useQuery({
     queryKey: ['trainings', teamFilter],
@@ -150,7 +157,7 @@ export const Trainings: React.FC = () => {
       duration: Number(duration),
       objective: objective.trim(),
       observations: observations.trim(),
-      team_category: user?.team_category || 'Primer Equipo'
+      team_category: teamFilter || filterTeam
     };
 
     if (editingTraining) {
@@ -237,6 +244,24 @@ export const Trainings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
+
       {/* Cabecera de Página */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

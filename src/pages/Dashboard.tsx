@@ -23,6 +23,14 @@ export const Dashboard: React.FC = () => {
   const canManageMatches = hasPermission('matches', 'crear');
   const isPlayer = user?.role_id === 3 || user?.role_id === 1; // Habilitado para admin para pruebas
 
+  const [filterTeam, setFilterTeam] = useState(user?.team_category || 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setFilterTeam(user.team_category);
+    }
+  }, [user?.team_category]);
+
   // ==========================================
   // DATA FETCHING
   // ==========================================
@@ -32,19 +40,19 @@ export const Dashboard: React.FC = () => {
     enabled: canManageFines || canManageTrainings
   });
 
-  const { data: dbPlayers = [], isLoading: loadingPlayers } = useQuery({
+  const { data: rawDbPlayers = [], isLoading: loadingPlayers } = useQuery({
     queryKey: ['players'],
     queryFn: () => dataService.getPlayers(),
     enabled: canManageFines || canManageTrainings || isPlayer
   });
 
-  const { data: trainings = [], isLoading: loadingTrainings } = useQuery({
+  const { data: rawTrainings = [], isLoading: loadingTrainings } = useQuery({
     queryKey: ['trainings'],
     queryFn: () => dataService.getTrainings(),
     enabled: canManageTrainings || isPlayer
   });
 
-  const { data: matches = [], isLoading: loadingMatches } = useQuery({
+  const { data: rawMatches = [], isLoading: loadingMatches } = useQuery({
     queryKey: ['matches'],
     queryFn: () => dataService.getMatches(),
     enabled: canManageMatches || canManageFines || canManageTrainings
@@ -56,11 +64,20 @@ export const Dashboard: React.FC = () => {
     enabled: canManageMatches || canManageFines || canManageTrainings || isPlayer
   });
 
-  const { data: fines = [] } = useQuery({
+  const { data: rawFines = [] } = useQuery({
     queryKey: ['fines'],
     queryFn: () => dataService.getFines(),
     enabled: true
   });
+
+  const dbPlayers = React.useMemo(() => rawDbPlayers.filter(p => (p.team_category || 'Primer Equipo') === filterTeam), [rawDbPlayers, filterTeam]);
+  const trainings = React.useMemo(() => rawTrainings.filter(t => (t.team_category || 'Primer Equipo') === filterTeam), [rawTrainings, filterTeam]);
+  const matches = React.useMemo(() => rawMatches.filter(m => (m.team_category || 'Primer Equipo') === filterTeam), [rawMatches, filterTeam]);
+  const fines = React.useMemo(() => rawFines.filter(f => {
+    const p = rawDbPlayers.find(pl => pl.id === f.user_id || pl.profile_id === f.user_id);
+    if (!p) return true;
+    return (p.team_category || 'Primer Equipo') === filterTeam;
+  }), [rawFines, rawDbPlayers, filterTeam]);
 
   const sortedMatches = React.useMemo(() => {
     const now = new Date().getTime();
@@ -435,6 +452,23 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
 
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-6">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Primer Equipo')}
+          >
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => setFilterTeam('Juvenil')}
+          >
+            Juvenil
+          </button>
+        </div>
+      )}
 
       {/* Alerts Center */}
       {alerts.length > 0 && !activeForm && (

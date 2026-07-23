@@ -131,8 +131,13 @@ function DashboardGPS() {
   const [sessionFilter, setSessionFilter] = useState('todos'); // 'todos' | 'entrenamiento' | 'partido'
   const [metric, setMetric] = useState('distancia_total');
   
-  const initialTeam = (user?.team_category === 'Juvenil') ? 'Juvenil' : 'Primer Equipo';
-  const [plantilla, setPlantilla] = useState<'Primer Equipo' | 'Juvenil'>(initialTeam);
+  const [plantilla, setPlantilla] = useState<'Primer Equipo' | 'Juvenil'>((user?.team_category === 'Juvenil') ? 'Juvenil' : 'Primer Equipo');
+
+  React.useEffect(() => {
+    if (user?.team_category) {
+      setPlantilla((user.team_category === 'Juvenil') ? 'Juvenil' : 'Primer Equipo');
+    }
+  }, [user?.team_category]);
 
   // Queries
   const { data: jugadores = [] } = useQuery({
@@ -284,22 +289,25 @@ function DashboardGPS() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex flex-wrap gap-4 items-end">
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Equipo</label>
-          <select
-            className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5 outline-none"
-            value={plantilla}
-            onChange={(e) => {
-              setPlantilla(e.target.value as any);
-              setJugadorId(''); // reset player selection when team changes
-            }}
-            disabled={user?.role_id === 2 && user?.team_category === 'Juvenil'}
+      {/* Pestañas de Equipo */}
+      {(user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+        <div className="flex bg-brand-black-card border-b border-brand-black-border mb-2">
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${plantilla === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => { setPlantilla('Primer Equipo'); setJugadorId(''); }}
           >
-            <option value="Primer Equipo">Primer Equipo</option>
-            <option value="Juvenil">Juvenil</option>
-          </select>
+            Primer Equipo
+          </button>
+          <button 
+            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${plantilla === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+            onClick={() => { setPlantilla('Juvenil'); setJugadorId(''); }}
+          >
+            Juvenil
+          </button>
         </div>
+      )}
+
+      <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex flex-wrap gap-4 items-end">
 
         <div className="flex-1 min-w-[240px]">
           <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Jugador</label>
