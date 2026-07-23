@@ -22,7 +22,7 @@ interface Props {
 // Estudio a pantalla completa: reproduce un vídeo de la videoteca, permite
 // crear/editar clips, catalogarlos y anotarlos (telestración).
 export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, readOnly = false }) => {
-  const playerRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<any>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
   const [draftClip, setDraftClip] = useState<OpponentVideoClip | null>(null);

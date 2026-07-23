@@ -562,6 +562,7 @@ export interface SocialEvent {
   type: 'Cena' | 'Comida' | 'Fiesta' | 'Otro';
   location: string;
   observations?: string;
+  team_category?: string;
   created_at?: string;
 }
 
