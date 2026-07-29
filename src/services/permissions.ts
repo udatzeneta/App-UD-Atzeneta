@@ -82,17 +82,29 @@ export const permissionsService = {
       }
       MockDatabase.setRolePermissions(current);
     } else {
-      if (grant) {
-        const { error } = await supabase
-          .from('role_permissions')
-          .upsert({ role_id: roleId, permission_id: permissionId });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('role_permissions')
-          .delete()
-          .match({ role_id: roleId, permission_id: permissionId });
-        if (error) throw error;
+      const { error } = await supabase.rpc('admin_update_role_permission', {
+        p_role_id: roleId,
+        p_permission_id: permissionId,
+        p_grant: grant
+      });
+      
+      // Si la RPC no existe (fallback a upsert directo)
+      if (error && error.message && error.message.includes('Could not find the function')) {
+        console.warn('RPC admin_update_role_permission no encontrada. Usando modo directo.');
+        if (grant) {
+          const { error: upsertError } = await supabase
+            .from('role_permissions')
+            .upsert({ role_id: roleId, permission_id: permissionId });
+          if (upsertError) throw upsertError;
+        } else {
+          const { error: delError } = await supabase
+            .from('role_permissions')
+            .delete()
+            .match({ role_id: roleId, permission_id: permissionId });
+          if (delError) throw delError;
+        }
+      } else if (error) {
+        throw error;
       }
     }
   },
