@@ -719,6 +719,7 @@ export const SessionEditor: React.FC = () => {
                         value={editingTask.teams_board_data || ''}
                         onChange={(val) => setEditingTask(prev => ({ ...prev, teams_board_data: val }))}
                         players={boardPlayersToShow}
+                        confirmedPlayerIds={attendingPlayers.map(p => p.id)}
                      />
                    )}
                  </div>

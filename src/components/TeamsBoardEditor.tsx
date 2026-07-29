@@ -29,12 +29,13 @@ interface TeamsBoardEditorProps {
   value?: string;
   onChange?: (value: string) => void;
   players?: Player[];
+  confirmedPlayerIds?: string[];
   readOnly?: boolean;
   printMode?: boolean;
   printWidth?: number; // Force fixed width in pixels for html2canvas
 }
 
-export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onChange, players = [], readOnly, printMode, printWidth }) => {
+export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onChange, players = [], confirmedPlayerIds = [], readOnly, printMode, printWidth }) => {
   const [elements, setElements] = useState<BoardPlayer[]>(() => {
     if (value) {
       try {
@@ -472,7 +473,12 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
                  >
                    <span className="truncate flex items-center gap-1">
                      {p.nickname || p.full_name}
-                     {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase leading-none">JUV</span>}
+                     {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase leading-none shrink-0">JUV</span>}
+                     {confirmedPlayerIds.includes(p.id) && (
+                       <span className="text-[8px] font-bold text-[#22c55e] bg-[#22c55e]/10 border border-[#22c55e]/20 px-1 py-0.5 rounded uppercase leading-none shrink-0 ml-1">
+                         Confirmado
+                       </span>
+                     )}
                    </span>
                    {colors.length > 0 && (
                      <div className="flex gap-1 shrink-0">
