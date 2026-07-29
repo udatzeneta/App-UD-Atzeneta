@@ -48,6 +48,7 @@ export const SessionEditor: React.FC = () => {
     title: '', description: '', duration: 15, category: 'Principal', board_data: '', task_types: [], coach_roles: '', teams_board_data: ''
   });
   const [activeBoardTab, setActiveBoardTab] = useState<'tactical' | 'teams'>('tactical');
+  const [teamsPlayerFilter, setTeamsPlayerFilter] = useState<'confirmed' | 'all' | 'primer_equipo'>('all');
   
   const [localObjective, setLocalObjective] = useState('');
 
@@ -60,6 +61,12 @@ export const SessionEditor: React.FC = () => {
       return att && (att.status === 'ENT' || att.player_intent === true);
     });
   }, [players, attendanceList]);
+
+  const boardPlayersToShow = React.useMemo(() => {
+    if (teamsPlayerFilter === 'confirmed') return attendingPlayers;
+    if (teamsPlayerFilter === 'primer_equipo') return players.filter(p => p.team_category !== 'Juvenil');
+    return players;
+  }, [teamsPlayerFilter, attendingPlayers, players]);
 
   const confirmedGks = attendingPlayers.filter(p => p.position === 'Portero').length;
   const confirmedField = attendingPlayers.length - confirmedGks;
@@ -619,19 +626,32 @@ export const SessionEditor: React.FC = () => {
               {/* Left: Tactical / Teams Board */}
               <div className="flex-1 flex flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-brand-black-border bg-[#0a0a0a]">
                  {/* Tabs header */}
-                 <div className="flex border-b border-brand-black-border bg-brand-black shrink-0">
-                    <button 
-                      onClick={() => setActiveBoardTab('tactical')}
-                      className={`flex-1 py-2 text-xs font-bold transition-colors border-b-2 ${activeBoardTab === 'tactical' ? 'border-brand-red-600 text-white' : 'border-transparent text-brand-gray-muted hover:text-white'}`}
-                    >
-                      Pizarra Táctica
-                    </button>
-                    <button 
-                      onClick={() => setActiveBoardTab('teams')}
-                      className={`flex-1 py-2 text-xs font-bold transition-colors border-b-2 ${activeBoardTab === 'teams' ? 'border-brand-red-600 text-white' : 'border-transparent text-brand-gray-muted hover:text-white'}`}
-                    >
-                      Equipos
-                    </button>
+                 <div className="flex border-b border-brand-black-border bg-brand-black shrink-0 justify-between items-center pr-2">
+                    <div className="flex flex-1">
+                      <button 
+                        onClick={() => setActiveBoardTab('tactical')}
+                        className={`px-4 py-2 text-xs font-bold transition-colors border-b-2 ${activeBoardTab === 'tactical' ? 'border-brand-red-600 text-white' : 'border-transparent text-brand-gray-muted hover:text-white'}`}
+                      >
+                        Pizarra Táctica
+                      </button>
+                      <button 
+                        onClick={() => setActiveBoardTab('teams')}
+                        className={`px-4 py-2 text-xs font-bold transition-colors border-b-2 ${activeBoardTab === 'teams' ? 'border-brand-red-600 text-white' : 'border-transparent text-brand-gray-muted hover:text-white'}`}
+                      >
+                        Equipos
+                      </button>
+                    </div>
+                    {activeBoardTab === 'teams' && (
+                      <select
+                        value={teamsPlayerFilter}
+                        onChange={(e) => setTeamsPlayerFilter(e.target.value as any)}
+                        className="bg-brand-black-bg border border-brand-black-border rounded text-[10px] text-brand-gray-light py-1 px-2 outline-none cursor-pointer"
+                      >
+                        <option value="all">Todos los jugadores</option>
+                        <option value="primer_equipo">Solo 1er Equipo</option>
+                        <option value="confirmed">Confirmados Asistencia</option>
+                      </select>
+                    )}
                  </div>
                  {/* Tab Content */}
                  <div className="flex-1 overflow-hidden relative">
@@ -644,7 +664,7 @@ export const SessionEditor: React.FC = () => {
                      <TeamsBoardEditor
                         value={editingTask.teams_board_data || ''}
                         onChange={(val) => setEditingTask(prev => ({ ...prev, teams_board_data: val }))}
-                        players={attendingPlayers}
+                        players={boardPlayersToShow}
                      />
                    )}
                  </div>

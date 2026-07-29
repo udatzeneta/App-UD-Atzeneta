@@ -136,13 +136,21 @@ export const dataService = {
       await delay(300);
       let list = MockDatabase.getTrainings();
       if (teamCategory) {
-        list = list.filter(t => t.team_category === teamCategory || (!t.team_category && teamCategory === 'Primer Equipo'));
+        if (currentUserContext?.role_id === 3 && teamCategory === 'Juvenil') {
+          list = list.filter(t => t.team_category === 'Juvenil' || t.team_category === 'Primer Equipo' || !t.team_category);
+        } else {
+          list = list.filter(t => t.team_category === teamCategory || (!t.team_category && teamCategory === 'Primer Equipo'));
+        }
       }
       return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
       let query = supabase.from('trainings').select('*').order('date', { ascending: false });
       if (teamCategory) {
-        query = query.eq('team_category', teamCategory);
+        if (currentUserContext?.role_id === 3 && teamCategory === 'Juvenil') {
+          query = query.in('team_category', ['Primer Equipo', 'Juvenil']);
+        } else {
+          query = query.eq('team_category', teamCategory);
+        }
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -1410,7 +1418,11 @@ export const dataService = {
         .lte('date', end);
         
       if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
-        tQuery = tQuery.eq('team_category', currentUserContext.team_category);
+        if (currentUserContext.role_id === 3 && currentUserContext.team_category === 'Juvenil') {
+          tQuery = tQuery.in('team_category', ['Primer Equipo', 'Juvenil']);
+        } else {
+          tQuery = tQuery.eq('team_category', currentUserContext.team_category);
+        }
       }
       
       const { data: trainings, error: tError } = await tQuery;
@@ -1612,13 +1624,21 @@ export const dataService = {
       await delay(300);
       let list = MockDatabase.getPlayers();
       if (teamCategory) {
-        list = list.filter(p => p.team_category === teamCategory || (!p.team_category && teamCategory === 'Primer Equipo'));
+        if (teamCategory === 'Primer Equipo') {
+          list = list.filter(p => p.team_category === 'Primer Equipo' || p.team_category === 'Juvenil' || !p.team_category);
+        } else {
+          list = list.filter(p => p.team_category === teamCategory);
+        }
       }
       return list;
     } else {
       let query = supabase.from('players').select('*').order('dorsal', { ascending: true });
       if (teamCategory) {
-        query = query.eq('team_category', teamCategory);
+        if (teamCategory === 'Primer Equipo') {
+          query = query.in('team_category', ['Primer Equipo', 'Juvenil']);
+        } else {
+          query = query.eq('team_category', teamCategory);
+        }
       }
       const { data, error } = await query;
       if (error) throw error;

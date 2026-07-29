@@ -479,7 +479,10 @@ export const Attendance: React.FC = () => {
                                   alt={p.full_name} className="w-6 h-6 rounded-full border border-brand-black-border object-cover shrink-0" />
                                 <div className="min-w-0 flex items-center gap-1">
                                   {p.dorsal != null && <span className="text-[9px] font-black text-amber-400 shrink-0">#{p.dorsal}</span>}
-                                  <span className="text-[11px] font-semibold text-brand-gray-light truncate">{p.nickname || p.full_name}</span>
+                                  <span className="text-[11px] font-semibold text-brand-gray-light truncate flex items-center gap-1">
+                                    {p.nickname || p.full_name}
+                                    {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase">JUV</span>}
+                                  </span>
                                 </div>
                               </div>
                             </td>
@@ -662,8 +665,9 @@ export const Attendance: React.FC = () => {
                           <tr key={p.id} className="hover:opacity-90 transition-opacity">
                             <td className="py-1.5 px-3 sticky left-0 z-10 bg-[#1e293b] border-r border-brand-black-border" style={{ minWidth: 160 }}>
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-semibold text-white truncate">
+                                <span className="text-[11px] font-semibold text-white truncate flex items-center gap-1">
                                   {p.dorsal ? `${p.dorsal}. ` : ''}{p.nickname || p.full_name}
+                                  {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase">JUV</span>}
                                 </span>
                               </div>
                             </td>
@@ -707,7 +711,7 @@ export const Attendance: React.FC = () => {
                 disabled={isPlayerRole} className="form-input bg-brand-black-bg mt-1">
                 {visiblePlayers.map(p => (
                   <option key={p.id} value={p.id} className="bg-brand-black-card">
-                    {p.dorsal != null ? `#${p.dorsal} — ` : ''}{p.nickname || p.full_name}
+                    {p.dorsal != null ? `#${p.dorsal} — ` : ''}{p.nickname || p.full_name} {p.team_category === 'Juvenil' ? '(JUV)' : ''}
                   </option>
                 ))}
               </select>
@@ -717,7 +721,10 @@ export const Attendance: React.FC = () => {
                 <img src={currentPlayer.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
                   alt={currentPlayer.full_name} className="w-12 h-12 rounded-full border-2 border-brand-red-600/30 object-cover" />
                 <div>
-                  <h4 className="text-sm font-bold text-brand-gray-light">{currentPlayer.nickname || currentPlayer.full_name}</h4>
+                  <h4 className="text-sm font-bold text-brand-gray-light flex items-center gap-1">
+                    {currentPlayer.nickname || currentPlayer.full_name}
+                    {currentPlayer.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase">JUV</span>}
+                  </h4>
                   {currentPlayer.position && <span className="text-[10px] text-brand-gray-muted block">{currentPlayer.position}</span>}
                   <span className="text-[9px] bg-brand-red-600/10 text-brand-red-600 px-1.5 py-0.5 border border-brand-red-600/20 rounded font-bold uppercase tracking-wider inline-block mt-0.5">
                     Dorsal #{currentPlayer.dorsal ?? '—'}
@@ -950,7 +957,10 @@ export const Attendance: React.FC = () => {
                       <img src={p.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} alt={p.full_name}
                         className="w-8 h-8 rounded-full border border-brand-black-border object-cover shrink-0" />
                       <div>
-                        <span className="text-xs font-semibold text-brand-gray-light">{p.nickname || p.full_name}</span>
+                        <span className="text-xs font-semibold text-brand-gray-light flex items-center gap-1">
+                          {p.nickname || p.full_name}
+                          {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase">JUV</span>}
+                        </span>
                         {p.dorsal && <span className="text-[9px] text-amber-400 font-bold ml-1">#{p.dorsal}</span>}
                         {p.physical_status === 'Baja' && (
                           <span className="text-[9px] font-black bg-brand-red-600 text-white px-1.5 py-0.5 rounded uppercase ml-2">Baja</span>

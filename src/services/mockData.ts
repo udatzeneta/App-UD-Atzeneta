@@ -28,7 +28,7 @@ const DEFAULT_ROLES: Role[] = [
 ];
 
 // 2. Páginas y acciones para permisos
-const PAGES = ['dashboard', 'calendar', 'trainings', 'matches', 'team', 'fines', 'points', 'scouting', 'opponent_analysis', 'settings', 'permissions', 'attendance', 'players'];
+const PAGES = ['dashboard', 'calendar', 'trainings', 'matches', 'team', 'fines', 'points', 'scouting', 'opponent_analysis', 'settings', 'permissions', 'attendance', 'players', 'training_editor', 'individual_improvement', 'pf'];
 const ACTIONS: ('ver' | 'crear' | 'editar' | 'eliminar' | 'exportar')[] = ['ver', 'crear', 'editar', 'eliminar', 'exportar'];
 
 const generatePermissions = (): Permission[] => {

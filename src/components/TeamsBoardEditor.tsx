@@ -470,7 +470,10 @@ export const TeamsBoardEditor: React.FC<TeamsBoardEditorProps> = ({ value, onCha
                    onDragStart={(e) => handleDragStartFromList(e, p)}
                    className="flex justify-between items-center px-2 py-1.5 rounded text-xs font-medium bg-brand-black border border-brand-black-border text-brand-gray-light hover:bg-brand-black-hover cursor-grab active:cursor-grabbing select-none"
                  >
-                   <span className="truncate">{p.nickname || p.full_name}</span>
+                   <span className="truncate flex items-center gap-1">
+                     {p.nickname || p.full_name}
+                     {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase leading-none">JUV</span>}
+                   </span>
                    {colors.length > 0 && (
                      <div className="flex gap-1 shrink-0">
                        {colors.map(color => (
