@@ -153,7 +153,7 @@ export const SessionEditor: React.FC = () => {
     }
   };
 
-  const addTaskToSession = (task: TrainingTask) => {
+  const addTaskToSession = async (task: TrainingTask) => {
     if (!selectedTrainingId) {
       showToast('info', 'Atención', 'Selecciona una sesión de entrenamiento primero.');
       return;
@@ -168,15 +168,50 @@ export const SessionEditor: React.FC = () => {
       task: task
     };
     
-    setSessionTasks([...sessionTasks, newTask]);
+    const newTasks = [...sessionTasks, newTask];
+    setSessionTasks(newTasks);
     setIsLibraryModalOpen(false); // Cerramos tras añadir para volver a la sesión
     showToast('success', 'Éxito', 'Tarea añadida a la sesión.');
+
+    // Auto-save
+    try {
+      const tasksToSave = newTasks.map((st, i) => ({
+        training_id: selectedTrainingId,
+        task_id: st.task_id,
+        order_index: i,
+        duration: st.duration,
+        notes: st.notes
+      }));
+      await dataService.saveSessionTasks(selectedTrainingId, tasksToSave);
+    } catch(err) {
+      console.error(err);
+    }
   };
 
-  const removeTaskFromSession = (index: number) => {
+  const removeTaskFromSession = async (index: number) => {
+    if (!window.confirm('¿Estás seguro de que deseas quitar esta tarea de la sesión actual?')) {
+      return;
+    }
+
     const newTasks = [...sessionTasks];
     newTasks.splice(index, 1);
     setSessionTasks(newTasks);
+
+    // Auto-save
+    if (selectedTrainingId) {
+      try {
+        const tasksToSave = newTasks.map((st, i) => ({
+          training_id: selectedTrainingId,
+          task_id: st.task_id,
+          order_index: i,
+          duration: st.duration,
+          notes: st.notes
+        }));
+        await dataService.saveSessionTasks(selectedTrainingId, tasksToSave);
+      } catch(err) {
+        console.error(err);
+      }
+    }
   };
 
   // --- Task Editor ---
