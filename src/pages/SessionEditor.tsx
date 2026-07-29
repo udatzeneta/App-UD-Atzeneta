@@ -233,6 +233,18 @@ export const SessionEditor: React.FC = () => {
     }
   };
 
+  const handleDeleteLibraryTask = async (taskId: string) => {
+    if (window.confirm('¿Estás seguro de que deseas eliminar esta tarea de la librería?')) {
+      try {
+        await dataService.deleteTrainingTask(taskId);
+        setLibraryTasks(prev => prev.filter(t => t.id !== taskId));
+        showToast('success', 'Éxito', 'Tarea eliminada de la librería.');
+      } catch (error) {
+        showToast('error', 'Error', 'No se pudo eliminar la tarea.');
+      }
+    }
+  };
+
   const handleObjectiveBlur = async () => {
     if (!selectedTrainingId) return;
     const currentTraining = trainings.find(t => t.id === selectedTrainingId);
@@ -583,6 +595,13 @@ export const SessionEditor: React.FC = () => {
                           className="px-3 py-1.5 text-xs font-medium text-brand-gray-muted hover:text-white bg-brand-black-hover rounded transition-colors"
                         >
                           Editar
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLibraryTask(task.id)}
+                          className="px-2 py-1.5 text-brand-gray-muted hover:text-brand-red-600 bg-brand-black-hover hover:bg-brand-red-600/10 rounded transition-colors"
+                          title="Eliminar de librería"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => addTaskToSession(task)}
