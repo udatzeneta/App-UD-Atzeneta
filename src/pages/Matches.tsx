@@ -269,6 +269,19 @@ export const Matches: React.FC = () => {
     onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo guardar la convocatoria.')
   });
 
+  const updateDorsalMutation = useMutation({
+    mutationFn: async ({ id, dorsal }: { id: string, dorsal: number | null }) => {
+      return dataService.updatePlayer(id, { dorsal: dorsal === null ? undefined : dorsal });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      showToast('success', 'Dorsal actualizado', 'El dorsal del jugador se ha modificado.');
+    },
+    onError: (error: any) => {
+      showToast('error', 'Error', error.message || 'No se pudo actualizar el dorsal');
+    }
+  });
+
   const handleSaveSquad = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMatchForActions) return;
@@ -1647,15 +1660,24 @@ export const Matches: React.FC = () => {
                             </div>
                             <div className="flex-1 flex flex-col justify-center py-0.5">
                               <div className="flex items-center gap-1.5 mb-0.5">
-                                {player.dorsal ? (
-                                  <span className="text-base font-black italic tracking-tighter text-brand-gray-light drop-shadow-sm leading-none">
-                                    {player.dorsal}
-                                  </span>
-                                ) : (
-                                  <span className="text-base font-black italic tracking-tighter text-brand-gray-dark/30 leading-none">
-                                    -
-                                  </span>
-                                )}
+                                <input
+                                  type="number"
+                                  defaultValue={player.dorsal || ''}
+                                  className="w-7 bg-transparent text-base font-black italic tracking-tighter text-brand-gray-light drop-shadow-sm leading-none text-center border-b border-transparent hover:border-brand-gray-dark focus:border-brand-red-600 focus:outline-none focus:ring-0 p-0 m-0 [&::-webkit-inner-spin-button]:appearance-none"
+                                  placeholder="-"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onBlur={(e) => {
+                                    const val = e.target.value ? parseInt(e.target.value) : null;
+                                    if (val !== (player.dorsal || null)) {
+                                      updateDorsalMutation.mutate({ id: player.id, dorsal: val });
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.currentTarget.blur();
+                                    }
+                                  }}
+                                />
                                 {player.team_category === 'Juvenil' && (
                                   <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase shrink-0 mt-0.5">JUV</span>
                                 )}

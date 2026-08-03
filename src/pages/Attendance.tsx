@@ -147,9 +147,15 @@ export const Attendance: React.FC = () => {
       let defaultStatus = isBaja ? 'L' : 'ENT';
       if (log?.player_intent === false && defaultStatus === 'ENT') defaultStatus = 'AA';
       
+      let initialObservations = log?.observations || '';
+      if (!initialObservations) {
+        if (isBaja) initialObservations = 'Baja médica';
+        else if (log?.player_intent === false && log?.player_reason) initialObservations = `Motivo: ${log.player_reason}`;
+      }
+
       init[p.id] = { 
         status: log?.status && log.status !== '-' ? log.status : defaultStatus, 
-        observations: log?.observations || (isBaja ? 'Baja médica' : ''),
+        observations: initialObservations,
         intent: log?.player_intent,
         intentReason: log?.player_reason ?? undefined
       };

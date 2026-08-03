@@ -667,31 +667,21 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         : '0 0 68 68';
 
     const lineProps = {
-      stroke: 'rgba(255,255,255,0.9)',
+      stroke: 'rgba(0,0,0,0.9)',
       strokeWidth: 0.28,
       fill: 'none' as const,
       strokeLinecap: 'round' as const,
       strokeLinejoin: 'round' as const,
     };
     
-    const circleFill = 'white';
+    const circleFill = 'black';
 
     return (
-      <div className="absolute inset-0 overflow-hidden" style={{ background: 'transparent' }}>
-        {/* Césped con franjas de siega usando divs para máxima compatibilidad con exportación PDF */}
-        <div className="absolute inset-0 bg-[#3f9445]">
-          {Array.from({ length: 15 }).map((_, i) => (
-            <div key={i} className="absolute w-full bg-[#48a04f]" style={{ top: `${i * 14}%`, height: '7%' }} />
-          ))}
-        </div>
+      <div className="absolute inset-0 overflow-hidden" style={{ background: 'white' }}>
+        {/* Fondo blanco sólido para el campo */}
+        <div className="absolute inset-0 bg-white" />
         
-        {/* Iluminación y viñeta para dar profundidad (oculto en PDF para evitar fallos de renderizado) */}
-        {!printMode && (
-          <div className="absolute inset-0" style={{
-            background: 'radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.12), rgba(0,0,0,0) 55%), radial-gradient(ellipse at 50% 105%, rgba(0,0,0,0.35), rgba(0,0,0,0) 60%)'
-          }} />
-        )}
-        <div className="absolute inset-0 border border-white/30" />
+        <div className="absolute inset-0 border border-black/30" />
 
         {fieldType !== 'blank' && (
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
@@ -709,14 +699,14 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 <rect x="24.84" y="1" width="18.32" height="5.5" />
                 <circle cx="34" cy="12" r="0.35" fill={circleFill} />
                 <path d="M 26.69 17.5 A 9.15 9.15 0 0 0 41.31 17.5" />
-                <rect x="30.34" y="-0.4" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(255,255,255,0.12)'} />
+                <rect x="30.34" y="-0.4" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(0,0,0,0.12)'} />
 
                 {/* Área inferior */}
                 <rect x="13.84" y="87.5" width="40.32" height="16.5" />
                 <rect x="24.84" y="98.5" width="18.32" height="5.5" />
                 <circle cx="34" cy="93" r="0.35" fill={circleFill} />
                 <path d="M 26.69 87.5 A 9.15 9.15 0 0 1 41.31 87.5" />
-                <rect x="30.34" y="104" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(255,255,255,0.12)'} />
+                <rect x="30.34" y="104" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(0,0,0,0.12)'} />
 
                 {/* Córners */}
                 <path d="M 2 1 A 1 1 0 0 0 1 2" />
@@ -737,7 +727,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 <rect x="24.84" y="46" width="18.32" height="5.5" />
                 <circle cx="34" cy="40.5" r="0.35" fill={circleFill} />
                 <path d="M 26.69 35 A 9.15 9.15 0 0 1 41.31 35" />
-                <rect x="30.34" y="51.5" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(255,255,255,0.12)'} />
+                <rect x="30.34" y="51.5" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(0,0,0,0.12)'} />
 
                 {/* Córners inferiores */}
                 <path d="M 1 50.5 A 1 1 0 0 1 2 51.5" />
@@ -756,7 +746,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
                 <rect x="24.84" y="1" width="18.32" height="5.5" />
                 <circle cx="34" cy="12" r="0.35" fill={circleFill} />
                 <path d="M 26.69 17.5 A 9.15 9.15 0 0 0 41.31 17.5" />
-                <rect x="30.34" y="-0.4" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(255,255,255,0.12)'} />
+                <rect x="30.34" y="-0.4" width="7.32" height="1.4" fill={printMode ? 'transparent' : 'rgba(0,0,0,0.12)'} />
 
                 {/* Córners superiores */}
                 <path d="M 2 1 A 1 1 0 0 0 1 2" />
@@ -905,41 +895,41 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
         break;
       case 'goal':
         content = (
-          <svg width={px(60)} height={px(24)} viewBox="0 0 60 24" style={{ filter: printMode ? 'none' : 'drop-shadow(0px 3px 3px rgba(0,0,0,0.5))' }}>
-            <path d="M 5 3 L 55 3 L 57 19 L 3 19 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-            <path d="M 1 20 L 59 20" stroke="white" strokeWidth="4" strokeLinecap="round" />
+          <svg width={px(60)} height={px(24)} viewBox="0 0 60 24" style={{ filter: printMode ? 'none' : 'drop-shadow(0px 3px 3px rgba(0,0,0,0.3))' }}>
+            <path d="M 5 3 L 55 3 L 57 19 L 3 19 Z" fill="url(#net-pattern)" stroke="#111827" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M 1 20 L 59 20" stroke="#111827" strokeWidth="4" strokeLinecap="round" />
           </svg>
         );
         break;
       case 'mini-goal':
         content = (
-          <svg width={px(24)} height={px(16)} viewBox="0 0 24 16" style={{ filter: printMode ? 'none' : 'drop-shadow(0px 2px 2px rgba(0,0,0,0.5))' }}>
-            <path d="M 3 2 L 21 2 L 22 11 L 2 11 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 1 12 L 23 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+          <svg width={px(24)} height={px(16)} viewBox="0 0 24 16" style={{ filter: printMode ? 'none' : 'drop-shadow(0px 2px 2px rgba(0,0,0,0.3))' }}>
+            <path d="M 3 2 L 21 2 L 22 11 L 2 11 Z" fill="url(#net-pattern)" stroke="#111827" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 12 L 23 12" stroke="#111827" strokeWidth="2.5" strokeLinecap="round" />
           </svg>
         );
         break;
       case 'goal-f11':
         content = (
-          <svg width={px(73.2)} height={px(20)} viewBox="0 0 73.2 20" style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }}>
-            <path d="M 4 2 L 69.2 2 L 71 16 L 2 16 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 1 17 L 72.2 17" stroke="white" strokeWidth="3" strokeLinecap="round" />
+          <svg width={px(73.2)} height={px(20)} viewBox="0 0 73.2 20" style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.3))' }}>
+            <path d="M 4 2 L 69.2 2 L 71 16 L 2 16 Z" fill="url(#net-pattern)" stroke="#111827" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 17 L 72.2 17" stroke="#111827" strokeWidth="3" strokeLinecap="round" />
           </svg>
         );
         break;
       case 'goal-f8':
         content = (
-          <svg width={px(40)} height={px(16)} viewBox="0 0 40 16" style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.5))' }}>
-            <path d="M 3 2 L 37 2 L 38 12 L 2 12 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 1 13 L 39 13" stroke="white" strokeWidth="3" strokeLinecap="round" />
+          <svg width={px(40)} height={px(16)} viewBox="0 0 40 16" style={{ filter: 'drop-shadow(0px 2px 3px rgba(0,0,0,0.3))' }}>
+            <path d="M 3 2 L 37 2 L 38 12 L 2 12 Z" fill="url(#net-pattern)" stroke="#111827" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 13 L 39 13" stroke="#111827" strokeWidth="3" strokeLinecap="round" />
           </svg>
         );
         break;
       case 'goal-f5':
         content = (
-          <svg width={px(30)} height={px(12)} viewBox="0 0 30 12" style={{ filter: 'drop-shadow(0px 2px 2px rgba(0,0,0,0.5))' }}>
-            <path d="M 2 2 L 28 2 L 29 9 L 1 9 Z" fill="url(#net-pattern)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M 1 10 L 29 10" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+          <svg width={px(30)} height={px(12)} viewBox="0 0 30 12" style={{ filter: 'drop-shadow(0px 2px 2px rgba(0,0,0,0.3))' }}>
+            <path d="M 2 2 L 28 2 L 29 9 L 1 9 Z" fill="url(#net-pattern)" stroke="#111827" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M 1 10 L 29 10" stroke="#111827" strokeWidth="2.5" strokeLinecap="round" />
           </svg>
         );
         break;
@@ -1091,7 +1081,7 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
       <svg viewBox={`0 0 ${boardSize.width} ${boardSize.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 20, overflow: 'visible' }}>
         <defs>
           <pattern id="net-pattern" width="4" height="4" patternUnits="userSpaceOnUse">
-            <path d="M 4 0 L 4 4 L 0 4" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.5" />
+            <path d="M 4 0 L 4 4 L 0 4" fill="none" stroke="#1e40af" strokeWidth="0.8" />
           </pattern>
           <marker id="arrowhead-white" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
             <polygon points="0 0, 6 3, 0 6" fill={printMode ? "black" : "white"} />
@@ -1357,11 +1347,11 @@ export const TaskBoardEditor: React.FC<TaskBoardEditorProps> = ({ value, onChang
           </button>
           {openSections.colors && (
             <div className="flex justify-center gap-1 flex-wrap">
-              <ColorButton color="#ffffff" />
               <ColorButton color="#ef4444" />
               <ColorButton color="#3b82f6" />
               <ColorButton color="#f59e0b" />
               <ColorButton color="#000000" />
+              <ColorButton color="#22c55e" />
             </div>
           )}
         </div>

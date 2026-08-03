@@ -28,7 +28,6 @@ interface MatchEventWizardProps {
 
 const CATEGORIES = [
   { id: 'goals', label: 'Gol a Favor', icon: '⚽', color: 'text-emerald-400', bg: 'bg-emerald-950/40 border-emerald-800' },
-  { id: 'assists', label: 'Asistencia', icon: '🥾', color: 'text-emerald-300', bg: 'bg-emerald-950/20 border-emerald-800/50' },
   { id: 'cards', label: 'Tarjetas', icon: '🟨', color: 'text-yellow-400', bg: 'bg-yellow-950/40 border-yellow-800' },
   { id: 'substitution', label: 'Sustituciones', icon: '🔄', color: 'text-brand-gray-light', bg: 'bg-brand-black-hover border-brand-black-border' },
   { id: 'injury', label: 'Lesión', icon: '🏥', color: 'text-amber-500', bg: 'bg-amber-950/40 border-amber-800' },
@@ -48,6 +47,7 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
   // Specific state
   const [eventType, setEventType] = useState<string>(''); // For sub-types
   const [playerId, setPlayerId] = useState<string>('');
+  const [assistId, setAssistId] = useState<string>('');
   const [opponentDorsal, setOpponentDorsal] = useState<string>('');
   
   // Substitutions
@@ -64,6 +64,7 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
     setCategory('');
     setEventType('');
     setPlayerId('');
+    setAssistId('');
     setOpponentDorsal('');
     setSubstitutions([{playerOut: '', playerIn: '', position: ''}]);
     setInjurySeverity('Leve');
@@ -122,7 +123,16 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
       });
     } else {
       let finalType = category;
-      if (category === 'goals') finalType = eventType || 'goals';
+      if (category === 'goals') {
+        finalType = eventType || 'goals';
+        if (assistId) {
+          payloads.push({
+            type: 'assists',
+            minuteStr: finalMinute,
+            playerId: assistId
+          });
+        }
+      }
       if (category === 'cards') finalType = eventType || 'yellow_cards';
       if (category === 'conceded') finalType = eventType || 'conceded_goals';
       if (category === 'own') finalType = 'own_goals';
@@ -217,9 +227,9 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
               <button 
                 type="button" 
                 onClick={() => setSubstitutions([...substitutions, {playerOut: '', playerIn: '', position: ''}])}
-                className="text-[10px] bg-brand-black border border-brand-black-border text-brand-gray-light px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-brand-black-hover transition-colors font-bold"
+                className="bg-brand-red-600 hover:bg-brand-red-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-glow-red animate-pulse"
               >
-                <Plus className="w-3 h-3" /> Añadir otro
+                <Plus className="w-3 h-3" /> Añadir otro cambio
               </button>
             </div>
             
@@ -281,7 +291,10 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
                 <option value="penalty_goals">Gol de Penalti</option>
               </select>
             </div>
-            {renderPlayerSelector('Goleador', playerId, setPlayerId)}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {renderPlayerSelector('Goleador', playerId, setPlayerId)}
+              {renderPlayerSelector('Asistente (Opcional)', assistId, setAssistId)}
+            </div>
           </div>
         )}
 
@@ -312,7 +325,6 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
         )}
 
         {category === 'own' && renderPlayerSelector('Jugador (Gol en Propia)', playerId, setPlayerId)}
-        {category === 'assists' && renderPlayerSelector('Asistente', playerId, setPlayerId)}
 
         {category === 'opponent' && (
           <div className="space-y-4">
@@ -388,9 +400,14 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
             })}
           </div>
         )}
-        {(category === 'goals' || category === 'cards' || category === 'assists' || category === 'own' || category === 'conceded' || category === 'injury') && (
+        {(category === 'goals' || category === 'cards' || category === 'own' || category === 'conceded' || category === 'injury') && (
           <p className="text-sm text-brand-gray-light border-t border-brand-black-border pt-2 mt-2">
             <span className="text-brand-gray-muted">Jugador:</span> {calledUpPlayers.find(p => p.id === playerId)?.nickname}
+          </p>
+        )}
+        {category === 'goals' && assistId && (
+          <p className="text-sm text-brand-gray-light mt-1">
+            <span className="text-brand-gray-muted">Asistente:</span> {calledUpPlayers.find(p => p.id === assistId)?.nickname}
           </p>
         )}
         {category === 'injury' && (

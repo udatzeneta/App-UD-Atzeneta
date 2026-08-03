@@ -48,10 +48,35 @@ export function defaultVideoTitle(provider: VideoProvider, index: number): strin
   const map: Record<VideoProvider, string> = {
     youtube: 'Vídeo YouTube',
     vimeo: 'Vídeo Vimeo',
-    direct: 'Vídeo',
-    embed: 'Vídeo embebido',
+    direct: 'Vídeo Directo (MP4)',
+    embed: 'Vídeo Embebido'
   };
   return `${map[provider]} ${index + 1}`;
+}
+
+/**
+ * Resuelve automáticamente el enlace directo MP4 de un partido de Veo.
+ * Si no puede resolverlo o no es de Veo, devuelve la URL original.
+ */
+export async function resolveVeoUrl(url: string): Promise<string> {
+  const validUrl = getValidUrl(url);
+  if (!validUrl.includes('app.veo.co/matches/')) return validUrl;
+
+  try {
+    const apiUrl = `https://api.microlink.io/?url=${encodeURIComponent(validUrl)}`;
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    
+    if (data.status === 'success' && data.data?.image?.url) {
+      const imgUrl = data.data.image.url;
+      if (imgUrl.includes('c.veocdn.com') && imgUrl.endsWith('thumbnail.jpg')) {
+        return imgUrl.replace('thumbnail.jpg', 'video.mp4');
+      }
+    }
+  } catch (err) {
+    console.error("Error resolving Veo URL:", err);
+  }
+  return validUrl;
 }
 
 /** Todos los clips de la videoteca con la URL de su vídeo de origen. */

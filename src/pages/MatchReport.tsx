@@ -49,44 +49,10 @@ interface LocalPlayerStats {
     penalty_goals: string[];
     conceded_penalty_goals: string[];
     injuries: string[];
+    sub_out?: { minute: string; playerInId: string }[];
   };
 }
 
-const parseAbsoluteMinute = (minuteStr: string): number => {
-  let minuteNum = 90;
-  const parts = minuteStr.trim().split(' ');
-  if (parts.length > 1) {
-    const period = parts[0].toUpperCase();
-    const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
-    if (period === '1T') minuteNum = min;
-    else if (period === '2T') minuteNum = min + 45;
-    else if (period === '1P') minuteNum = min + 90;
-    else if (period === '2P') minuteNum = min + 105;
-    else minuteNum = min;
-  } else {
-    minuteNum = parseInt(minuteStr.split('+')[0].replace(/\D/g, '')) || 90;
-  }
-  return minuteNum;
-};
-
-const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>) => {
-  const next = { ...stats };
-  Object.values(next).forEach(p => {
-    let entryMinute = 0;
-    if (!p.is_starter) {
-      const prev = Object.values(next).find(x => x.substituted_for === p.player_id);
-      entryMinute = prev && prev.substituted_minute ? prev.substituted_minute : 90;
-    }
-    let exitMinute = 90;
-    if (p.red_card && p.event_minutes.red_card) {
-      exitMinute = parseAbsoluteMinute(p.event_minutes.red_card);
-    } else if (p.substituted_for && p.substituted_minute) {
-      exitMinute = p.substituted_minute;
-    }
-    next[p.player_id].minutes_played = Math.max(0, exitMinute - entryMinute);
-  });
-  return next;
-};
 
 const StarRating = ({ label, value, onChange, disabled }: { label: string, value: number, onChange: (v: number) => void, disabled: boolean }) => (
   <div className="flex items-center justify-between text-[11px] py-1 border-t border-brand-black-border/50 mt-1 pt-2">
@@ -166,6 +132,121 @@ export const MatchReport: React.FC = () => {
 
   // Asistente de eventos
   const [isEventWizardOpen, setIsEventWizardOpen] = useState(false);
+  const [matchDuration, setMatchDuration] = useState<number>(90);
+
+  const parseAbsoluteMinute = (minuteStr: string): number => {
+    let minuteNum = matchDuration;
+    const parts = minuteStr.trim().split(' ');
+    if (parts.length > 1) {
+      const period = parts[0].toUpperCase();
+      const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
+      if (period === '1T') minuteNum = min;
+      else if (period === '2T') minuteNum = min + Math.floor(matchDuration / 2);
+      else if (period === '1P') minuteNum = min + matchDuration;
+      else if (period === '2P') minuteNum = min + matchDuration + 15;
+      else minuteNum = min;
+    } else {
+      minuteNum = parseInt(minuteStr.split('+')[0].replace(/\D/g, '')) || matchDuration;
+    }
+    return minuteNum;
+  };
+
+  const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>) => {
+    const next = { ...stats };
+    
+    // Build chronological substitution timeline
+    const subEvents: { time: number; playerOutId: string; playerInId: string }[] = [];
+    
+    Object.values(next).forEach(p => {
+      // Collect from legacy fields
+      if (p.substituted_for && p.substituted_minute) {
+        subEvents.push({
+          time: p.substituted_minute,
+          playerOutId: p.player_id,
+          playerInId: p.substituted_for
+        });
+      }
+      
+      // Collect from new sub_out array
+      if (p.event_minutes?.sub_out) {
+        p.event_minutes.sub_out.forEach(sub => {
+           subEvents.push({
+             time: parseAbsoluteMinute(sub.minute),
+             playerOutId: p.player_id,
+             playerInId: sub.playerInId
+           });
+        });
+      }
+    });
+
+    // Remove exact duplicates
+    const uniqueSubs = Array.from(new Set(subEvents.map(e => JSON.stringify(e))))
+      .map(e => JSON.parse(e) as { time: number; playerOutId: string; playerInId: string })
+      .sort((a, b) => a.time - b.time);
+
+    // Track state of each player
+    const playerStints: Record<string, { start: number; end: number | null }[]> = {};
+    
+    Object.values(next).forEach(p => {
+      playerStints[p.player_id] = [];
+      if (p.is_starter) {
+        playerStints[p.player_id].push({ start: 0, end: null });
+      }
+    });
+
+    // Process substitutions chronologically
+    uniqueSubs.forEach(sub => {
+      const outStints = playerStints[sub.playerOutId];
+      if (outStints && outStints.length > 0) {
+        const lastStint = outStints[outStints.length - 1];
+        if (lastStint.end === null) {
+          lastStint.end = sub.time;
+        }
+      }
+      
+      const inStints = playerStints[sub.playerInId];
+      if (inStints) {
+        inStints.push({ start: sub.time, end: null });
+      }
+    });
+
+    // Finalize stints
+    Object.values(next).forEach(p => {
+      const stints = playerStints[p.player_id];
+      if (stints) {
+        let finalExit = matchDuration;
+        if (p.red_card && p.event_minutes?.red_card) {
+           finalExit = parseAbsoluteMinute(p.event_minutes.red_card);
+        }
+        
+        stints.forEach(stint => {
+          if (stint.end === null) {
+            stint.end = finalExit;
+          }
+        });
+        
+        let total = 0;
+        stints.forEach(stint => {
+           const start = Math.min(stint.start, matchDuration);
+           const end = Math.min(stint.end!, matchDuration);
+           if (end > start) {
+             total += (end - start);
+           }
+        });
+        next[p.player_id].minutes_played = total;
+      } else {
+        next[p.player_id].minutes_played = 0;
+      }
+    });
+
+    return next;
+  };
+
+  useEffect(() => {
+    if (statsInitializedRef.current && Object.keys(playerStats).length > 0) {
+      setPlayerStats(prev => recalculateAllMinutes(prev));
+    }
+  }, [matchDuration]);
 
   // Marcar que hay cambios sin guardar
   useEffect(() => {
@@ -234,7 +315,7 @@ export const MatchReport: React.FC = () => {
   });
 
   // 3. Cargar Estadísticas previas de este partido
-  const { data: initialStats = [], isLoading: isLoadingStats } = useQuery({
+  const { data: initialStats = [], isLoading: isLoadingStats, isFetching: isFetchingStats } = useQuery({
     queryKey: ['playerMatchStats', matchId],
     queryFn: () => dataService.getPlayerMatchStats(matchId || ''),
     enabled: !!matchId
@@ -293,7 +374,7 @@ export const MatchReport: React.FC = () => {
   // Inicializar estadísticas e XI Inicial
   useEffect(() => {
     if (statsInitializedRef.current) return;
-    if (dbPlayers.length === 0 || isLoadingStats || isLoadingPlayers || !matchData) return;
+    if (dbPlayers.length === 0 || isLoadingStats || isFetchingStats || isLoadingPlayers || !matchData) return;
     
     statsInitializedRef.current = true;
 
@@ -307,7 +388,7 @@ export const MatchReport: React.FC = () => {
           is_called_up: init ? init.is_called_up : false,
           is_starter: init ? !!init.is_starter : false,
           position: init ? init.position || '' : '',
-          minutes_played: init ? (init.minutes_played || (init.is_starter ? 90 : 0)) : 0,
+          minutes_played: init ? (init.minutes_played || (init.is_starter ? matchDuration : 0)) : 0,
           goals: init ? init.goals || 0 : 0,
           conceded_goals: init ? init.conceded_goals || 0 : 0,
           own_goals: init ? init.own_goals || 0 : 0,
@@ -412,7 +493,7 @@ export const MatchReport: React.FC = () => {
         setHasUnsavedChanges(true);
       }
     }
-  }, [dbPlayers, initialStats, tacticalSystem]);
+  }, [dbPlayers, initialStats, tacticalSystem, isLoadingStats, isFetchingStats, isLoadingPlayers, matchData]);
 
   // Slots de la formación táctica elegida
   const currentSlots = useMemo(() => {
@@ -550,10 +631,32 @@ export const MatchReport: React.FC = () => {
         updated.event_minutes = { ...updated.event_minutes, yellow_cards: arr };
       } else if (field === 'red_card') {
         const hasRed = !!val;
-        updated.event_minutes = {
-          ...updated.event_minutes,
-          red_card: hasRed ? (player.event_minutes.red_card || '90') : null
+        const updatedMinutes = {
+          goals: Array.isArray(player.event_minutes?.goals) ? player.event_minutes.goals : [],
+          assists: Array.isArray(player.event_minutes?.assists) ? player.event_minutes.assists : [],
+          yellow_cards: Array.isArray(player.event_minutes?.yellow_cards) ? player.event_minutes.yellow_cards : [],
+          red_card: hasRed ? (player.event_minutes?.red_card || matchDuration.toString()) : null,
+          conceded_goals: Array.isArray(player.event_minutes?.conceded_goals) ? player.event_minutes.conceded_goals : [],
+          own_goals: Array.isArray(player.event_minutes?.own_goals) ? player.event_minutes.own_goals : [],
+          penalty_goals: Array.isArray(player.event_minutes?.penalty_goals) ? player.event_minutes.penalty_goals : [],
+          conceded_penalty_goals: Array.isArray(player.event_minutes?.conceded_penalty_goals) ? player.event_minutes.conceded_penalty_goals : [],
+          injuries: Array.isArray(player.event_minutes?.injuries) ? player.event_minutes.injuries : [],
         };
+
+        const updateArrayWithDefaults = (arr: any[], count: number) => {
+          if (arr.length > count) return arr.slice(0, count);
+          if (arr.length < count) {
+            while (arr.length < count) arr.push(matchDuration.toString());
+          }
+          return arr;
+        };
+
+        updatedMinutes.goals = updateArrayWithDefaults(updatedMinutes.goals, player.goals);
+        updatedMinutes.assists = updateArrayWithDefaults(updatedMinutes.assists, player.assists);
+        updatedMinutes.yellow_cards = updateArrayWithDefaults(updatedMinutes.yellow_cards, player.yellow_cards);
+        updatedMinutes.conceded_goals = updateArrayWithDefaults(updatedMinutes.conceded_goals, player.conceded_goals || 0);
+        updatedMinutes.own_goals = updateArrayWithDefaults(updatedMinutes.own_goals, player.own_goals || 0);
+        updated.event_minutes = updatedMinutes;
       }
 
       next[playerId] = updated;
@@ -619,10 +722,16 @@ export const MatchReport: React.FC = () => {
         if (playerInId) {
           const playerIn = next[playerInId];
           if (playerIn) {
+            const eventMin = { ...(player.event_minutes || {}) };
+            const subOut = [...(eventMin.sub_out || [])];
+            subOut.push({ minute: minuteStr, playerInId });
+            eventMin.sub_out = subOut;
+
             next[playerId] = {
               ...player,
               substituted_for: playerInId,
-              substituted_minute: minuteNum
+              substituted_minute: minuteNum,
+              event_minutes: eventMin
             };
             next[playerInId] = {
               ...playerIn,
@@ -745,12 +854,30 @@ export const MatchReport: React.FC = () => {
       if (!player) return prev;
 
       if (type === 'substitution') {
-        const playerInId = player.substituted_for;
+        const eventMin = { ...player.event_minutes };
+        let playerInId = player.substituted_for;
+        
+        if (eventMin.sub_out) {
+          const subIndex = eventMin.sub_out.findIndex(s => s.minute === minuteStr);
+          if (subIndex > -1) {
+            playerInId = eventMin.sub_out[subIndex].playerInId;
+            const newSubOut = [...eventMin.sub_out];
+            newSubOut.splice(subIndex, 1);
+            eventMin.sub_out = newSubOut;
+          }
+        }
+
         next[playerId] = {
           ...player,
-          substituted_for: undefined,
-          substituted_minute: undefined
+          event_minutes: eventMin
         };
+
+        // Si es el último o único cambio heredado, lo limpiamos también por consistencia
+        if (player.substituted_minute === parseAbsoluteMinute(minuteStr)) {
+          next[playerId].substituted_for = undefined;
+          next[playerId].substituted_minute = undefined;
+        }
+
         if (playerInId && next[playerInId]) {
           next[playerInId] = {
             ...next[playerInId],
@@ -853,17 +980,43 @@ export const MatchReport: React.FC = () => {
         eventsList.push({ id: `${stat.player_id}-red_card-${stat.event_minutes.red_card}`, playerId: stat.player_id, playerName, type: 'red_card', minute: stat.event_minutes.red_card, indexInType: 0 });
       }
 
-      if (stat.substituted_minute && stat.substituted_for) {
-        const subInObj = dbPlayers.find(p => p.id === stat.substituted_for);
-        eventsList.push({
-          id: `${stat.player_id}-substitution-${stat.substituted_minute}`,
-          playerId: stat.player_id,
-          playerName,
-          type: 'substitution',
-          minute: `${stat.substituted_minute}'`,
-          indexInType: 0,
-          extraInfo: subInObj ? (subInObj.nickname || subInObj.full_name) : 'Jugador'
+      // Collect substitutions for Timeline
+      const subsHandled = new Set<string>();
+      if (stat.event_minutes.sub_out) {
+        stat.event_minutes.sub_out.forEach(sub => {
+          const subKey = `${stat.player_id}-${sub.minute}-${sub.playerInId}`;
+          if (!subsHandled.has(subKey)) {
+            subsHandled.add(subKey);
+            const subInObj = dbPlayers.find(p => p.id === sub.playerInId);
+            eventsList.push({
+              id: `${stat.player_id}-substitution-${sub.minute}-${sub.playerInId}`,
+              playerId: stat.player_id,
+              playerName,
+              type: 'substitution',
+              minute: sub.minute,
+              indexInType: 0,
+              extraInfo: subInObj ? (subInObj.nickname || subInObj.full_name) : 'Jugador'
+            });
+          }
         });
+      }
+      if (stat.substituted_minute !== undefined && stat.substituted_for) {
+         // Fake minute string for legacy
+         const subMinStr = `${stat.substituted_minute}'`;
+         const subKey = `${stat.player_id}-${subMinStr}-${stat.substituted_for}`;
+         if (!subsHandled.has(subKey)) {
+            subsHandled.add(subKey);
+            const subInObj = dbPlayers.find(p => p.id === stat.substituted_for);
+            eventsList.push({
+              id: `${stat.player_id}-substitution-${stat.substituted_minute}`,
+              playerId: stat.player_id,
+              playerName,
+              type: 'substitution',
+              minute: subMinStr,
+              indexInType: 0,
+              extraInfo: subInObj ? (subInObj.nickname || subInObj.full_name) : 'Jugador'
+            });
+         }
       }
     });
 
@@ -1116,8 +1269,8 @@ export const MatchReport: React.FC = () => {
     }
   };
 
-  if (isLoadingMatch || isLoadingPlayers || isLoadingStats) {
-    return (
+  if (isLoadingMatch || isLoadingPlayers || isLoadingStats || isFetchingStats) {
+      return (
       <div className="py-12 flex justify-center">
         <CardSkeleton />
       </div>
@@ -1323,7 +1476,8 @@ export const MatchReport: React.FC = () => {
                 <h3 className="text-sm font-bold text-brand-gray-light">XI Inicial - Campograma</h3>
                 <p className="text-[10px] text-brand-gray-muted mt-0.5">Posiciona a los 11 jugadores en el sistema {tacticalSystem}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => setIsEventWizardOpen(true)}
@@ -1332,9 +1486,23 @@ export const MatchReport: React.FC = () => {
                   >
                     <Plus className="w-3.5 h-3.5" /> INCIDENCIA
                   </button>
-                <span className="text-[10px] font-mono font-black text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded border border-brand-red-600/20">
-                  {Object.keys(lineup).length}/11 Titulares
-                </span>
+                  <span className="text-[10px] font-mono font-black text-brand-red-600 bg-brand-red-600/10 px-2 py-1 rounded border border-brand-red-600/20 shadow-sm">
+                    {Object.keys(lineup).length}/11 Titulares
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 bg-brand-black-card border border-brand-gray-dark/50 px-3 py-1.5 rounded-lg shadow-premium">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">⏱️ Duración Total:</span>
+                  <input 
+                    type="number"
+                    value={matchDuration}
+                    min="1"
+                    max="150"
+                    onChange={(e) => setMatchDuration(Number(e.target.value) || 90)}
+                    disabled={!isEditing}
+                    className="w-10 bg-transparent text-sm font-black text-white text-center focus:outline-none focus:ring-0 p-0 m-0 border-b border-white/30"
+                  />
+                  <span className="text-[10px] text-white/70 font-bold uppercase">min</span>
+                </div>
               </div>
             </div>
 
@@ -1364,24 +1532,41 @@ export const MatchReport: React.FC = () => {
               <div className="absolute bottom-[11%] left-1/2 w-1.5 h-1.5 bg-emerald-100/25 rounded-full -translate-x-1/2" />
 
               {/* Render de los slots de la formación */}
-              {currentSlots.map((slot, idx) => {
-                const starterId = lineup[idx];
-                
-                // Construir la cadena de sustituciones para mostrar múltiples jugadores si los hay
-                const playerChain: Array<{ id: string, minute: number | null, stats: any }> = [];
-                
-                if (starterId && playerStats) {
-                  let currentId = starterId;
-                  let currentStats = playerStats[currentId];
-                  playerChain.push({ id: currentId, minute: null, stats: currentStats });
+              {(() => {
+                 const allSubs: { out: string, in: string, min: number }[] = [];
+                 Object.values(playerStats).forEach(p => {
+                   if (p.substituted_for && p.substituted_minute) {
+                     allSubs.push({ out: p.player_id, in: p.substituted_for, min: p.substituted_minute });
+                   }
+                   if (p.event_minutes?.sub_out) {
+                     p.event_minutes.sub_out.forEach(s => {
+                       allSubs.push({ out: p.player_id, in: s.playerInId, min: parseAbsoluteMinute(s.minute) });
+                     });
+                   }
+                 });
+                 const uniqueSubs = Array.from(new Set(allSubs.map(e => JSON.stringify(e))))
+                   .map(e => JSON.parse(e) as { out: string, in: string, min: number })
+                   .sort((a,b) => a.min - b.min);
+
+                 return currentSlots.map((slot, idx) => {
+                  const starterId = lineup[idx];
                   
-                  while (currentStats?.substituted_for) {
-                    const subMinute = currentStats.substituted_minute || null;
-                    currentId = currentStats.substituted_for;
-                    currentStats = playerStats[currentId];
-                    playerChain.push({ id: currentId, minute: subMinute, stats: currentStats });
+                  // Construir la cadena de sustituciones cronológicamente
+                  const playerChain: Array<{ id: string, minute: number | null, stats: any }> = [];
+                  
+                  if (starterId && playerStats) {
+                    let currentId = starterId;
+                    playerChain.push({ id: currentId, minute: null, stats: playerStats[currentId] });
+                    
+                    let lastTime = -1;
+                    while (true) {
+                       const nextSub = uniqueSubs.find(s => s.out === currentId && s.min > lastTime);
+                       if (!nextSub) break;
+                       currentId = nextSub.in;
+                       lastTime = nextSub.min;
+                       playerChain.push({ id: currentId, minute: nextSub.min, stats: playerStats[currentId] });
+                    }
                   }
-                }
 
                 return (
                   <div
@@ -1574,7 +1759,7 @@ export const MatchReport: React.FC = () => {
                     )}
                   </div>
                 );
-              })}
+              })})()}
             </div>
           </div>
 

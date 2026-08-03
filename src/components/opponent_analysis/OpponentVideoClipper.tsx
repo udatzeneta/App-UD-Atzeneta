@@ -7,6 +7,7 @@ import { FastClipperModal } from './FastClipperModal';
 import { TaskBoardEditor } from '../TaskBoardEditor';
 import { ClipCategorySelector } from './ClipCategorySelector';
 import { catLabel } from '../../constants/opponentTaxonomy';
+import { resolveVeoUrl } from '../../utils/opponentVideo';
 
 interface Props {
   videos?: OpponentVideo[];
@@ -32,11 +33,12 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
     return url;
   };
 
-  const addVideo = () => {
+  const addVideo = async () => {
     if (!newUrl.trim()) return;
+    const resolvedUrl = await resolveVeoUrl(newUrl.trim());
     const newVideo: OpponentVideo = {
       id: `vid-${Date.now()}`,
-      url: newUrl.trim(),
+      url: resolvedUrl,
       clips: []
     };
     const newVideos = [...videos, newVideo];
@@ -208,7 +210,7 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
             type="text"
             value={newUrl}
             onChange={(e) => setNewUrl(e.target.value)}
-            placeholder="Añadir enlace de YouTube o Vimeo..."
+            placeholder="Añadir enlace de YouTube, Vimeo o MP4 (ej. Veo)..."
             className="w-full bg-black border border-brand-black-border rounded-lg pl-9 pr-3 py-2 text-sm text-brand-gray-light focus:border-brand-red-600 outline-none"
           />
         </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { OpponentLibraryVideo } from '../../types';
 import { LibraryVideoStudio } from './LibraryVideoStudio';
-import { detectVideoProvider, defaultVideoTitle } from '../../utils/opponentVideo';
+import { detectVideoProvider, defaultVideoTitle, resolveVeoUrl } from '../../utils/opponentVideo';
 import {
   Plus, Link as LinkIcon, Film, Play, Trash2, Scissors, MonitorPlay, AlertTriangle, Video,
 } from 'lucide-react';
@@ -29,13 +29,16 @@ export const OpponentVideoLibrary: React.FC<Props> = ({ videos, onChange, canEdi
 
   const openVideo = videos.find(v => v.id === openVideoId) || null;
 
-  const addVideo = () => {
+  const addVideo = async () => {
     const url = newUrl.trim();
     if (!url) return;
-    const { provider, clippable } = detectVideoProvider(url);
+    
+    const resolvedUrl = await resolveVeoUrl(url);
+    const { provider, clippable } = detectVideoProvider(resolvedUrl);
+    
     const newVideo: OpponentLibraryVideo = {
       id: `libvid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      url,
+      url: resolvedUrl,
       title: defaultVideoTitle(provider, videos.length),
       provider,
       clippable,

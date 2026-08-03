@@ -91,7 +91,7 @@ export const Dashboard: React.FC = () => {
   const { data: attendanceList = [] } = useQuery({
     queryKey: ['training_attendance'],
     queryFn: () => dataService.getAllAttendance(),
-    enabled: isPlayer
+    enabled: isPlayer || canManageTrainings
   });
 
   // 1. Extraer Jugadores de la tabla `players`
@@ -294,6 +294,7 @@ export const Dashboard: React.FC = () => {
   const [aSelectedTrainingId, setASelectedTrainingId] = useState<string>('');
   const [aSearch, setASearch] = useState('');
   const [aAttendanceMap, setAAttendanceMap] = useState<Record<string, string>>({});
+  const [aObservationsMap, setAObservationsMap] = useState<Record<string, string>>({});
 
   const saveAttendanceMutation = useMutation({
     mutationFn: async (payload: { training_id: string, attendance: any[] }) => {
@@ -316,7 +317,8 @@ export const Dashboard: React.FC = () => {
     const attendanceRecords = dbPlayers.map(p => ({
       training_id: aSelectedTrainingId,
       player_id: p.id,
-      status: aAttendanceMap[p.id] || 'ENT'
+      status: aAttendanceMap[p.id] || 'ENT',
+      observations: aObservationsMap[p.id] || ''
     }));
     saveAttendanceMutation.mutate({ training_id: aSelectedTrainingId, attendance: attendanceRecords });
   };
@@ -564,6 +566,7 @@ export const Dashboard: React.FC = () => {
                 setActiveForm('attendance');
                 setASelectedTrainingId('');
                 setAAttendanceMap({});
+                setAObservationsMap({});
               }}
               className="bg-brand-black-card border border-brand-black-border hover:border-emerald-500/50 rounded-2xl p-6 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-premium group flex flex-col items-center text-center gap-4"
             >
@@ -821,10 +824,21 @@ export const Dashboard: React.FC = () => {
                       key={t.id}
                       onClick={() => {
                         setASelectedTrainingId(t.id);
-                        // Initialize all as ENT (Present)
-                        const initial: Record<string, string> = {};
-                        players.forEach(p => initial[p.id] = 'ENT');
-                        setAAttendanceMap(initial);
+                        // Initialize based on player intent
+                        const initialA: Record<string, string> = {};
+                        const initialO: Record<string, string> = {};
+                        players.forEach(p => {
+                          const log = attendanceList.find(a => a.training_id === t.id && a.player_id === p.id);
+                          if (log?.player_intent === false) {
+                            initialA[p.id] = 'AA';
+                            initialO[p.id] = log.player_reason ? `Motivo: ${log.player_reason}` : '';
+                          } else {
+                            initialA[p.id] = 'ENT';
+                            initialO[p.id] = '';
+                          }
+                        });
+                        setAAttendanceMap(initialA);
+                        setAObservationsMap(initialO);
                       }}
                       className="w-full bg-brand-black/40 border border-brand-black-border hover:border-emerald-500/40 p-4 rounded-xl flex items-center justify-between group transition-all"
                     >
@@ -873,13 +887,21 @@ export const Dashboard: React.FC = () => {
                 <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar mb-6">
                   {players.filter(p => p.full_name.toLowerCase().includes(aSearch.toLowerCase())).map(p => {
                     const status = aAttendanceMap[p.id] || 'ENT';
+                    const obs = aObservationsMap[p.id] || '';
+                    const log = attendanceList.find(a => a.training_id === aSelectedTrainingId && a.player_id === p.id);
                     return (
                       <div key={p.id} className="bg-brand-black/40 border border-brand-black-border rounded-xl p-4 flex flex-col gap-3">
-                        <div className="flex items-center gap-3">
-                          <img src={p.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-8 h-8 rounded-full border border-brand-black-border object-cover" />
-                          <div>
-                            <h4 className="text-sm font-semibold text-brand-gray-light truncate leading-none">{p.full_name}</h4>
-                            <span className="text-[10px] text-brand-gray-muted mt-1 uppercase">{p.role}</span>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <img src={p.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-8 h-8 rounded-full border border-brand-black-border object-cover" />
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-semibold text-brand-gray-light truncate leading-none">{p.full_name}</h4>
+                              <span className="text-[10px] text-brand-gray-muted mt-1 uppercase">{p.role}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {log?.player_intent === true && <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Voy</span>}
+                            {log?.player_intent === false && <span className="text-[10px] text-brand-red-400 font-bold bg-brand-red-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title={log.player_reason || undefined}><X className="w-3 h-3" /> No voy</span>}
                           </div>
                         </div>
                         <select
@@ -895,6 +917,9 @@ export const Dashboard: React.FC = () => {
                             </option>
                           ))}
                         </select>
+                        <input type="text" placeholder="Observaciones..." value={obs}
+                          onChange={e => setAObservationsMap(prev => ({ ...prev, [p.id]: e.target.value }))}
+                          className="w-full bg-brand-black/40 border border-brand-black-border rounded-lg px-2 py-1.5 text-xs text-brand-gray-light focus:ring-1 focus:ring-emerald-500" />
                       </div>
                     );
                   })}

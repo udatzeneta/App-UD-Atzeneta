@@ -167,6 +167,7 @@ export interface PlayerMatchStats {
     penalty_goals?: string[];
     conceded_penalty_goals?: string[];
     injuries?: string[];
+    sub_out?: { minute: string; playerInId: string }[];
   } | null;
   player_intent?: boolean | null;
   player_reason?: string | null;

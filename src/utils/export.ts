@@ -542,10 +542,6 @@ export const exportCallupToPDF = async (
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.width;
 
-  // 1. Cabecera Decorativa
-  doc.setFillColor(...BRAND_RED);
-  doc.rect(0, 8, pageWidth, 4, 'F');
-
   // Intentar cargar el escudo
   let logoBase64 = '';
   try {
@@ -555,7 +551,7 @@ export const exportCallupToPDF = async (
     await new Promise<void>((resolve, reject) => {
       logoReader.onload = () => {
         logoBase64 = logoReader.result as string;
-        doc.addImage(logoBase64, 'PNG', 14, 14, 16, 18, undefined, 'FAST');
+        doc.addImage(logoBase64, 'PNG', 10, 8, 14, 16, undefined, 'FAST');
         resolve();
       };
       logoReader.onerror = reject;
@@ -567,82 +563,30 @@ export const exportCallupToPDF = async (
 
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...BRAND_RED);
-  doc.text('CONVOCATORIA OFICIAL', 36, 20);
-
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(80, 80, 80);
-  doc.text('UD Atzeneta · Portal de Gestión Interna', 36, 25);
+  doc.setTextColor(0, 0, 0); // Texto Negro
+  doc.text('CONVOCATORIA OFICIAL', 28, 14);
 
   doc.setFontSize(9);
-  doc.setTextColor(110, 110, 110);
-  doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')}`, 36, 29);
-
-  const infoBoxW = pageWidth - 84;
-
-  // 2. Información General del Partido
-  doc.setFillColor(245, 245, 245);
-  doc.rect(14, 35, infoBoxW, 20, 'F');
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.15);
-  doc.rect(14, 35, infoBoxW, 20, 'D');
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 30, 30);
-  const localStr = match.is_local ? 'Local' : 'Visitante';
-  const matchupText = match.is_local 
-    ? `UD Atzeneta vs ${match.rival}`
-    : `${match.rival} vs UD Atzeneta`;
-  
-  doc.text(matchupText, 18, 42);
-
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(80, 80, 80);
-  doc.text(`Fecha: ${match.date} ${match.time ? '| Hora Partido: ' + match.time + 'h' : ''} | ${match.competition} (${localStr})`, 18, 48);
-  if (match.location) {
-    doc.text(`Lugar: ${match.location}`, 18, 52);
-  }
-  
-  if (match.matchday) {
-    doc.setFont('helvetica', 'bold');
-    doc.text(`J. ${match.matchday}`, 14 + infoBoxW - 5, 42, { align: 'right' });
-  }
+  doc.setTextColor(0, 0, 0); // Texto Negro
+  doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')}`, 28, 19);
 
-  // Info específica de convocatoria (Lugar y Hora de reunión)
-  doc.setFillColor(254, 242, 230); // Naranja muy claro
-  doc.rect(14, 58, infoBoxW, 12, 'F');
-  doc.setDrawColor(230, 210, 200);
-  doc.rect(14, 58, infoBoxW, 12, 'D');
-  
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(193, 18, 31);
-  doc.text(`Cita Jugadores:`, 18, 65);
-  
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 30, 30);
-  doc.text(`${match.callup_time || '--:--'} hs  |  Lugar: ${match.callup_location || 'No especificado'}`, 45, 65);
+  // --- EQUIPACIÓN OFICIAL (Movida a la derecha superior para ahorrar espacio) ---
+  const kitBoxW = 45;
+  const kitBoxH = 26; 
+  const kitBoxX = pageWidth - 10 - kitBoxW;
+  const kitBoxY = 8;
 
-  // --- EQUIPACIÓN OFICIAL (Formato Cuadrado Moderno) ---
-  const kitBoxX = 14 + infoBoxW + 6;
-  const kitBoxY = 35;
-  const kitBoxW = 50;
-  const kitBoxH = 35; // Altura que iguala las dos cajas de la izquierda
-
-  // Fondo del cuadro
-  doc.setFillColor(24, 24, 27); // Zinc 900
-  doc.rect(kitBoxX, kitBoxY, kitBoxW, kitBoxH, 'F');
-  // Borde
-  doc.setDrawColor(63, 63, 70); // Zinc 700
-  doc.setLineWidth(0.3);
-  doc.rect(kitBoxX, kitBoxY, kitBoxW, kitBoxH, 'D');
+  // Fondo blanco, borde negro
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.2);
+  doc.rect(kitBoxX, kitBoxY, kitBoxW, kitBoxH, 'FD');
 
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(161, 161, 170); // Zinc 400
-  doc.text('EQUIPACIÓN OFICIAL', kitBoxX + kitBoxW / 2, kitBoxY + 6, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
+  doc.text('EQUIPACIÓN OFICIAL', kitBoxX + kitBoxW / 2, kitBoxY + 5, { align: 'center' });
 
   const shirtColor = match.kit_shirt_color || '#C1121F';
   const shortsColor = match.kit_shorts_color || '#000000';
@@ -650,17 +594,60 @@ export const exportCallupToPDF = async (
 
   const mannequinPng = await generateMannequinPng(shirtColor, shortsColor, socksColor, logoBase64);
   if (mannequinPng) {
-    const imgW = 16;
-    const imgH = 26;
+    const imgW = 12;
+    const imgH = 20;
     const imgX = kitBoxX + (kitBoxW - imgW) / 2;
-    const imgY = kitBoxY + 8;
+    const imgY = kitBoxY + 5.5;
     doc.addImage(mannequinPng, 'PNG', imgX, imgY, imgW, imgH, undefined, 'FAST');
   } else {
-    // Fallback si falla la generación
-    doc.setTextColor(255, 255, 255);
-    doc.text('No disponible', kitBoxX + kitBoxW / 2, kitBoxY + 20, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    doc.text('No disponible', kitBoxX + kitBoxW / 2, kitBoxY + 16, { align: 'center' });
   }
-  // ------------------------------------
+
+  // 2. Información General del Partido
+  const infoBoxW = pageWidth - 20 - kitBoxW - 4; // Ancho restante menos margen
+  const infoBoxX = 10;
+  const infoBoxY = 25;
+  const infoBoxH = 14;
+
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.2);
+  doc.rect(infoBoxX, infoBoxY, infoBoxW, infoBoxH, 'FD');
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  
+  const localStr = match.is_local ? 'Local' : 'Visitante';
+  const matchupText = match.is_local 
+    ? `UD Atzeneta vs ${match.rival}`
+    : `${match.rival} vs UD Atzeneta`;
+  
+  doc.text(matchupText, infoBoxX + 4, infoBoxY + 5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(`Fecha: ${match.date} ${match.time ? '| Hora Partido: ' + match.time + 'h' : ''} | ${match.competition} (${localStr})`, infoBoxX + 4, infoBoxY + 9);
+  
+  if (match.location) {
+    doc.text(`Lugar: ${match.location}`, infoBoxX + 4, infoBoxY + 13);
+  }
+  
+  if (match.matchday) {
+    doc.setFont('helvetica', 'bold');
+    doc.text(`J. ${match.matchday}`, infoBoxX + infoBoxW - 4, infoBoxY + 5, { align: 'right' });
+  }
+
+  // Info específica de convocatoria (Lugar y Hora de reunión)
+  doc.setFillColor(255, 255, 255);
+  doc.rect(infoBoxX, infoBoxY + infoBoxH + 2, pageWidth - 20, 8, 'FD');
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Cita Jugadores:`, infoBoxX + 4, infoBoxY + infoBoxH + 7.5);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${match.callup_time || '--:--'} hs  |  Lugar: ${match.callup_location || 'No especificado'}`, infoBoxX + 28, infoBoxY + infoBoxH + 7.5);
 
   // Pre-cargar fotos
   const playerPhotos = await Promise.all(
@@ -681,13 +668,11 @@ export const exportCallupToPDF = async (
     })
   );
 
-  // Función para convertir a Title Case
   const toTitleCase = (str: string) => {
     if (!str) return '';
     return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   };
 
-  // Tabla de jugadores
   const headers = ['Foto', 'Dorsal', 'Nombre del Jugador', 'Firma / Observaciones'];
   const rows = players.map(p => [
     '', // Foto
@@ -696,13 +681,11 @@ export const exportCallupToPDF = async (
     '' // Espacio para firmar
   ]);
 
-  // Cálculo dinámico para que quepa en 1 página
-  const startY = 75;
-  const bottomMargin = 10;
+  const startY = 53;
+  const bottomMargin = 8;
   const headerHeight = 8;
   const availableHeight = doc.internal.pageSize.height - startY - bottomMargin - headerHeight; 
   
-  // Altura máxima por fila
   let rowHeight = Math.floor(availableHeight / Math.max(players.length, 1));
   if (rowHeight > 14) rowHeight = 14; 
   if (rowHeight < 6) rowHeight = 6; 
@@ -713,18 +696,18 @@ export const exportCallupToPDF = async (
     head: [headers],
     body: rows,
     startY: startY,
-    margin: { bottom: bottomMargin },
-    styles: { fontSize: rowHeight < 9 ? 8 : 10, cellPadding: 1, minCellHeight: rowHeight, valign: 'middle' },
+    margin: { left: 10, right: 10, bottom: bottomMargin },
+    styles: { fontSize: rowHeight < 9 ? 8 : 10, cellPadding: 1, minCellHeight: rowHeight, valign: 'middle', textColor: [0, 0, 0] },
     columnStyles: {
       0: { cellWidth: 15, halign: 'center' },
       1: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
       2: { halign: 'left' },
-      3: { cellWidth: 60 } // Espacio firma
+      3: { cellWidth: 80 }
     },
-    headStyles: { fillColor: BRAND_RED, textColor: 255, fontStyle: 'bold', minCellHeight: 8 },
-    alternateRowStyles: { fillColor: [248, 248, 248] },
+    headStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold', minCellHeight: 8, lineWidth: 0.1, lineColor: [0, 0, 0] },
+    alternateRowStyles: { fillColor: [255, 255, 255] },
     theme: 'grid',
-    tableLineColor: [200, 200, 200],
+    tableLineColor: [0, 0, 0], // Bordes siempre negros
     tableLineWidth: 0.1,
     didDrawCell: (data: any) => {
       if (data.column.index === 0 && data.cell.section === 'body') {
