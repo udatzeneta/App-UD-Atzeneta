@@ -28,7 +28,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-24 lg:pb-4">
       {/* Fondo difuminado interactivo */}
       <div 
         className="fixed inset-0 bg-[#000000]/60 backdrop-blur-sm transition-opacity animate-fade-in"
@@ -36,7 +36,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
       />
       
       {/* Caja de Diálogo Modal */}
-      <div className={`bg-brand-black-card border border-brand-black-border w-full ${maxWidth} rounded-xl shadow-premium overflow-hidden z-10 animate-slide-up flex flex-col max-h-[90vh]`}>
+      <div className={`bg-brand-black-card border border-brand-black-border w-full ${maxWidth} rounded-xl shadow-premium overflow-hidden z-10 animate-slide-up flex flex-col max-h-[calc(100dvh-8rem)] lg:max-h-[90dvh]`}>
         
         {/* Cabecera del Modal */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-brand-black-border bg-brand-black-hover/40">
