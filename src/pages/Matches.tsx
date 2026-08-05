@@ -1929,18 +1929,18 @@ export const Matches: React.FC = () => {
 
           </div>
 
-          <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2 sm:justify-end">
+          <div className="sticky -bottom-6 bg-brand-black-card z-20 grid grid-cols-2 sm:flex sm:flex-row flex-wrap gap-2 pt-4 pb-6 px-6 -mx-6 mt-4 border-t border-brand-black-border sm:justify-end shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.5)]">
             <button
               type="button"
               onClick={handleExportCallupPDF}
               className="btn-secondary py-2 text-xs flex items-center justify-center gap-1 w-full sm:w-auto"
             >
-              <FileText className="w-3.5 h-3.5" /> Descargar PDF
+              <FileText className="w-3.5 h-3.5" /> PDF
             </button>
             <button
               type="button"
               onClick={() => setIsSquadModalOpen(false)}
-              className="btn-secondary py-2 text-xs justify-center w-full sm:w-auto"
+              className="btn-secondary py-2 text-xs flex items-center justify-center w-full sm:w-auto"
             >
               Cancelar
             </button>
@@ -1948,16 +1948,16 @@ export const Matches: React.FC = () => {
               type="button"
               onClick={handleDeleteSquad}
               disabled={deleteSquadMutation.isPending}
-              className="btn-secondary py-2 text-xs justify-center text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 w-full sm:w-auto"
+              className="btn-secondary py-2 text-xs flex items-center justify-center text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 w-full sm:w-auto"
             >
-              {deleteSquadMutation.isPending ? 'Borrando...' : 'Borrar Convocatoria'}
+              {deleteSquadMutation.isPending ? 'Borrando...' : 'Borrar'}
             </button>
             <button
               type="submit"
               disabled={saveSquadMutation.isPending}
               className="btn-primary py-2 text-xs font-semibold flex items-center justify-center gap-1 w-full sm:w-auto"
             >
-              {saveSquadMutation.isPending ? 'Guardando...' : 'Guardar Convocatoria'}
+              {saveSquadMutation.isPending ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
         </form>
