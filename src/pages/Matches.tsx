@@ -285,6 +285,17 @@ export const Matches: React.FC = () => {
   const handleSaveSquad = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMatchForActions) return;
+
+    if (!callupTime.trim() || !callupLocation.trim()) {
+      showToast('error', 'Falta rellenar campos', 'Debes introducir la hora y el lugar de la convocatoria para poder guardarla.');
+      return;
+    }
+
+    if (selectedSquadPlayerIds.length === 0) {
+      showToast('error', 'Faltan jugadores', 'Debes seleccionar al menos un jugador convocado.');
+      return;
+    }
+
     saveSquadMutation.mutate({
       matchId: selectedMatchForActions.id,
       playerIds: selectedSquadPlayerIds,
@@ -712,7 +723,7 @@ export const Matches: React.FC = () => {
               <span>{match.rival}</span>
             </div>
              <div className="flex items-center gap-2 mt-1">
-               {(match.callup_time || match.callup_location) && (
+               {(match.callup_time || match.callup_location || match.kit_shirt_color) && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -733,7 +744,7 @@ export const Matches: React.FC = () => {
                   }}
                   className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
                 >
-                  <CheckCircle className="w-3 h-3" /> Datos subidos
+                  <CheckCircle className="w-3 h-3" /> Acta
                 </button>
               )}
              </div>
@@ -837,7 +848,7 @@ export const Matches: React.FC = () => {
               <h4 className="text-sm font-semibold text-brand-gray-light flex flex-col gap-1">
                 {match.rival}
                 <div className="flex flex-wrap items-center gap-2 mt-1 font-normal">
-                  {(match.callup_time || match.callup_location) && (
+                  {(match.callup_time || match.callup_location || match.kit_shirt_color) && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -858,7 +869,7 @@ export const Matches: React.FC = () => {
                       }}
                       className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-600/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-600/20 w-fit hover:bg-emerald-600/20 transition-all cursor-pointer"
                     >
-                      <CheckCircle className="w-3 h-3" /> Datos subidos
+                      <CheckCircle className="w-3 h-3" /> Acta
                     </button>
                   )}
                 </div>
