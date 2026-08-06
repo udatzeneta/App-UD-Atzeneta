@@ -63,6 +63,7 @@ const ClipSlide: React.FC<{
   const hasAutoPausedRef = useRef(false);
   const reachedEndRef = useRef(false);
   const isSeekingRef = useRef(false);
+  const hasForcedStartRef = useRef(false);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -166,6 +167,7 @@ const ClipSlide: React.FC<{
             <Player
               ref={playerRef}
               url={validUrl}
+              src={validUrl}
               width="100%"
               height="100%"
           playing={playing}
@@ -191,8 +193,9 @@ const ClipSlide: React.FC<{
             setCurrentTime(t);
 
             // Forzar inicio si YouTube empezó desde 0 por error
-            if (t < start - 0.5) {
+            if (t < start - 0.5 && !hasForcedStartRef.current) {
               isSeekingRef.current = true;
+              hasForcedStartRef.current = true;
               if (playerRef.current) {
                 if (typeof playerRef.current.seekTo === 'function') {
                   playerRef.current.seekTo(start, 'seconds');
@@ -202,7 +205,7 @@ const ClipSlide: React.FC<{
               }
               reachedEndRef.current = false;
               hasAutoPausedRef.current = false;
-              setTimeout(() => { isSeekingRef.current = false; }, 500);
+              setTimeout(() => { isSeekingRef.current = false; }, 1000);
               return;
             }
 
