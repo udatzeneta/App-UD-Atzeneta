@@ -16,7 +16,7 @@ import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 
 export const SettingsPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { isAdmin, refreshPermissions } = usePermissions();
+  const { isAdmin, isTrainer, refreshPermissions } = usePermissions();
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'general' | 'roles' | 'users' | 'share' | 'members'>('general');
@@ -66,8 +66,8 @@ export const SettingsPage: React.FC = () => {
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['admin_users'],
-    queryFn: () => authService.getAdminUsers(),
-    enabled: isAdmin
+    queryFn: () => isAdmin ? authService.getAdminUsers() : authService.getProfiles(),
+    enabled: isAdmin || isTrainer
   });
 
   // Mutaciones
@@ -325,9 +325,8 @@ export const SettingsPage: React.FC = () => {
         </button>
 
         {isAdmin && (
-          <>
-            <button
-              onClick={() => setActiveTab('roles')}
+          <button
+            onClick={() => setActiveTab('roles')}
               className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all ${
                 activeTab === 'roles'
                   ? 'border-brand-red-600 text-brand-gray-light'
@@ -336,7 +335,9 @@ export const SettingsPage: React.FC = () => {
             >
               <ShieldCheck className="w-4 h-4" /> Permisos por Rol
             </button>
+        )}
 
+        {(isAdmin || isTrainer) && (
             <button
               onClick={() => setActiveTab('members')}
               className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all ${
@@ -347,7 +348,10 @@ export const SettingsPage: React.FC = () => {
             >
               <Users className="w-4 h-4" /> Gestión de Usuarios
             </button>
+        )}
 
+        {isAdmin && (
+          <>
             <button
               onClick={() => setActiveTab('users')}
               className={`flex items-center gap-2 pb-3 text-sm font-semibold border-b-2 transition-all ${
@@ -415,7 +419,7 @@ export const SettingsPage: React.FC = () => {
       {/* =====================================================================
           TAB: GESTIÓN DE USUARIOS
           ===================================================================== */}
-      {activeTab === 'members' && isAdmin && (
+      {activeTab === 'members' && (isAdmin || isTrainer) && (
         <div className="space-y-6">
           <div className="bg-brand-black border border-brand-black-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -448,7 +452,7 @@ export const SettingsPage: React.FC = () => {
                     <th className="table-th text-left">Usuario</th>
                     <th className="table-th text-left">Email</th>
                     <th className="table-th text-left">Rol</th>
-                    <th className="table-th text-right">Acciones</th>
+                    {isAdmin && <th className="table-th text-right">Acciones</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-brand-black-border">
@@ -521,47 +525,49 @@ export const SettingsPage: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="table-td text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {isEditing ? (
-                              <>
-                                <button
-                                  onClick={handleSaveProfile}
-                                  className="p-1.5 rounded bg-brand-red-600/10 text-brand-red-600 hover:bg-brand-red-600 hover:text-white transition-colors"
-                                  title="Guardar"
-                                >
-                                  <Save className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingProfile(null)}
-                                  className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light transition-colors"
-                                  title="Cancelar"
-                                >
-                                  Cancelar
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => handleEditProfile(p)}
-                                  className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light transition-colors"
-                                  title="Editar"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                {!isSystemAdmin && (
+                        {isAdmin && (
+                          <td className="table-td text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {isEditing ? (
+                                <>
                                   <button
-                                    onClick={() => handleDeleteProfile(p.id)}
-                                    className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-red-500 transition-colors"
-                                    title="Eliminar"
+                                    onClick={handleSaveProfile}
+                                    className="p-1.5 rounded bg-brand-red-600/10 text-brand-red-600 hover:bg-brand-red-600 hover:text-white transition-colors"
+                                    title="Guardar"
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Save className="w-4 h-4" />
                                   </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
+                                  <button
+                                    onClick={() => setEditingProfile(null)}
+                                    className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light transition-colors"
+                                    title="Cancelar"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleEditProfile(p)}
+                                    className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light transition-colors"
+                                    title="Editar"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  {!isSystemAdmin && (
+                                    <button
+                                      onClick={() => handleDeleteProfile(p.id)}
+                                      className="p-1.5 rounded bg-brand-black-hover text-brand-gray-muted hover:text-brand-red-500 transition-colors"
+                                      title="Eliminar"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
