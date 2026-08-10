@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend
 } from 'recharts';
 import { computeGruposCounts } from '../lib/fuerzaConstants';
 import MuscleHeatmap, { MuscleHeatmapLegend } from '../components/MuscleHeatmap';
@@ -18,6 +18,8 @@ import { EjercicioFuerzaFormModal } from '../components/pf/EjercicioFuerzaFormMo
 import { EjercicioDetalleModal } from '../components/pf/EjercicioDetalleModal';
 import { GPSPlayerPrintView } from '../components/pf/GPSPlayerPrintView';
 import { FuerzaSessionPrintView } from '../components/pf/FuerzaSessionPrintView';
+import { GPSSessionPrintView } from '../components/pf/GPSSessionPrintView';
+import { GPSPlayerSessionPrintView } from '../components/pf/GPSPlayerSessionPrintView';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -118,7 +120,33 @@ function ComparadorTab() {
     }
   });
 
-  return <ComparadorGPS jugadores={jugadores} gpsRecords={gpsRecords} metrics={METRICS} />;
+  const { data: entrenamientos = [] } = useQuery({
+    queryKey: ['trainings'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('trainings').select('*');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: partidos = [] } = useQuery({
+    queryKey: ['matches'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('matches').select('*');
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  return (
+    <ComparadorGPS
+      jugadores={jugadores}
+      gpsRecords={gpsRecords}
+      entrenamientos={entrenamientos}
+      partidos={partidos}
+      metrics={METRICS}
+    />
+  );
 }
 
 function DashboardGPS() {
@@ -127,7 +155,16 @@ function DashboardGPS() {
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGpsRecord, setEditingGpsRecord] = useState<any>(null);
+  
+  const [viewMode, setViewMode] = useState<'player' | 'session'>('player');
   const [jugadorId, setJugadorId] = useState('');
+  const [playerSessionId, setPlayerSessionId] = useState('todos');
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+
+  React.useEffect(() => {
+    setPlayerSessionId('todos');
+  }, [jugadorId]);
+  
   const [sessionFilter, setSessionFilter] = useState('todos'); // 'todos' | 'entrenamiento' | 'partido'
   const [metric, setMetric] = useState('distancia_total');
   
@@ -185,6 +222,58 @@ function DashboardGPS() {
       return (a.dorsal || 999) - (b.dorsal || 999);
     });
 
+  const sessionsWithGps = React.useMemo(() => {
+    const sessionIds = new Set(gpsRecords.map(r => r.session_id));
+    const list: { id: string; label: string; date: string; type: 'entrenamiento' | 'partido' }[] = [];
+    
+    entrenamientos.forEach(e => {
+      if (sessionIds.has(e.id)) {
+        list.push({
+          id: e.id,
+          label: `Entrenamiento - ${formatDate(e.date || e.fecha)}`,
+          date: e.date || e.fecha || '',
+          type: 'entrenamiento'
+        });
+      }
+    });
+
+    partidos.forEach(p => {
+      if (sessionIds.has(p.id)) {
+        list.push({
+          id: p.id,
+          label: `Partido vs ${p.rival || 'Rival'} - ${formatDate(p.date || p.fecha)}`,
+          date: p.date || p.fecha || '',
+          type: 'partido'
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.date.localeCompare(a.date));
+  }, [gpsRecords, entrenamientos, partidos]);
+
+  React.useEffect(() => {
+    if (sessionsWithGps.length > 0 && !selectedSessionId) {
+      setSelectedSessionId(sessionsWithGps[0].id);
+    }
+  }, [sessionsWithGps, selectedSessionId]);
+
+  const selectedSession = sessionsWithGps.find(s => s.id === selectedSessionId);
+
+  const sessionRecords = React.useMemo(() => {
+    if (!selectedSessionId) return [];
+    return gpsRecords
+      .filter(r => r.session_id === selectedSessionId)
+      .map(r => {
+        const player = jugadores.find(j => j.id === r.jugador_id);
+        return {
+          ...r,
+          playerName: player ? (player.nickname || player.full_name) : 'Desconocido',
+          dorsal: player?.dorsal || null
+        };
+      })
+      .sort((a, b) => (b[metric as keyof typeof b] as number || 0) - (a[metric as keyof typeof a] as number || 0));
+  }, [selectedSessionId, gpsRecords, jugadores, metric]);
+
   const chartData = React.useMemo(() => {
     return gpsRecords
       .filter(g => {
@@ -221,6 +310,86 @@ function DashboardGPS() {
   const avgValue = hasData && validDataCount > 0
     ? (chartData.reduce((s, d) => s + ((d[metric as keyof typeof d] as number) || 0), 0) / validDataCount).toFixed(1)
     : null;
+
+  const playerSessions = React.useMemo(() => {
+    if (!jugadorId) return [];
+    return gpsRecords
+      .filter(r => r.jugador_id === jugadorId)
+      .map(r => {
+        const session = r.session_type === 'entrenamiento'
+          ? entrenamientos.find(e => e.id === r.session_id)
+          : partidos.find(p => p.id === r.session_id);
+        const fecha = session?.date || session?.fecha || '';
+        return {
+          id: r.id,
+          label: `${formatDate(fecha)} - ${r.session_type === 'entrenamiento' ? 'Entrenamiento' : 'Partido'}${r.session_type === 'partido' && session?.rival ? ` vs ${session.rival}` : ''}`,
+          fecha,
+          record: r,
+          session
+        };
+      })
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }, [jugadorId, gpsRecords, entrenamientos, partidos]);
+
+  const selectedPlayerRecord = React.useMemo(() => {
+    if (playerSessionId === 'todos') return null;
+    return gpsRecords.find(r => r.id === playerSessionId);
+  }, [playerSessionId, gpsRecords]);
+
+  const playerAverages = React.useMemo(() => {
+    if (!jugadorId) return {} as Record<string, number>;
+    const playerRecs = gpsRecords.filter(r => r.jugador_id === jugadorId);
+    const avgs: Record<string, number> = {};
+    
+    METRICS.forEach(m => {
+      const validRecs = playerRecs.filter(r => r[m.key] != null);
+      avgs[m.key] = validRecs.length > 0
+        ? validRecs.reduce((sum, r) => sum + Number(r[m.key] || 0), 0) / validRecs.length
+        : 0;
+    });
+    
+    return avgs;
+  }, [jugadorId, gpsRecords]);
+
+  const singleSessionRadarData = React.useMemo(() => {
+    if (!selectedPlayerRecord || !jugadorId) return [];
+    
+    const playerRecs = gpsRecords.filter(r => r.jugador_id === jugadorId);
+    const personalMax: Record<string, number> = {};
+    METRICS.forEach(m => {
+      const vals = playerRecs.map(r => Number(r[m.key] || 0));
+      personalMax[m.key] = Math.max(...vals, 1);
+    });
+
+    return METRICS.map(m => {
+      const val = Number(selectedPlayerRecord[m.key] || 0);
+      const avg = playerAverages[m.key] || 0;
+      const ref = personalMax[m.key];
+      
+      return {
+        metric: m.label.split(' (')[0],
+        'Sesión Actual': Number(((val / ref) * 100).toFixed(1)),
+        'Media Histórica': Number(((avg / ref) * 100).toFixed(1)),
+        raw_val: val,
+        raw_avg: Number(avg.toFixed(1))
+      };
+    });
+  }, [selectedPlayerRecord, playerAverages, gpsRecords, jugadorId]);
+
+  const sessionAvgValue = React.useMemo(() => {
+    if (sessionRecords.length === 0) return '—';
+    const sum = sessionRecords.reduce((s, r) => s + (Number(r[metric]) || 0), 0);
+    return (sum / sessionRecords.length).toFixed(1);
+  }, [sessionRecords, metric]);
+
+  const sessionMaxInfo = React.useMemo(() => {
+    if (sessionRecords.length === 0) return null;
+    const sorted = [...sessionRecords].sort((a, b) => (Number(b[metric]) || 0) - (Number(a[metric]) || 0));
+    return {
+      value: Number(sorted[0][metric]) || 0,
+      playerName: sorted[0].playerName
+    };
+  }, [sessionRecords, metric]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -287,6 +456,40 @@ function DashboardGPS() {
     html2pdf().set(opt).from(element).save();
   };
 
+  const handleDownloadSessionPDF = () => {
+    const element = document.getElementById('pdf-gps-session-container');
+    if (!element || !selectedSession) return;
+
+    const filename = `Reporte_GPS_Sesion_${selectedSession.label.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    const opt = {
+      margin:       0,
+      filename:     filename,
+      image:        { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' as const }
+    };
+
+    html2pdf().set(opt).from(element).save();
+  };
+
+  const handleDownloadPlayerSessionPDF = () => {
+    const element = document.getElementById('pdf-gps-player-session-container');
+    if (!element || !selectedJugador || !selectedPlayerRecord) return;
+    const sessionLabel = playerSessions.find(s => s.id === playerSessionId)?.label || 'Sesion';
+    const filename = `Reporte_GPS_${selectedJugador.full_name.replace(/\s+/g, '_')}_Sesion_${sessionLabel.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    const opt = {
+      margin:       0,
+      filename:     filename,
+      image:        { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' as const }
+    };
+
+    html2pdf().set(opt).from(element).save();
+  };
+
   return (
     <div className="space-y-6">
       {/* Pestañas de Equipo */}
@@ -307,43 +510,128 @@ function DashboardGPS() {
         </div>
       )}
 
+      {/* Mode toggle */}
+      <div className="flex bg-brand-black border border-brand-black-border p-1 rounded-lg w-fit">
+        <button
+          className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
+            viewMode === 'player' ? 'bg-brand-red-600 text-white shadow-glow-red' : 'text-brand-gray-muted hover:text-white'
+          }`}
+          onClick={() => setViewMode('player')}
+        >
+          Evolución por Jugador
+        </button>
+        <button
+          className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
+            viewMode === 'session' ? 'bg-brand-red-600 text-white shadow-glow-red' : 'text-brand-gray-muted hover:text-white'
+          }`}
+          onClick={() => setViewMode('session')}
+        >
+          Por Sesión (Entr. / Partido)
+        </button>
+      </div>
+
       <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl flex flex-wrap gap-4 items-end">
+        {viewMode === 'player' ? (
+          <>
+            <div className="flex-1 min-w-[240px]">
+              <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Jugador</label>
+              <PlayerSelect 
+                jugadores={jugadoresOrdenados} 
+                value={jugadorId} 
+                onChange={setJugadorId} 
+              />
+            </div>
 
-        <div className="flex-1 min-w-[240px]">
-          <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Jugador</label>
-          <PlayerSelect 
-            jugadores={jugadoresOrdenados} 
-            value={jugadorId} 
-            onChange={setJugadorId} 
-          />
-        </div>
+            {jugadorId && (
+              <div className="flex-1 min-w-[240px]">
+                <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Sesión / Fecha</label>
+                <select 
+                  className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5 outline-none" 
+                  value={playerSessionId} 
+                  onChange={e => setPlayerSessionId(e.target.value)}
+                >
+                  <option value="todos">Historial Completo (Evolución)</option>
+                  {playerSessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Métrica</label>
-          <select className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5" value={metric} onChange={e => setMetric(e.target.value)}>
-            {METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-          </select>
-        </div>
+            {playerSessionId === 'todos' && (
+              <>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Métrica</label>
+                  <select className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5 outline-none" value={metric} onChange={e => setMetric(e.target.value)}>
+                    {METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                  </select>
+                </div>
 
-        <div>
-          <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Tipo de sesión</label>
-          <div className="flex gap-2">
-            {['todos', 'entrenamiento', 'partido'].map(f => (
-              <button
-                key={f}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${sessionFilter === f ? 'bg-brand-red-600 text-white' : 'bg-brand-black border border-brand-black-border text-brand-gray-muted hover:text-white'}`}
-                onClick={() => setSessionFilter(f)}
+                <div>
+                  <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Tipo de sesión</label>
+                  <div className="flex gap-2">
+                    {['todos', 'entrenamiento', 'partido'].map(f => (
+                      <button
+                        key={f}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${sessionFilter === f ? 'bg-brand-red-600 text-white' : 'bg-brand-black border border-brand-black-border text-brand-gray-muted hover:text-white'}`}
+                        onClick={() => setSessionFilter(f)}
+                      >
+                        {f === 'todos' ? 'Todos' : f === 'entrenamiento' ? 'Entrenamientos' : 'Partidos'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex-1 min-w-[240px]">
+              <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Seleccionar Sesión GPS</label>
+              <select
+                className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5 outline-none"
+                value={selectedSessionId}
+                onChange={e => setSelectedSessionId(e.target.value)}
               >
-                {f === 'todos' ? 'Todos' : f === 'entrenamiento' ? 'Entrenamientos' : 'Partidos'}
-              </button>
-            ))}
-          </div>
-        </div>
+                <option value="">-- Seleccionar Sesión --</option>
+                {sessionsWithGps.map(s => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-medium text-brand-gray-muted uppercase tracking-wider mb-2">Métrica a Comparar</label>
+              <select className="w-full bg-brand-black border border-brand-black-border text-brand-gray-light text-sm rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2.5 outline-none" value={metric} onChange={e => setMetric(e.target.value)}>
+                {METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+              </select>
+            </div>
+          </>
+        )}
 
         <div className="ml-auto flex gap-2">
-          {jugadorId && hasData && (
+          {viewMode === 'player' && jugadorId && hasData && (
+            playerSessionId === 'todos' ? (
+              <button
+                onClick={handleDownloadPDF}
+                className="flex items-center gap-2 bg-brand-black-hover border border-brand-black-border text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-gray-dark transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Exportar PDF</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleDownloadPlayerSessionPDF}
+                className="flex items-center gap-2 bg-brand-black-hover border border-brand-black-border text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-gray-dark transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Exportar PDF</span>
+              </button>
+            )
+          )}
+          {viewMode === 'session' && selectedSessionId && sessionRecords.length > 0 && (
             <button
-              onClick={handleDownloadPDF}
+              onClick={handleDownloadSessionPDF}
               className="flex items-center gap-2 bg-brand-black-hover border border-brand-black-border text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-gray-dark transition-colors"
             >
               <Download className="w-4 h-4" />
@@ -356,7 +644,7 @@ function DashboardGPS() {
                 setEditingGpsRecord(null);
                 setIsModalOpen(true);
               }}
-              className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red"
+              className="flex items-center gap-2 bg-brand-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-brand-red-700 transition-colors shadow-glow-red font-bold"
             >
               <Plus className="w-4 h-4" />
               <span>Añadir Registro GPS</span>
@@ -377,72 +665,259 @@ function DashboardGPS() {
         editData={editingGpsRecord}
       />
 
-      {!jugadorId ? (
-        <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
-          <p className="text-brand-gray-muted">Selecciona un jugador para ver su evolución GPS.</p>
-        </div>
-      ) : !hasData ? (
-        <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
-          <p className="text-brand-gray-muted">No hay datos GPS con los filtros actuales.</p>
-        </div>
+      {viewMode === 'player' ? (
+        !jugadorId ? (
+          <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
+            <p className="text-brand-gray-muted">Selecciona un jugador para ver su evolución GPS.</p>
+          </div>
+        ) : !hasData ? (
+          <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
+            <p className="text-brand-gray-muted">No hay datos GPS con los filtros actuales.</p>
+          </div>
+        ) : playerSessionId !== 'todos' ? (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Radar comparisons and player card info */}
+              <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-4 border-b border-brand-black-border pb-4 mb-6">
+                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-brand-red-600 shrink-0">
+                      {selectedJugador?.photo_url ? (
+                        <img src={selectedJugador.photo_url} alt={selectedJugador.nickname || selectedJugador.full_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-brand-black flex items-center justify-center text-xl font-bold text-brand-gray-muted">
+                          {selectedJugador?.dorsal || '-'}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white leading-tight">
+                        {selectedJugador?.dorsal ? `${selectedJugador.dorsal}. ` : ''}{selectedJugador?.nickname || selectedJugador?.full_name}
+                      </h3>
+                      <p className="text-xs text-brand-gray-muted mt-1">
+                        {playerSessions.find(s => s.id === playerSessionId)?.label}
+                      </p>
+                    </div>
+                  </div>
+
+                  <h4 className="text-sm font-bold text-brand-gray-light mb-4 text-center">Comparativa vs Media Histórica</h4>
+                  <div className="h-[300px] w-full flex justify-center">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="70%" data={singleSessionRadarData}>
+                        <PolarGrid stroke="#333" />
+                        <PolarAngleAxis dataKey="metric" tick={{ fill: '#888', fontSize: 10 }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#888', fontSize: 9 }} />
+                        <Tooltip
+                          formatter={(value, name, props) => {
+                            const payload = props.payload;
+                            if (name === 'Sesión Actual') {
+                              return [`${payload.raw_val} (${value}%)`, name];
+                            }
+                            return [`${payload.raw_avg} (${value}%)`, name];
+                          }}
+                          contentStyle={{ backgroundColor: '#111', borderColor: '#333', fontSize: 12, borderRadius: 6, color: '#fff' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '11px' }} />
+                        <Radar name="Sesión Actual" dataKey="Sesión Actual" stroke="#CC0000" fill="#CC0000" fillOpacity={0.4} />
+                        <Radar name="Media Histórica" dataKey="Media Histórica" stroke="#2563EB" fill="#2563EB" fillOpacity={0.15} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid of cards showing raw metrics */}
+              <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-5">
+                <h4 className="text-sm font-bold text-white mb-4">Métricas de la Sesión</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  {METRICS.map(m => {
+                    const record = selectedPlayerRecord as any;
+                    const val = record?.[m.key];
+                    const avg = playerAverages[m.key];
+                    
+                    return (
+                      <div key={m.key} className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg flex flex-col justify-between">
+                        <div>
+                          <span className="text-[10px] text-brand-gray-muted font-bold block uppercase tracking-wider truncate" title={m.label}>
+                            {m.label.split(' (')[0]}
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-1">
+                            <span className="text-lg font-extrabold text-white">{val != null ? val : '—'}</span>
+                            {m.label.includes('(') && (
+                              <span className="text-[9px] text-brand-gray-muted">{m.label.split('(')[1].replace(')', '')}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center mt-3 pt-2 border-t border-brand-black-border/40 text-[10px]">
+                          <span className="text-brand-gray-muted">Media:</span>
+                          <span className="text-brand-gray-light font-medium">{avg ? avg.toFixed(1) : '—'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Último valor</div>
+                <div className="text-2xl font-bold text-brand-red-600 mt-1">{lastValue ?? '—'}</div>
+                <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
+              </div>
+              <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Máximo</div>
+                <div className="text-2xl font-bold text-white mt-1">{maxValue ?? '—'}</div>
+                <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
+              </div>
+              <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Media</div>
+                <div className="text-2xl font-bold text-white mt-1">{avgValue ?? '—'}</div>
+                <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
+              </div>
+            </div>
+
+            <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-white">
+                  {selectedMetric?.label} — {selectedJugador?.full_name}
+                </h3>
+                <span className="text-xs bg-brand-black-border px-2 py-1 rounded text-brand-gray-light">{chartData.length} registros</span>
+              </div>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                    <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#888', fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(v: any) => [v, selectedMetric?.label]}
+                      labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.sessionLabel || ''}
+                      contentStyle={{ backgroundColor: '#111', borderColor: '#333', fontSize: 12, borderRadius: 6, color: '#fff' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={metric}
+                      stroke="#CC0000"
+                      strokeWidth={2}
+                      dot={{ fill: '#CC0000', r: 4 }}
+                      activeDot={{ r: 6 }}
+                      connectNulls
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {METRICS.map(m => (
+                <MiniChart key={m.key} title={m.label} data={chartData} dataKey={m.key} color={m.color} />
+              ))}
+            </div>
+          </>
+        )
       ) : (
-        <>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
-              <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Último valor</div>
-              <div className="text-2xl font-bold text-brand-red-600 mt-1">{lastValue ?? '—'}</div>
-              <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
-            </div>
-            <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
-              <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Máximo</div>
-              <div className="text-2xl font-bold text-white mt-1">{maxValue ?? '—'}</div>
-              <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
-            </div>
-            <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
-              <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Media</div>
-              <div className="text-2xl font-bold text-white mt-1">{avgValue ?? '—'}</div>
-              <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
-            </div>
+        !selectedSessionId ? (
+          <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
+            <p className="text-brand-gray-muted">Selecciona una sesión para comparar a los jugadores.</p>
           </div>
+        ) : sessionRecords.length === 0 ? (
+          <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-12 text-center">
+            <p className="text-brand-gray-muted">No hay registros GPS registrados en esta sesión.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Jugadores Evaluados</div>
+                <div className="text-2xl font-bold text-brand-red-600 mt-1">{sessionRecords.length}</div>
+                <div className="text-xs text-brand-gray-muted mt-1">Con datos de GPS</div>
+              </div>
+              <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Máximo de la Sesión</div>
+                <div className="text-2xl font-bold text-white mt-1">
+                  {sessionMaxInfo?.value ?? '—'}
+                </div>
+                <div className="text-xs text-brand-gray-muted mt-1 truncate">
+                  Logrado por {sessionMaxInfo?.playerName} ({selectedMetric?.label})
+                </div>
+              </div>
+              <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl">
+                <div className="text-xs font-medium text-brand-gray-muted uppercase tracking-wider">Media de la Sesión</div>
+                <div className="text-2xl font-bold text-white mt-1">{sessionAvgValue}</div>
+                <div className="text-xs text-brand-gray-muted mt-1">{selectedMetric?.label}</div>
+              </div>
+            </div>
 
-          <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-white">
-                {selectedMetric?.label} — {selectedJugador?.full_name}
-              </h3>
-              <span className="text-xs bg-brand-black-border px-2 py-1 rounded text-brand-gray-light">{chartData.length} registros</span>
+            <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-white">
+                  Comparativa de {selectedMetric?.label} — {selectedSession?.label}
+                </h3>
+                <span className="text-xs bg-brand-black-border px-2 py-1 rounded text-brand-gray-light">{sessionRecords.length} registros</span>
+              </div>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sessionRecords} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                    <XAxis dataKey="playerName" tick={{ fill: '#888', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#888', fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(v: any) => [v, selectedMetric?.label]}
+                      contentStyle={{ backgroundColor: '#111', borderColor: '#333', fontSize: 12, borderRadius: 6, color: '#fff' }}
+                    />
+                    <Bar dataKey={metric} fill="#CC0000" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#888', fontSize: 11 }} />
-                  <Tooltip
-                    formatter={(v: any) => [v, selectedMetric?.label]}
-                    labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.sessionLabel || ''}
-                    contentStyle={{ backgroundColor: '#111', borderColor: '#333', fontSize: 12, borderRadius: 6, color: '#fff' }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey={metric}
-                    stroke="#CC0000"
-                    strokeWidth={2}
-                    dot={{ fill: '#CC0000', r: 4 }}
-                    activeDot={{ r: 6 }}
-                    connectNulls
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {METRICS.map(m => (
-              <MiniChart key={m.key} title={m.label} data={chartData} dataKey={m.key} color={m.color} />
-            ))}
-          </div>
-        </>
+            <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-5 overflow-hidden">
+              <h3 className="text-sm font-bold text-white mb-4">Detalle General de la Sesión</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-brand-black-border text-brand-gray-muted uppercase font-bold">
+                      <th className="py-2.5 px-3">Dorsal</th>
+                      <th className="py-2.5 px-3">Jugador</th>
+                      {METRICS.map(m => (
+                        <th key={m.key} className="py-2.5 px-3 text-right">{m.label.split(' (')[0]}</th>
+                      ))}
+                      {hasPermission('pf', 'editar') && (
+                        <th className="py-2.5 px-3 text-center">Acciones</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionRecords.map(r => (
+                      <tr key={r.id} className="border-b border-brand-black-border/40 hover:bg-brand-black/20 text-brand-gray-light">
+                        <td className="py-3 px-3 font-semibold">{r.dorsal ?? '-'}</td>
+                        <td className="py-3 px-3 text-white font-semibold">{r.playerName}</td>
+                        {METRICS.map(m => (
+                          <td key={m.key} className="py-3 px-3 text-right font-medium">
+                            {r[m.key] != null ? r[m.key] : '—'}
+                          </td>
+                        ))}
+                        {hasPermission('pf', 'editar') && (
+                          <td className="py-3 px-3 text-center space-x-3">
+                            <button onClick={() => handleEditGps(r)} className="text-brand-gray-muted hover:text-white transition-colors">
+                              Editar
+                            </button>
+                            <button onClick={() => handleDelete(r.id)} className="text-brand-gray-muted hover:text-brand-red-600 transition-colors">
+                              Eliminar
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )
       )}
 
       <PFHistoryList 
@@ -454,7 +929,7 @@ function DashboardGPS() {
         hasPermission={hasPermission('pf', 'editar')}
       />
 
-      {selectedJugador && hasData && (
+      {viewMode === 'player' && selectedJugador && hasData && (
         <div style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
           <div id="pdf-gps-player-container">
             <GPSPlayerPrintView
@@ -462,6 +937,33 @@ function DashboardGPS() {
               jugadorData={chartData}
               metrics={METRICS}
               selectedMetric={selectedMetric}
+            />
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'session' && selectedSession && sessionRecords.length > 0 && (
+        <div style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
+          <div id="pdf-gps-session-container">
+            <GPSSessionPrintView
+              session={selectedSession}
+              records={sessionRecords}
+              metrics={METRICS}
+              selectedMetric={selectedMetric}
+            />
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'player' && selectedJugador && playerSessionId !== 'todos' && selectedPlayerRecord && (
+        <div style={{ position: 'absolute', top: '-10000px', left: 0, zIndex: -1 }}>
+          <div id="pdf-gps-player-session-container">
+            <GPSPlayerSessionPrintView
+              jugador={selectedJugador}
+              record={selectedPlayerRecord}
+              sessionLabel={playerSessions.find(s => s.id === playerSessionId)?.label || 'Sesión'}
+              metrics={METRICS}
+              radarData={singleSessionRadarData}
             />
           </div>
         </div>

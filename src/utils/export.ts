@@ -647,7 +647,43 @@ export const exportCallupToPDF = async (
   doc.text(`Cita Jugadores:`, infoBoxX + 4, infoBoxY + infoBoxH + 7.5);
   
   doc.setFont('helvetica', 'normal');
-  doc.text(`${match.callup_time || '--:--'} hs  |  Lugar: ${match.callup_location || 'No especificado'}`, infoBoxX + 28, infoBoxY + infoBoxH + 7.5);
+  const callupText = match.callup_location || '';
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const urls = callupText.match(urlRegex);
+  let linkUrl = urls ? urls[0] : null;
+  
+  let textWithoutUrl = callupText;
+  if (linkUrl) {
+    textWithoutUrl = textWithoutUrl.replace(linkUrl, '').trim();
+  }
+  
+  const stadiumName = match.location || '';
+  let finalLugarText = stadiumName;
+  if (textWithoutUrl) {
+     finalLugarText += finalLugarText ? ` - ${textWithoutUrl}` : textWithoutUrl;
+  }
+  if (!finalLugarText && !linkUrl) {
+     finalLugarText = 'No especificado';
+  }
+
+  if (!linkUrl && finalLugarText !== 'No especificado') {
+     linkUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(finalLugarText);
+  }
+
+  const baseText = `${match.callup_time || '--:--'} hs  |  Lugar: ${finalLugarText}`;
+  doc.text(baseText, infoBoxX + 28, infoBoxY + infoBoxH + 7.5);
+  
+  if (linkUrl) {
+     const textWidth = doc.getTextWidth(baseText + ' ');
+     const mapStr = '(Ver Mapa)';
+     doc.setTextColor(29, 78, 216); // azul
+     const linkX = infoBoxX + 28 + textWidth;
+     const linkY = infoBoxY + infoBoxH + 7.5;
+     doc.text(mapStr, linkX, linkY);
+     const linkW = doc.getTextWidth(mapStr);
+     doc.link(linkX, linkY - 3, linkW, 4, { url: linkUrl });
+     doc.setTextColor(0, 0, 0); // reset
+  }
 
   // Pre-cargar fotos
   const playerPhotos = await Promise.all(
@@ -952,6 +988,8 @@ export const exportMatchReportToPDF = async (
       case 'goals': return `Gol de ${e.playerName}`;
       case 'penalty_goals': return `Gol Penalti de ${e.playerName}`;
       case 'own_goals': return `Gol P.P de ${e.playerName}`;
+      case 'opponent_own_goal': return `Gol P.P del Rival`;
+      case 'own_goal_team': return `Gol P.P de U.D. Atzeneta`;
       case 'assists': return `Asist. de ${e.playerName}`;
       case 'yellow_cards': return `Tarj. Amarilla ${e.playerName}`;
       case 'red_card': return `Tarj. Roja ${e.playerName}`;
@@ -973,6 +1011,9 @@ export const exportMatchReportToPDF = async (
       case 'penalty_goals': 
         return [34, 197, 94]; // verde
       case 'own_goals':
+      case 'opponent_own_goal':
+      case 'own_goal_team':
+        return [249, 115, 22]; // naranja
       case 'opponent_goal':
       case 'conceded_goals':
       case 'conceded_penalty_goals':

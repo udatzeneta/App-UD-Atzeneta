@@ -531,9 +531,35 @@ export const dataService = {
       injuries = injuries.filter(i => i.match_id !== matchId);
       MockDatabase.setPlayerInjuries(injuries);
 
-      // Borramos por completo todas las estadísticas y convocatoria de este partido
+      // Borramos las estadísticas pero MANTENEMOS la convocatoria (jugadores convocados)
       let stats = MockDatabase.getPlayerMatchStats();
-      stats = stats.filter((s: import('../types').PlayerMatchStats) => s.match_id !== matchId);
+      stats = stats.map((s: any) => {
+        if (s.match_id === matchId) {
+          if (s.is_called_up) {
+            return {
+              ...s,
+              is_starter: false,
+              position: undefined,
+              substituted_for: undefined,
+              substituted_minute: undefined,
+              minutes_played: 0,
+              goals: 0,
+              conceded_goals: 0,
+              own_goals: 0,
+              assists: 0,
+              yellow_cards: 0,
+              red_card: false,
+              rating: undefined,
+              comments: undefined,
+              positive_aspects: null,
+              improve_aspects: null,
+              event_minutes: undefined
+            };
+          }
+          return null; // para filtrar
+        }
+        return s;
+      }).filter(Boolean) as import('../types').PlayerMatchStats[];
       MockDatabase.setPlayerMatchStats(stats);
     } else {
       await supabase.from('matches').update({
@@ -551,9 +577,33 @@ export const dataService = {
         team_ratings: null
       }).eq('id', matchId);
 
-      // Borramos por completo los stats de los jugadores para este partido
-      const { error } = await supabase.from('player_match_stats').delete().eq('match_id', matchId);
-      if (error) throw error;
+      // Borramos los que no estaban convocados y reseteamos estadísticas de los convocados
+      const { error: deleteError } = await supabase
+        .from('player_match_stats')
+        .delete()
+        .eq('match_id', matchId)
+        .eq('is_called_up', false);
+      if (deleteError) throw deleteError;
+
+      const { error: resetError } = await supabase
+        .from('player_match_stats')
+        .update({
+          is_starter: false,
+          position: null,
+          substituted_for: null,
+          substituted_minute: null,
+          minutes_played: 0,
+          goals: 0,
+          conceded_goals: 0,
+          own_goals: 0,
+          assists: 0,
+          yellow_cards: 0,
+          red_card: false,
+          event_minutes: null
+        })
+        .eq('match_id', matchId)
+        .eq('is_called_up', true);
+      if (resetError) throw resetError;
 
       // Eliminar lesiones del partido (no crítico: si la columna match_id aún no existe
       // o falla, no debe abortar el borrado del acta ni impedir la navegación posterior)

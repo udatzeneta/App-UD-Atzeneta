@@ -157,6 +157,15 @@ export const Team: React.FC = () => {
           timeline[m].negative += 1;
         }
       });
+
+      // Goles en propia del rival (a favor de nuestro equipo) -> Evento Positivo
+      const oppOwnGoals = Array.isArray(match.opponent_events.own_goals) ? match.opponent_events.own_goals : [];
+      oppOwnGoals.forEach((og: any) => {
+        const m = parseInt(og?.minute);
+        if (!isNaN(m) && timeline[m]) {
+          timeline[m].positive += 1;
+        }
+      });
     }
   });
 
@@ -166,6 +175,13 @@ export const Team: React.FC = () => {
     // Goles Nuestros (Positivos)
     const myGoals = Array.isArray(stat.event_minutes.goals) ? stat.event_minutes.goals : [];
     myGoals.forEach((mStr: any) => {
+      const m = parseInt(mStr);
+      if (!isNaN(m) && timeline[m]) timeline[m].positive += 1;
+    });
+
+    // Goles de Penalti Nuestros (Positivos)
+    const myPenalties = Array.isArray(stat.event_minutes.penalty_goals) ? stat.event_minutes.penalty_goals : [];
+    myPenalties.forEach((mStr: any) => {
       const m = parseInt(mStr);
       if (!isNaN(m) && timeline[m]) timeline[m].positive += 1;
     });
@@ -188,6 +204,13 @@ export const Team: React.FC = () => {
       const m = parseInt(String(stat.event_minutes.red_card));
       if (!isNaN(m) && timeline[m]) timeline[m].negative += 1;
     }
+
+    // Goles en propia de nuestro equipo (Negativos - para datos antiguos asociados a jugador)
+    const myOwnGoals = Array.isArray(stat.event_minutes.own_goals) ? stat.event_minutes.own_goals : [];
+    myOwnGoals.forEach((mStr: any) => {
+      const m = parseInt(mStr);
+      if (!isNaN(m) && timeline[m]) timeline[m].negative += 1;
+    });
   });
 
   // Agrupar timeline en tramos de 5 o 10 minutos para suavizar la gráfica

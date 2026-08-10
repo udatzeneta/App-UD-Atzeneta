@@ -116,7 +116,11 @@ export const MatchReport: React.FC = () => {
   const [tacticalWithoutBall, setTacticalWithoutBall] = useState<string>('');
   const [tacticalSetPieces, setTacticalSetPieces] = useState<string>('');
   const [tacticalGeneral, setTacticalGeneral] = useState<string>('');
-  const [opponentEvents, setOpponentEvents] = useState<{ goals: { minute: string, dorsal: string }[], yellow_cards: { minute: string, dorsal: string }[] }>({ goals: [], yellow_cards: [] });
+  const [opponentEvents, setOpponentEvents] = useState<{
+    goals: { minute: string, dorsal?: string, isOwnGoal?: boolean }[],
+    yellow_cards: { minute: string, dorsal: string }[],
+    own_goals?: { minute: string }[]
+  }>({ goals: [], yellow_cards: [], own_goals: [] });
 
   // Alineación (mapea slot de la formación a ID de jugador)
   const [lineup, setLineup] = useState<Record<number, string>>({});
@@ -151,7 +155,7 @@ export const MatchReport: React.FC = () => {
     return minuteNum;
   };
 
-  const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>) => {
+  const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>, detectManualOverride = false) => {
     const next = { ...stats };
     
     // Build chronological substitution timeline
@@ -212,6 +216,7 @@ export const MatchReport: React.FC = () => {
 
     // Finalize stints
     Object.values(next).forEach(p => {
+      let calculatedMinutes = 0;
       const stints = playerStints[p.player_id];
       if (stints) {
         let finalExit = matchDuration;
@@ -225,17 +230,31 @@ export const MatchReport: React.FC = () => {
           }
         });
         
-        let total = 0;
         stints.forEach(stint => {
            const start = Math.min(stint.start, matchDuration);
            const end = Math.min(stint.end!, matchDuration);
            if (end > start) {
-             total += (end - start);
+             calculatedMinutes += (end - start);
            }
         });
-        next[p.player_id].minutes_played = total;
       } else {
-        next[p.player_id].minutes_played = 0;
+        calculatedMinutes = 0;
+      }
+
+      if (detectManualOverride) {
+        const isDifferent = p.minutes_played !== calculatedMinutes;
+        const hasStints = stints && stints.length > 0;
+        if (isDifferent && (p.minutes_played > 0 || hasStints)) {
+          next[p.player_id].has_manual_minutes = true;
+        } else {
+          next[p.player_id].minutes_played = calculatedMinutes;
+        }
+      } else {
+        if (p.has_manual_minutes) {
+          // Keep manual minutes, don't overwrite!
+        } else {
+          next[p.player_id].minutes_played = calculatedMinutes;
+        }
       }
     });
 
@@ -356,7 +375,12 @@ export const MatchReport: React.FC = () => {
       setTacticalWithoutBall(matchData.tactical_without_ball || '');
       setTacticalSetPieces(matchData.tactical_set_pieces || '');
       setTacticalGeneral(matchData.tactical_general || '');
-      setOpponentEvents(matchData.opponent_events || { goals: [], yellow_cards: [] });
+      const oppEvts = matchData.opponent_events || {};
+      setOpponentEvents({
+        goals: oppEvts.goals || [],
+        yellow_cards: oppEvts.yellow_cards || [],
+        own_goals: oppEvts.own_goals || []
+      });
       setTeamPositiveAspects(matchData.team_positive_aspects || '');
       setTeamImproveAspects(matchData.team_improve_aspects || '');
       if (matchData.team_ratings) {
@@ -379,6 +403,14 @@ export const MatchReport: React.FC = () => {
     statsInitializedRef.current = true;
 
     if (initialStats) {
+      const hasActa = typeof matchData.score_us === 'number' || !!matchData.tactical_system;
+      if (hasActa) {
+        const params = new URLSearchParams(location.search);
+        if (params.get('edit') !== 'true') {
+          setIsEditing(false);
+        }
+      }
+      
       const statsMap: Record<string, LocalPlayerStats> = {};
       
       dbPlayers.forEach(p => {
@@ -414,7 +446,7 @@ export const MatchReport: React.FC = () => {
         };
       });
 
-      setPlayerStats(recalculateAllMinutes(statsMap));
+      setPlayerStats(recalculateAllMinutes(statsMap, true));
 
       // Reconstruir el XI Inicial (lineup) asociando los jugadores marcados como titulares
       // a sus posiciones en la formación actual
@@ -583,6 +615,10 @@ export const MatchReport: React.FC = () => {
 
       let updated = { ...player, [field]: val };
 
+      if (field === 'minutes_played') {
+        updated.has_manual_minutes = true;
+      }
+
       // Redimensionar el listado de minutos según el número de eventos
       if (field === 'goals') {
         const count = Math.max(0, parseInt(val) || 0);
@@ -686,7 +722,7 @@ export const MatchReport: React.FC = () => {
   };
 
   // Añadir un evento específico desde la cronología
-  const handleAddMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury', minuteStr: string, playerInId?: string, positionIn?: string, opponentDorsal?: string) => {
+  const handleAddMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury' | 'opponent_own_goal' | 'own_goal_team', minuteStr: string, playerInId?: string, positionIn?: string, opponentDorsal?: string) => {
     if (type === 'opponent_goal') {
       setOpponentEvents(prev => ({
         ...prev,
@@ -699,6 +735,22 @@ export const MatchReport: React.FC = () => {
       setOpponentEvents(prev => ({
         ...prev,
         yellow_cards: [...prev.yellow_cards, { minute: minuteStr, dorsal: opponentDorsal || '?' }]
+      }));
+      return;
+    }
+
+    if (type === 'opponent_own_goal') {
+      setOpponentEvents(prev => ({
+        ...prev,
+        own_goals: [...(prev.own_goals || []), { minute: minuteStr }]
+      }));
+      return;
+    }
+
+    if (type === 'own_goal_team') {
+      setOpponentEvents(prev => ({
+        ...prev,
+        goals: [...prev.goals, { minute: minuteStr, isOwnGoal: true }]
       }));
       return;
     }
@@ -829,8 +881,8 @@ export const MatchReport: React.FC = () => {
   };
 
   // Quitar un evento específico desde la cronología
-  const handleRemoveMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury', minuteStr: string, indexInType?: number) => {
-    if (type === 'opponent_goal') {
+  const handleRemoveMatchEvent = (playerId: string, type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury' | 'opponent_own_goal' | 'own_goal_team', minuteStr: string, indexInType?: number) => {
+    if (type === 'opponent_goal' || type === 'own_goal_team') {
       setOpponentEvents(prev => {
         const goals = [...prev.goals];
         if (indexInType !== undefined) goals.splice(indexInType, 1);
@@ -844,6 +896,15 @@ export const MatchReport: React.FC = () => {
         const ycs = [...prev.yellow_cards];
         if (indexInType !== undefined) ycs.splice(indexInType, 1);
         return { ...prev, yellow_cards: ycs };
+      });
+      return;
+    }
+
+    if (type === 'opponent_own_goal') {
+      setOpponentEvents(prev => {
+        const ogs = [...(prev.own_goals || [])];
+        if (indexInType !== undefined) ogs.splice(indexInType, 1);
+        return { ...prev, own_goals: ogs };
       });
       return;
     }
@@ -925,7 +986,7 @@ export const MatchReport: React.FC = () => {
       id: string;
       playerId: string;
       playerName: string;
-      type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury';
+      type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury' | 'opponent_own_goal' | 'own_goal_team';
       minute: string;
       indexInType: number;
       extraInfo?: string;
@@ -933,11 +994,19 @@ export const MatchReport: React.FC = () => {
 
     // Añadir eventos del rival
     opponentEvents.goals?.forEach((g, idx) => {
-      eventsList.push({ id: `opp-goal-${idx}-${g.minute}`, playerId: '', playerName: `Rival #${g.dorsal}`, type: 'opponent_goal', minute: g.minute, indexInType: idx });
+      if (g.isOwnGoal) {
+        eventsList.push({ id: `opp-goal-og-${idx}-${g.minute}`, playerId: '', playerName: 'U.D. Atzeneta', type: 'own_goal_team', minute: g.minute, indexInType: idx });
+      } else {
+        eventsList.push({ id: `opp-goal-${idx}-${g.minute}`, playerId: '', playerName: `Rival #${g.dorsal || '?'}`, type: 'opponent_goal', minute: g.minute, indexInType: idx });
+      }
+    });
+    
+    opponentEvents.own_goals?.forEach((og, idx) => {
+      eventsList.push({ id: `opp-og-${idx}-${og.minute}`, playerId: '', playerName: 'Rival', type: 'opponent_own_goal', minute: og.minute, indexInType: idx });
     });
     
     opponentEvents.yellow_cards?.forEach((yc, idx) => {
-      eventsList.push({ id: `opp-yc-${idx}-${yc.minute}`, playerId: '', playerName: `Rival #${yc.dorsal}`, type: 'opponent_yellow_card', minute: yc.minute, indexInType: idx });
+      eventsList.push({ id: `opp-yc-${idx}-${yc.minute}`, playerId: '', playerName: `Rival #${yc.dorsal || '?'}`, type: 'opponent_yellow_card', minute: yc.minute, indexInType: idx });
     });
 
     Object.values(playerStats).forEach(stat => {
@@ -1039,9 +1108,17 @@ export const MatchReport: React.FC = () => {
       newScoreThem += (stat.conceded_goals || 0) + (stat.own_goals || 0);
     });
     
+    if (opponentEvents.own_goals) {
+      newScoreUs += opponentEvents.own_goals.length;
+    }
+
+    if (opponentEvents.goals) {
+      newScoreThem += opponentEvents.goals.length;
+    }
+
     setScoreUs(newScoreUs);
     setScoreThem(newScoreThem);
-  }, [playerStats]);
+  }, [playerStats, opponentEvents]);
 
   // Alternar el estado "convocado" de un jugador
   const handleToggleCallUp = (playerId: string) => {
@@ -1269,7 +1346,456 @@ export const MatchReport: React.FC = () => {
     }
   };
 
-  if (isLoadingMatch || isLoadingPlayers || isLoadingStats || isFetchingStats) {
+  const renderPlayerListTables = (isReadOnly: boolean) => {
+    return (
+      <div className="dashboard-card p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-brand-black-border pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-brand-gray-light">
+              {isReadOnly ? 'Estadísticas Individuales de Jugadores' : 'Estadísticas de Rendimiento'}
+            </h3>
+            <p className="text-[10px] text-brand-gray-muted mt-0.5">
+              {isReadOnly ? 'Resumen de minutos, goles y tarjetas del plantel' : 'Controla minutos, goles y tarjetas del plantel'}
+            </p>
+          </div>
+
+          {!isReadOnly && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowAddPlayerDropdown(!showAddPlayerDropdown)}
+                className="btn-secondary py-1.5 px-3 text-[11px] font-semibold flex items-center gap-1 w-full sm:w-auto"
+              >
+                <Users className="w-3.5 h-3.5 text-brand-red-600" /> Convocar Jugador
+              </button>
+
+              {showAddPlayerDropdown && (
+                <div className="absolute right-0 top-9 w-60 bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium z-30 space-y-2">
+                  <input
+                    type="text"
+                    className="form-input text-xs py-1 px-2.5 w-full bg-brand-black-bg"
+                    placeholder="Buscar futbolista..."
+                    value={playerSearchQuery}
+                    onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                  />
+                  <div className="max-h-[180px] overflow-y-auto space-y-1 no-scrollbar pr-1">
+                    {searchedPlayers.length === 0 ? (
+                      <div className="text-[10px] text-brand-gray-muted text-center py-4 italic">
+                        No quedan jugadores disponibles.
+                      </div>
+                    ) : (
+                      searchedPlayers.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            handleToggleCallUp(p.id);
+                            setShowAddPlayerDropdown(false);
+                            setPlayerSearchQuery('');
+                          }}
+                          className="w-full text-left p-1.5 rounded hover:bg-brand-black-hover text-[11px] font-semibold text-brand-gray-light flex items-center justify-between transition-colors"
+                        >
+                          <span>{p.nickname || p.full_name}</span>
+                          <span className="text-[9px] font-bold bg-brand-black-border text-brand-red-600 px-1 rounded">
+                            {p.dorsal || '-'}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Listado en tabla */}
+        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2 border border-brand-black-border p-2 rounded-xl bg-brand-black/10">
+          {calledUpPlayers.length === 0 ? (
+            <div className="col-span-1 2xl:col-span-2 text-center py-12 text-brand-gray-muted text-xs italic">
+              No hay jugadores en la convocatoria. {!isReadOnly && 'Haz clic en "Convocar Jugador" para agregarlos al acta.'}
+            </div>
+          ) : (
+            ['Titulares (XI Inicial)', 'Suplentes (Banquillo) 🪑'].map(group => {
+              const isStarterGroup = group.startsWith('Titulares');
+              const list = calledUpPlayers.filter(p => {
+                const stats = playerStats[p.id];
+                return stats && stats.is_starter === isStarterGroup;
+              });
+
+              return (
+                <div key={group} className="space-y-2 bg-brand-black/30 p-2.5 rounded-xl border-2 border-brand-black-border relative">
+                  {/* Título de la columna */}
+                  <div className="flex items-center gap-2 border-b border-brand-black-border/50 pb-1.5">
+                    <div className="w-1.5 h-3.5 bg-brand-red-600 rounded-full"></div>
+                    <div className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider">
+                      {group} ({list.length})
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    {list.length === 0 ? (
+                      <div className="text-[10px] text-brand-gray-muted text-center py-4 italic border border-dashed border-brand-black-border rounded-xl">
+                        Ningún jugador en esta lista.
+                      </div>
+                    ) : list.map(player => {
+                      const stats = playerStats[player.id];
+                      if (!stats) return null;
+                      const isGK = player.position === 'Portero' || stats.position?.includes('GK');
+                      const hasEvents = stats.goals > 0 || (stats.conceded_goals || 0) > 0 || (stats.own_goals || 0) > 0 || stats.assists > 0 || stats.yellow_cards > 0 || stats.red_card;
+                      const isExpanded = expandedPlayerId === player.id;
+
+                      return (
+                        <div
+                          key={player.id}
+                          className={`p-1.5 rounded-lg border transition-all ${
+                            isExpanded
+                              ? 'bg-brand-black/80 border-brand-red-600/50 shadow-md'
+                              : 'bg-brand-black-card border-brand-black-border hover:border-brand-gray-dark hover:bg-brand-black-hover'
+                          }`}
+                        >
+                          {/* Row principal (Una sola línea) */}
+                          <div className="flex flex-row items-center justify-between gap-1 text-left">
+                            {/* Info del Jugador */}
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              {/* Avatar */}
+                              <div className="w-6 h-6 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                                {player.photo_url ? (
+                                  <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-[9px] font-black text-brand-gray-dark">{player.dorsal || '?'}</span>
+                                )}
+                              </div>
+                              <div className="truncate flex-1 min-w-0">
+                                <div className="flex items-center gap-1">
+                                  {player.dorsal && (
+                                    <span className="text-[9px] font-mono font-black text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded shadow-sm shrink-0 leading-none">
+                                      {player.dorsal}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-bold text-brand-gray-light leading-tight whitespace-normal break-words" title={player.nickname || player.full_name}>
+                                    {player.nickname || player.full_name}
+                                  </span>
+                                </div>
+                                <div className="text-[8px] text-brand-gray-muted mt-0.5 flex items-center gap-1 overflow-hidden">
+                                  {stats.is_starter ? (
+                                    <span className="text-yellow-500 font-semibold truncate shrink-0">Titular ({stats.position?.replace(/^\d+:/, '')})</span>
+                                  ) : (
+                                    <span className="text-brand-gray-muted font-medium truncate shrink-0">Suplente</span>
+                                  )}
+                                  {hasEvents && (
+                                    <span className="flex items-center gap-0.5 bg-brand-black-border/60 px-1 rounded text-brand-gray-light leading-none shrink-0">
+                                      {Array.from({ length: stats.goals }).map((_, i) => <span key={i}>⚽</span>)}
+                                      {(stats.conceded_goals || 0) > 0 && Array.from({ length: stats.conceded_goals }).map((_, i) => <span key={i}>🥅</span>)}
+                                      {(stats.own_goals || 0) > 0 && Array.from({ length: stats.own_goals }).map((_, i) => <span key={i}>💥</span>)}
+                                      {Array.from({ length: stats.assists }).map((_, i) => <span key={i}>🥾</span>)}
+                                      {Array.from({ length: stats.yellow_cards }).map((_, i) => <span key={i} className="text-yellow-400">🟨</span>)}
+                                      {stats.red_card && <span className="text-red-500">🟥</span>}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Inputs rápidos (alineados horizontalmente) */}
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {/* Minutos */}
+                              <div className="text-center w-[36px]">
+                                <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Min</span>
+                                {isReadOnly ? (
+                                  <div className="text-[10px] font-bold text-brand-gray-light py-0.5 w-full bg-brand-black-bg text-center rounded border border-brand-black-border/40">
+                                    {stats.minutes_played}
+                                  </div>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="120"
+                                    className="form-input text-[10px] font-bold text-white py-0.5 px-0.5 text-center w-full bg-brand-black-bg"
+                                    value={stats.minutes_played}
+                                    onChange={(e) => handleStatChange(player.id, 'minutes_played', Math.max(0, parseInt(e.target.value) || 0))}
+                                  />
+                                )}
+                              </div>
+
+                              {/* Goles */}
+                              <div className="text-center w-[24px]">
+                                <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Gol</span>
+                                <input
+                                  type="number"
+                                  disabled
+                                  className="form-input text-[10px] font-bold text-brand-gray-muted py-0.5 px-0 text-center w-full bg-brand-black-bg cursor-not-allowed opacity-60"
+                                  value={stats.goals}
+                                />
+                              </div>
+
+                              {/* Asist / G. Enc */}
+                              {isGK ? (
+                                <div className="text-center w-[24px]">
+                                  <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none" title="Goles Encajados">G.E</span>
+                                  <input
+                                    type="number"
+                                    disabled
+                                    className="form-input text-[10px] font-bold text-brand-gray-muted py-0.5 px-0 text-center w-full bg-brand-black-bg cursor-not-allowed opacity-60"
+                                    value={stats.conceded_goals || 0}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="text-center w-[24px]">
+                                  <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Ast</span>
+                                  <input
+                                    type="number"
+                                    disabled
+                                    className="form-input text-[10px] font-bold text-brand-gray-muted py-0.5 px-0 text-center w-full bg-brand-black-bg cursor-not-allowed opacity-60"
+                                    value={stats.assists}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Gol en propia (P.P.) */}
+                              <div className="text-center w-[24px]">
+                                <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none" title="Goles en propia puerta">P.P</span>
+                                <input
+                                  type="number"
+                                  disabled
+                                  className="form-input text-[10px] font-bold text-brand-gray-muted py-0.5 px-0 text-center w-full bg-brand-black-bg cursor-not-allowed opacity-60"
+                                  value={stats.own_goals || 0}
+                                />
+                              </div>
+
+                              {/* Amarillas */}
+                              <div className="text-center w-[26px]">
+                                <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">TA</span>
+                                <select
+                                  disabled
+                                  className="form-input text-[10px] font-bold text-brand-gray-muted py-0.5 px-0 w-full bg-brand-black-bg text-center appearance-none cursor-not-allowed opacity-60"
+                                  value={stats.yellow_cards}
+                                >
+                                  <option value={0}>0</option>
+                                  <option value={1}>1</option>
+                                  <option value={2}>2</option>
+                                </select>
+                              </div>
+
+                              {/* Roja */}
+                              <div className="text-center w-[22px] flex flex-col items-center">
+                                <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">TR</span>
+                                <button
+                                  type="button"
+                                  disabled
+                                  className={`text-[8px] font-bold w-full h-[20px] flex items-center justify-center rounded border cursor-not-allowed opacity-60 ${
+                                    stats.red_card
+                                      ? 'bg-red-950/40 text-red-500 border-red-800'
+                                      : 'bg-brand-black-bg text-brand-gray-muted border-brand-black-border'
+                                  }`}
+                                >
+                                  {stats.red_card ? 'Sí' : 'No'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Botón Expandir */}
+                            <div className="flex items-center shrink-0 border-l border-brand-black-border pl-1 ml-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedPlayerId(isExpanded ? null : player.id)}
+                                className={`p-0.5 rounded transition-all ${
+                                  isExpanded
+                                    ? 'text-brand-red-600 bg-brand-red-600/10 hover:bg-brand-red-600/20'
+                                    : 'text-brand-gray-muted hover:text-brand-gray-light bg-brand-black-bg border border-brand-black-border hover:border-brand-gray-dark'
+                                }`}
+                                title={isExpanded ? 'Colapsar detalles' : 'Editar detalles del evento'}
+                              >
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Panel Expandido: Minutos de Eventos y Comentarios cualitativos */}
+                          {isExpanded && (
+                            <div className="mt-4 border-t border-brand-black-border pt-4 space-y-4 animate-fadeIn">
+                              {/* Minuto de Eventos */}
+                              {hasEvents ? (
+                                <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-2">
+                                  <span className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider block">Minutos de los Eventos</span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                    {/* Minutos Goles */}
+                                    {stats.event_minutes.goals?.map((min, gIdx) => (
+                                      <div key={`g-${gIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-brand-gray-muted truncate">⚽ Gol {gIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Goles Penalti */}
+                                    {stats.event_minutes.penalty_goals?.map((min, pIdx) => (
+                                      <div key={`p-${pIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-brand-gray-muted truncate">⚽ Penalti {pIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Goles Encajados */}
+                                    {isGK && stats.event_minutes.conceded_goals?.map((min, cIdx) => (
+                                      <div key={`c-${cIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Encajado {cIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Goles Encajados Penalti */}
+                                    {isGK && stats.event_minutes.conceded_penalty_goals?.map((min, cpIdx) => (
+                                      <div key={`cp-${cpIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Pen. Encaj {cpIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Goles en Propia */}
+                                    {stats.event_minutes.own_goals?.map((min, oIdx) => (
+                                      <div key={`o-${oIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-orange-400 font-semibold truncate">💥 Propia {oIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Asistencias */}
+                                    {stats.event_minutes.assists?.map((min, aIdx) => (
+                                      <div key={`a-${aIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-brand-gray-muted truncate">🥾 Asist {aIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Amarillas */}
+                                    {stats.event_minutes.yellow_cards?.map((min, yIdx) => (
+                                      <div key={`y-${yIdx}`} className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-yellow-500 font-semibold truncate">🟨 Tarjeta {yIdx + 1}:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={min || ''}
+                                        />
+                                      </div>
+                                    ))}
+
+                                    {/* Minutos Roja */}
+                                    {stats.red_card && (
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-red-500 font-semibold truncate">🟥 Roja:</span>
+                                        <input
+                                          type="text"
+                                          disabled
+                                          className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black text-brand-gray-muted cursor-not-allowed opacity-60"
+                                          value={stats.event_minutes.red_card || ''}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-brand-gray-muted bg-brand-black/20 p-2 rounded text-center border border-dashed border-brand-black-border w-full">
+                                  Sin incidencias cargadas (goles, goles encajados, propia puerta, tarjetas, asistencias) para especificar minutos de eventos.
+                                </div>
+                              )}
+
+                              {/* Comentarios del Jugador */}
+                              <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-2">
+                                <span className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider block">Comentarios / Observaciones</span>
+                                {isReadOnly ? (
+                                  <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">
+                                    {stats.comments || 'Sin comentarios o anotaciones para este partido.'}
+                                  </p>
+                                ) : (
+                                  <textarea
+                                    className="form-input text-xs w-full p-2 bg-brand-black min-h-[60px]"
+                                    placeholder="Añade un comentario sobre la actuación del jugador..."
+                                    value={stats.comments || ''}
+                                    onChange={(e) => handleStatChange(player.id, 'comments', e.target.value)}
+                                  />
+                                )}
+                              </div>
+
+                              {/* Aspectos Cualitativos del Jugador */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">Aspectos Positivos</label>
+                                  {isReadOnly ? (
+                                    <p className="text-xs text-brand-gray-light bg-brand-black/20 p-2 rounded border border-brand-black-border leading-relaxed whitespace-pre-wrap min-h-[50px]">
+                                      {stats.positive_aspects || 'Ninguno anotado.'}
+                                    </p>
+                                  ) : (
+                                    <textarea
+                                      className="form-input text-xs h-16 resize-none bg-brand-black"
+                                      placeholder="Puntos fuertes de su partido: repliegues, actitud, acierto en pase..."
+                                      value={stats.positive_aspects}
+                                      onChange={(e) => handleStatChange(player.id, 'positive_aspects', e.target.value)}
+                                    />
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider block mb-1">Aspectos a Mejorar</label>
+                                  {isReadOnly ? (
+                                    <p className="text-xs text-brand-gray-light bg-brand-black/20 p-2 rounded border border-brand-black-border leading-relaxed whitespace-pre-wrap min-h-[50px]">
+                                      {stats.improve_aspects || 'Ninguno anotado.'}
+                                    </p>
+                                  ) : (
+                                    <textarea
+                                      className="form-input text-xs h-16 resize-none bg-brand-black"
+                                      placeholder="Aspectos que debe corregir: pérdidas en zonas de riesgo, perfilación..."
+                                      value={stats.improve_aspects}
+                                      onChange={(e) => handleStatChange(player.id, 'improve_aspects', e.target.value)}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  if (isLoadingMatch || isLoadingPlayers || isLoadingStats) {
       return (
       <div className="py-12 flex justify-center">
         <CardSkeleton />
@@ -1335,12 +1861,22 @@ export const MatchReport: React.FC = () => {
           </button>
 
           {canEdit && !isEditing && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="btn-primary py-2.5 text-xs font-bold bg-brand-gray-dark border border-brand-gray-muted text-white hover:bg-brand-gray-light"
-            >
-              <Edit2 className="w-4 h-4" /> Editar Acta
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleDeleteReport}
+                disabled={deleteReportMutation.isPending}
+                className="btn-secondary py-2 px-3 text-xs text-brand-red-600 border-brand-red-600/30 hover:bg-brand-red-600/10 font-bold"
+              >
+                Borrar
+              </button>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="btn-primary py-2.5 px-4 text-xs font-bold bg-brand-gray-dark border border-brand-gray-muted text-white hover:bg-brand-gray-light"
+              >
+                <Edit2 className="w-4 h-4" /> Editar Acta
+              </button>
+            </div>
           )}
 
           {canEdit && isEditing && (
@@ -1388,7 +1924,9 @@ export const MatchReport: React.FC = () => {
       </div>
 
       {/* Grid Principal: Lado Izquierdo vs Lado Derecho */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+      {isEditing ? (
+        <>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         {/* LADO IZQUIERDO: Marcador y Campograma */}
         <div className="xl:col-span-5 space-y-4">
           
@@ -1768,428 +2306,7 @@ export const MatchReport: React.FC = () => {
 
         {/* LADO DERECHO: Tabla de Estadísticas de Jugadores */}
         <div className="xl:col-span-7 space-y-4">
-          <div className="dashboard-card p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-brand-black-border pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-brand-gray-light">Estadísticas de Rendimiento</h3>
-                <p className="text-[10px] text-brand-gray-muted mt-0.5">Controla minutos, goles y tarjetas del plantel</p>
-              </div>
-
-              {/* Agregar jugadores a la convocatoria */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowAddPlayerDropdown(!showAddPlayerDropdown)}
-                  className="btn-secondary py-1.5 px-3 text-[11px] font-semibold flex items-center gap-1 w-full sm:w-auto"
-                >
-                  <Users className="w-3.5 h-3.5 text-brand-red-600" /> Convocar Jugador
-                </button>
-
-                {showAddPlayerDropdown && (
-                  <div className="absolute right-0 top-9 w-60 bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium z-30 space-y-2">
-                    <input
-                      type="text"
-                      className="form-input text-xs py-1 px-2.5 w-full bg-brand-black-bg"
-                      placeholder="Buscar futbolista..."
-                      value={playerSearchQuery}
-                      onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                    />
-                    <div className="max-h-[180px] overflow-y-auto space-y-1 no-scrollbar pr-1">
-                      {searchedPlayers.length === 0 ? (
-                        <div className="text-[10px] text-brand-gray-muted text-center py-4 italic">
-                          No quedan jugadores disponibles.
-                        </div>
-                      ) : (
-                        searchedPlayers.map(p => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              handleToggleCallUp(p.id);
-                              setShowAddPlayerDropdown(false);
-                              setPlayerSearchQuery('');
-                            }}
-                            className="w-full text-left p-1.5 rounded hover:bg-brand-black-hover text-[11px] font-semibold text-brand-gray-light flex items-center justify-between transition-colors"
-                          >
-                            <span>{p.nickname || p.full_name}</span>
-                            <span className="text-[9px] font-bold bg-brand-black-border text-brand-red-600 px-1 rounded">
-                              {p.dorsal || '-'}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Listado en tabla */}
-            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-2 border border-brand-black-border p-2 rounded-xl bg-brand-black/10">
-              {calledUpPlayers.length === 0 ? (
-                <div className="col-span-1 2xl:col-span-2 text-center py-12 text-brand-gray-muted text-xs italic">
-                  No hay jugadores en la convocatoria. Haz clic en "Convocar Jugador" para agregarlos al acta.
-                </div>
-              ) : (
-                ['Titulares (XI Inicial)', 'Suplentes (Banquillo) 🪑'].map(group => {
-                  const isStarterGroup = group.startsWith('Titulares');
-                  const list = calledUpPlayers.filter(p => {
-                    const stats = playerStats[p.id];
-                    return stats && stats.is_starter === isStarterGroup;
-                  });
-
-                  return (
-                    <div key={group} className="space-y-2 bg-brand-black/30 p-2.5 rounded-xl border-2 border-brand-black-border relative">
-                      {/* Título de la columna */}
-                      <div className="flex items-center gap-2 border-b border-brand-black-border/50 pb-1.5">
-                        <div className="w-1.5 h-3.5 bg-brand-red-600 rounded-full"></div>
-                        <div className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider">
-                          {group} ({list.length})
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        {list.length === 0 ? (
-                          <div className="text-[10px] text-brand-gray-muted text-center py-4 italic border border-dashed border-brand-black-border rounded-xl">
-                            Ningún jugador en esta lista.
-                          </div>
-                        ) : list.map(player => {
-                          const stats = playerStats[player.id];
-                          const isGK = player.position === 'Portero' || stats.position?.includes('GK');
-                          const hasEvents = stats.goals > 0 || (stats.conceded_goals || 0) > 0 || (stats.own_goals || 0) > 0 || stats.assists > 0 || stats.yellow_cards > 0 || stats.red_card;
-                          const isExpanded = expandedPlayerId === player.id;
-
-                          return (
-                            <div 
-                              key={player.id}
-                              className={`p-1.5 rounded-lg border transition-all ${
-                                isExpanded 
-                                  ? 'bg-brand-black/80 border-brand-red-600/50 shadow-md' 
-                                  : 'bg-brand-black-card border-brand-black-border hover:border-brand-gray-dark hover:bg-brand-black-hover'
-                              }`}
-                            >
-                              {/* Row principal (Una sola línea) */}
-                              <div className="flex flex-row items-center justify-between gap-1 text-left">
-                                {/* Info del Jugador */}
-                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                  {/* Avatar */}
-                                  <div className="w-6 h-6 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                                    {player.photo_url ? (
-                                      <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
-                                    ) : (
-                                      <span className="text-[9px] font-black text-brand-gray-dark">{player.dorsal || '?'}</span>
-                                    )}
-                                  </div>
-                                  <div className="truncate flex-1 min-w-0">
-                                    <div className="flex items-center gap-1">
-                                      {player.dorsal && (
-                                        <span className="text-[9px] font-mono font-black text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded shadow-sm shrink-0 leading-none">
-                                          {player.dorsal}
-                                        </span>
-                                      )}
-                                      <span className="text-[10px] font-bold text-brand-gray-light truncate" title={player.nickname || player.full_name}>
-                                        {player.nickname || player.full_name}
-                                      </span>
-                                    </div>
-                                    <div className="text-[8px] text-brand-gray-muted mt-0.5 flex items-center gap-1 overflow-hidden">
-                                      {stats.is_starter ? (
-                                        <span className="text-yellow-500 font-semibold truncate shrink-0">Titular ({stats.position?.replace(/^\d+:/, '')})</span>
-                                      ) : (
-                                        <span className="text-brand-gray-muted font-medium truncate shrink-0">Suplente</span>
-                                      )}
-                                      {hasEvents && (
-                                        <span className="flex items-center gap-0.5 bg-brand-black-border/60 px-1 rounded text-brand-gray-light leading-none shrink-0">
-                                          {Array.from({ length: stats.goals }).map((_, i) => <span key={i}>⚽</span>)}
-                                          {(stats.conceded_goals || 0) > 0 && Array.from({ length: stats.conceded_goals }).map((_, i) => <span key={i}>🥅</span>)}
-                                          {(stats.own_goals || 0) > 0 && Array.from({ length: stats.own_goals }).map((_, i) => <span key={i}>💥</span>)}
-                                          {Array.from({ length: stats.assists }).map((_, i) => <span key={i}>🥾</span>)}
-                                          {Array.from({ length: stats.yellow_cards }).map((_, i) => <span key={i} className="text-yellow-400">🟨</span>)}
-                                          {stats.red_card && <span className="text-red-500">🟥</span>}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Inputs rápidos (alineados horizontalmente) */}
-                                <div className="flex items-center gap-0.5 shrink-0">
-                                  {/* Minutos */}
-                                  <div className="text-center w-[36px]">
-                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Min</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="120"
-                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0.5 text-center w-full bg-brand-black-bg"
-                                      value={stats.minutes_played}
-                                      onChange={(e) => handleStatChange(player.id, 'minutes_played', Math.max(0, parseInt(e.target.value) || 0))}
-                                    />
-                                  </div>
-                                  
-                                  {/* Goles */}
-                                  <div className="text-center w-[24px]">
-                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Gol</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="10"
-                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
-                                      value={stats.goals}
-                                      onChange={(e) => handleStatChange(player.id, 'goals', Math.max(0, parseInt(e.target.value) || 0))}
-                                    />
-                                  </div>
-
-                                  {/* Asist / G. Enc */}
-                                  {isGK ? (
-                                    <div className="text-center w-[24px]">
-                                      <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none" title="Goles Encajados">G.E</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="50"
-                                        className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
-                                        value={stats.conceded_goals || 0}
-                                        onChange={(e) => handleStatChange(player.id, 'conceded_goals', Math.max(0, parseInt(e.target.value) || 0))}
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="text-center w-[24px]">
-                                      <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">Ast</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="10"
-                                        className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
-                                        value={stats.assists}
-                                        onChange={(e) => handleStatChange(player.id, 'assists', Math.max(0, parseInt(e.target.value) || 0))}
-                                      />
-                                    </div>
-                                  )}
-
-                                  {/* Gol en propia (P.P.) */}
-                                  <div className="text-center w-[24px]">
-                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none" title="Goles en propia puerta">P.P</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="10"
-                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0 text-center w-full bg-brand-black-bg"
-                                      value={stats.own_goals || 0}
-                                      onChange={(e) => handleStatChange(player.id, 'own_goals', Math.max(0, parseInt(e.target.value) || 0))}
-                                    />
-                                  </div>
-
-                                  {/* Amarillas */}
-                                  <div className="text-center w-[26px]">
-                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">TA</span>
-                                    <select
-                                      className="form-input text-[10px] font-bold text-white py-0.5 px-0 w-full bg-brand-black-bg text-center appearance-none"
-                                      value={stats.yellow_cards}
-                                      onChange={(e) => handleStatChange(player.id, 'yellow_cards', parseInt(e.target.value) || 0)}
-                                    >
-                                      <option value={0}>0</option>
-                                      <option value={1}>1</option>
-                                      <option value={2}>2</option>
-                                    </select>
-                                  </div>
-
-                                  {/* Roja */}
-                                  <div className="text-center w-[22px] flex flex-col items-center">
-                                    <span className="text-[6px] font-bold text-brand-gray-muted uppercase block mb-0.5 leading-none">TR</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStatChange(player.id, 'red_card', !stats.red_card)}
-                                      className={`text-[8px] font-bold w-full h-[20px] flex items-center justify-center rounded border transition-all ${
-                                        stats.red_card
-                                          ? 'bg-red-950/40 text-red-500 border-red-800'
-                                          : 'bg-brand-black-bg text-brand-gray-muted border-brand-black-border hover:border-brand-gray-dark'
-                                      }`}
-                                    >
-                                      {stats.red_card ? 'Sí' : 'No'}
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Botón Expandir */}
-                                <div className="flex items-center shrink-0 border-l border-brand-black-border pl-1 ml-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedPlayerId(isExpanded ? null : player.id)}
-                                    className={`p-0.5 rounded transition-all ${
-                                      isExpanded 
-                                        ? 'text-brand-red-600 bg-brand-red-600/10 hover:bg-brand-red-600/20' 
-                                        : 'text-brand-gray-muted hover:text-brand-gray-light bg-brand-black-bg border border-brand-black-border hover:border-brand-gray-dark'
-                                    }`}
-                                    title={isExpanded ? 'Colapsar detalles' : 'Editar detalles del evento'}
-                                  >
-                                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                  </button>
-                                </div>
-                              </div>
-                              
-                              {/* Panel Expandido: Minutos de Eventos y Comentarios cualitativos */}
-                              {isExpanded && (
-                                <div className="mt-4 border-t border-brand-black-border pt-4 space-y-4 animate-fadeIn">
-                                  {/* Minuto de Eventos */}
-                                  {hasEvents ? (
-                                    <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-2">
-                                      <span className="text-[10px] font-bold text-brand-red-600 uppercase tracking-wider block">Minutos de los Eventos</span>
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                        {/* Minutos Goles */}
-                                        {stats.event_minutes.goals?.map((min, gIdx) => (
-                                          <div key={`g-${gIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-brand-gray-muted truncate">⚽ Gol {gIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'goals', gIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Goles Penalti */}
-                                        {stats.event_minutes.penalty_goals?.map((min, pIdx) => (
-                                          <div key={`p-${pIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-brand-gray-muted truncate">⚽ Penalti {pIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'penalty_goals', pIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Goles Encajados */}
-                                        {isGK && stats.event_minutes.conceded_goals?.map((min, cIdx) => (
-                                          <div key={`c-${cIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Encajado {cIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'conceded_goals', cIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Goles Encajados Penalti */}
-                                        {isGK && stats.event_minutes.conceded_penalty_goals?.map((min, cpIdx) => (
-                                          <div key={`cp-${cpIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-cyan-400 font-semibold truncate">🥅 Pen. Encaj {cpIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'conceded_penalty_goals', cpIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Goles en Propia */}
-                                        {stats.event_minutes.own_goals?.map((min, oIdx) => (
-                                          <div key={`o-${oIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-orange-400 font-semibold truncate">💥 Propia {oIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'own_goals', oIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Asistencias */}
-                                        {stats.event_minutes.assists?.map((min, aIdx) => (
-                                          <div key={`a-${aIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-brand-gray-muted truncate">🥾 Asist {aIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'assists', aIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Amarillas */}
-                                        {stats.event_minutes.yellow_cards?.map((min, yIdx) => (
-                                          <div key={`y-${yIdx}`} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-yellow-500 font-semibold truncate">🟨 Tarjeta {yIdx + 1}:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={min || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'yellow_cards', yIdx, e.target.value)}
-                                            />
-                                          </div>
-                                        ))}
-
-                                        {/* Minutos Roja */}
-                                        {stats.red_card && (
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-red-500 font-semibold truncate">🟥 Roja:</span>
-                                            <input
-                                              type="text"
-                                              className="form-input text-xs w-20 py-1 px-1.5 text-center bg-brand-black"
-                                              value={stats.event_minutes.red_card || ''}
-                                              onChange={(e) => handleEventMinuteChange(player.id, 'red_card', 0, e.target.value)}
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="text-[10px] text-brand-gray-muted bg-brand-black/20 p-2 rounded text-center border border-dashed border-brand-black-border w-full">
-                                      Sin incidencias cargadas (goles, goles encajados, propia puerta, tarjetas, asistencias) para especificar minutos de eventos.
-                                    </div>
-                                  )}
-
-                                  {/* Comentarios del Jugador */}
-                                  <div className="bg-brand-black/30 p-3 rounded-lg border border-brand-black-border space-y-2">
-                                    <span className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider block">Comentarios / Observaciones</span>
-                                    <textarea
-                                      className="form-input text-xs w-full p-2 bg-brand-black min-h-[60px]"
-                                      placeholder="Añade un comentario sobre la actuación del jugador..."
-                                      value={stats.comments || ''}
-                                      onChange={(e) => handleStatChange(player.id, 'comments', e.target.value)}
-                                    />
-                                  </div>
-
-                                  {/* Aspectos Cualitativos del Jugador */}
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">Aspectos Positivos</label>
-                                      <textarea
-                                        className="form-input text-xs h-16 resize-none bg-brand-black"
-                                        placeholder="Puntos fuertes de su partido: repliegues, actitud, acierto en pase..."
-                                        value={stats.positive_aspects}
-                                        onChange={(e) => handleStatChange(player.id, 'positive_aspects', e.target.value)}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider block mb-1">Aspectos a Mejorar</label>
-                                      <textarea
-                                        className="form-input text-xs h-16 resize-none bg-brand-black"
-                                        placeholder="Aspectos que debe corregir: pérdidas en zonas de riesgo, perfilación..."
-                                        value={stats.improve_aspects}
-                                        onChange={(e) => handleStatChange(player.id, 'improve_aspects', e.target.value)}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          {renderPlayerListTables(false)}
 
           {/* Cronología de Eventos (Movida a la derecha) */}
           <div className="dashboard-card p-5 space-y-4">
@@ -2253,6 +2370,16 @@ export const MatchReport: React.FC = () => {
                           } else if (evt.type === 'own_goals') {
                             icon = '💥';
                             typeText = 'Gol en Propia';
+                            colorClass = 'text-orange-400';
+                            bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                          } else if (evt.type === 'opponent_own_goal') {
+                            icon = '💥';
+                            typeText = 'Gol en Propia (Rival)';
+                            colorClass = 'text-orange-400';
+                            bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                          } else if (evt.type === 'own_goal_team') {
+                            icon = '💥';
+                            typeText = 'Gol en Propia (U.D. Atzeneta)';
                             colorClass = 'text-orange-400';
                             bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
                           } else if (evt.type === 'substitution') {
@@ -2362,6 +2489,16 @@ export const MatchReport: React.FC = () => {
                           } else if (evt.type === 'own_goals') {
                             icon = '💥';
                             typeText = 'Gol en Propia';
+                            colorClass = 'text-orange-400';
+                            bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                          } else if (evt.type === 'opponent_own_goal') {
+                            icon = '💥';
+                            typeText = 'Gol en Propia (Rival)';
+                            colorClass = 'text-orange-400';
+                            bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                          } else if (evt.type === 'own_goal_team') {
+                            icon = '💥';
+                            typeText = 'Gol en Propia (U.D. Atzeneta)';
                             colorClass = 'text-orange-400';
                             bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
                           } else if (evt.type === 'substitution') {
@@ -2516,6 +2653,210 @@ export const MatchReport: React.FC = () => {
           />
         </div>
       </div>
+      </>
+      ) : (
+        <div className="space-y-8 max-w-5xl mx-auto pb-10">
+          {/* MARCADO Y DATOS BÁSICOS */}
+          <div className="bg-gradient-to-br from-brand-black-card to-brand-black-card/40 border border-brand-black-border p-8 rounded-3xl flex flex-col items-center shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-500 via-indigo-500 to-brand-red-500 opacity-50" />
+            <span className="text-xs font-bold text-brand-gray-muted mb-4 uppercase tracking-[0.2em]">Resultado Final</span>
+            <div className="flex items-center justify-center gap-6 sm:gap-12 w-full">
+               <div className="text-right flex-1">
+                  <span className="text-xl sm:text-2xl font-black text-brand-gray-light uppercase tracking-wide">{isLocal ? 'UD Atzeneta' : matchData.rival}</span>
+               </div>
+               <div className="bg-brand-black-bg/80 px-8 py-4 rounded-3xl border border-brand-black-border shadow-inner">
+                  <span className="text-5xl font-black tracking-widest flex items-center">
+                     <span className={scoreUs > scoreThem ? 'text-emerald-500' : scoreUs < scoreThem ? 'text-brand-red-600' : 'text-brand-gray-light'}>{isLocal ? scoreUs : scoreThem}</span>
+                     <span className="text-brand-gray-dark mx-4 text-3xl">-</span>
+                     <span className={scoreThem > scoreUs ? 'text-emerald-500' : scoreThem < scoreUs ? 'text-brand-red-600' : 'text-brand-gray-light'}>{isLocal ? scoreThem : scoreUs}</span>
+                  </span>
+               </div>
+               <div className="text-left flex-1">
+                  <span className="text-xl sm:text-2xl font-black text-brand-gray-light uppercase tracking-wide">{isLocal ? matchData.rival : 'UD Atzeneta'}</span>
+               </div>
+            </div>
+            {opponentEvents.goals.length > 0 && (
+               <div className="mt-6 flex flex-col items-center">
+                 <span className="text-[10px] text-brand-gray-muted mb-2 uppercase">Goles del rival</span>
+                 <div className="flex flex-wrap justify-center gap-2">
+                   {opponentEvents.goals.map((g, idx) => (
+                     <span key={idx} className="bg-brand-black-bg px-2 py-1 rounded text-xs text-brand-gray-light border border-brand-black-border">
+                        ⚽ {g.dorsal ? `#${g.dorsal}` : 'Rival'} <span className="text-brand-gray-muted text-[10px]">({g.minute}')</span>
+                     </span>
+                   ))}
+                 </div>
+               </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* CAMPOGRAMA */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold text-brand-gray-light flex items-center gap-2 uppercase tracking-wider pl-2">
+                <Users className="w-4 h-4 text-emerald-500" /> XI Inicial ({tacticalSystem})
+              </h3>
+              <div className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-3xl overflow-hidden shadow-2xl select-none ring-1 ring-white/10">
+                {/* Franjas del césped */}
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <div key={i} className={`h-[10%] w-full ${i % 2 === 0 ? 'bg-white' : 'bg-transparent'}`} />
+                  ))}
+                </div>
+
+                {/* Líneas tácticas */}
+                <div className="absolute top-1/2 left-0 right-0 h-[2px] bg-emerald-100/20 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-[30%] aspect-square border-2 border-emerald-100/20 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-emerald-100/30 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/5 h-[16%] border-b-2 border-x-2 border-emerald-100/20" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/3 h-[6%] border-b-2 border-x-2 border-emerald-100/20" />
+                <div className="absolute top-[16%] left-1/2 -translate-x-1/2 w-[20%] h-[7%] border-b-2 border-emerald-100/20 rounded-b-full" />
+                <div className="absolute top-[11%] left-1/2 w-1.5 h-1.5 bg-emerald-100/25 rounded-full -translate-x-1/2" />
+
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/5 h-[16%] border-t-2 border-x-2 border-emerald-100/20" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1/3 h-[6%] border-t-2 border-x-2 border-emerald-100/20" />
+                <div className="absolute bottom-[16%] left-1/2 -translate-x-1/2 w-[20%] h-[7%] border-t-2 border-emerald-100/20 rounded-t-full" />
+                <div className="absolute bottom-[11%] left-1/2 w-1.5 h-1.5 bg-emerald-100/25 rounded-full -translate-x-1/2" />
+                {(FORMATIONS_SLOTS[tacticalSystem] || FORMATIONS_SLOTS['4-3-3']).map((slot: any, idx: number) => {
+                  const playerId = lineup[idx];
+                  const player = playerId ? dbPlayers.find(p => p.id === playerId) : null;
+                  
+                  // Get substitutions for this starter
+                  let subs: any[] = [];
+                  if (player && playerStats[player.id]) {
+                    const pStat = playerStats[player.id];
+                    if (pStat.substituted_for && pStat.substituted_minute) {
+                      subs.push({ min: pStat.substituted_minute.toString(), inId: pStat.substituted_for });
+                    }
+                    if (pStat.event_minutes?.sub_out) {
+                      pStat.event_minutes.sub_out.forEach(s => subs.push({ min: s.minute, inId: s.playerInId }));
+                    }
+                  }
+
+                  return (
+                    <div
+                      key={idx}
+                      className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5"
+                      style={{ left: `${slot.x}%`, top: `${slot.y}%`, zIndex: 10 }}
+                    >
+                      <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-brand-black-card border-2 border-brand-gray-light shadow-xl flex items-center justify-center overflow-hidden ring-2 ring-black/50">
+                        {player ? (
+                          player.photo_url ? (
+                            <img src={player.photo_url} alt={player.nickname || player.full_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-[10px] font-bold text-brand-gray-light">#{player.dorsal || '?'}</span>
+                          )
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-brand-black-bg/50">
+                            <Users className="w-3.5 h-3.5 text-brand-gray-dark/50" />
+                          </div>
+                        )}
+                        {player && playerStats[player.id]?.event_minutes?.goals?.length > 0 && (
+                          <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow">
+                             <span className="text-[8px]">⚽</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {player && (
+                        <div className="bg-brand-black-card/90 backdrop-blur-sm px-2 py-0.5 rounded shadow-lg border border-brand-black-border whitespace-nowrap">
+                          <span className="text-[9px] font-bold text-white shadow-black drop-shadow-md">
+                            {player.nickname || player.full_name.split(' ')[0]}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Substitutions visuals */}
+                      {subs.length > 0 && (
+                        <div className="flex flex-col items-center -mt-0.5 z-20">
+                          {subs.map((s, sIdx) => {
+                            const subPlayer = dbPlayers.find(p => p.id === s.inId);
+                            if (!subPlayer) return null;
+                            return (
+                              <div key={sIdx} className="flex flex-col items-center animate-fade-in">
+                                <div className="h-2 border-l border-brand-gray-muted/50 border-dashed" />
+                                <div className="bg-brand-black-card/95 border border-brand-gray-dark/50 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-lg backdrop-blur-sm">
+                                  <span className="text-[8px] text-brand-red-400 font-black">↓</span>
+                                  <span className="text-[8px] text-emerald-400 font-black">↑</span>
+                                  <span className="text-[8.5px] font-bold text-brand-gray-light max-w-[50px] leading-tight whitespace-normal break-words" title={subPlayer.nickname || subPlayer.full_name}>{subPlayer.nickname || subPlayer.full_name}</span>
+                                  <span className="text-[7.5px] text-brand-gray-muted ml-0.5 bg-brand-black-bg px-0.5 rounded font-mono">{s.min}'</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* RENDIMIENTO Y VALORACIONES */}
+            <div className="space-y-6">
+              <h3 className="text-sm font-bold text-brand-gray-light flex items-center gap-2 uppercase tracking-wider pl-2">
+                <Target className="w-4 h-4 text-indigo-400" /> Resumen de Rendimiento
+              </h3>
+              
+              <div className="bg-brand-black-card/40 border border-brand-black-border rounded-2xl p-6 space-y-6 shadow-lg">
+                <div className="grid grid-cols-2 gap-6">
+                   <div className="space-y-3">
+                     <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest border-b border-brand-black-border pb-1 block">Con Balón</span>
+                     <div className="space-y-2">
+                       <StarRating label="Salida de balón" value={teamRatings.with_ball.salida_balon} disabled={true} onChange={() => {}} />
+                       <StarRating label="Posesión" value={teamRatings.with_ball.posesion} disabled={true} onChange={() => {}} />
+                       <StarRating label="Finalización" value={teamRatings.with_ball.finalizacion} disabled={true} onChange={() => {}} />
+                       <StarRating label="Juego Directo" value={teamRatings.with_ball.juego_directo} disabled={true} onChange={() => {}} />
+                       <StarRating label="Ocupación Área" value={teamRatings.with_ball.ocupacion_area} disabled={true} onChange={() => {}} />
+                     </div>
+                   </div>
+                   <div className="space-y-3">
+                     <span className="text-[10px] font-black text-brand-red-500 uppercase tracking-widest border-b border-brand-black-border pb-1 block">Sin Balón</span>
+                     <div className="space-y-2">
+                       <StarRating label="Presión Alta" value={teamRatings.without_ball.presion_alta} disabled={true} onChange={() => {}} />
+                       <StarRating label="Bloque Medio" value={teamRatings.without_ball.bloque_medio} disabled={true} onChange={() => {}} />
+                       <StarRating label="Bloque Bajo" value={teamRatings.without_ball.bloque_bajo} disabled={true} onChange={() => {}} />
+                       <StarRating label="Defensa Área" value={teamRatings.without_ball.defensa_area} disabled={true} onChange={() => {}} />
+                     </div>
+                     
+                     <div className="pt-2">
+                       <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest border-b border-brand-black-border pb-1 block mb-2">ABP</span>
+                       <StarRating label="Ofensiva" value={teamRatings.set_pieces.ofensiva} disabled={true} onChange={() => {}} />
+                       <StarRating label="Defensiva" value={teamRatings.set_pieces.defensiva} disabled={true} onChange={() => {}} />
+                     </div>
+                   </div>
+                </div>
+              </div>
+
+              {(teamPositiveAspects || teamImproveAspects || tacticalGeneral) && (
+                <div className="bg-brand-black-card/40 border border-brand-black-border rounded-2xl p-6 space-y-5 shadow-lg">
+                   {teamPositiveAspects && (
+                     <div>
+                       <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Check className="w-3 h-3"/> Aspectos Positivos</span>
+                       <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{teamPositiveAspects}</p>
+                     </div>
+                   )}
+                   {teamImproveAspects && (
+                     <div>
+                       <span className="text-[10px] font-black text-brand-red-500 uppercase tracking-widest mb-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Aspectos a Mejorar</span>
+                       <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{teamImproveAspects}</p>
+                     </div>
+                   )}
+                   {tacticalGeneral && (
+                     <div>
+                       <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><FileText className="w-3 h-3"/> Resumen General</span>
+                       <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{tacticalGeneral}</p>
+                     </div>
+                   )}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* TABLAS DE JUGADORES */}
+          {renderPlayerListTables(true)}
+        </div>
+      )}
 
       {/* Modal Asistente de Eventos */}
       {isEventWizardOpen && (

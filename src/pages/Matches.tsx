@@ -38,7 +38,142 @@ const POSITIONS = [
   'MCD', 'MC', 'MCO', 'MI', 'MD', 'ED', 'EI', 'SD', 'DC'
 ];
 
+
+const KitMannequin = ({ kitShirtColor, kitShortsColor, kitSocksColor }: { kitShirtColor: string; kitShortsColor: string; kitSocksColor: string }) => (
+  <svg width="130" height="220" viewBox="0 0 160 240" className="mx-auto drop-shadow-2xl">
+                      {/* Definición de filtros y gradientes 3D realistas */}
+                      <defs>
+                        <filter id="fabric-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="3" stdDeviation="4" floodOpacity="0.3" floodColor="#000" />
+                        </filter>
+                        
+                        {/* Gradiente de Plástico Brillante (Maniquí real) */}
+                        <linearGradient id="glossy-plastic" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#9ca3af" /> {/* Sombra izquierda */}
+                          <stop offset="15%" stopColor="#f3f4f6" /> {/* Brillo especular fuerte */}
+                          <stop offset="35%" stopColor="#d1d5db" />
+                          <stop offset="65%" stopColor="#e5e7eb" /> {/* Luz secundaria */}
+                          <stop offset="85%" stopColor="#9ca3af" />
+                          <stop offset="100%" stopColor="#4b5563" /> {/* Sombra profunda derecha */}
+                        </linearGradient>
+
+                        {/* Sombreado de tela (brillos y sombras de la ropa) */}
+                        <linearGradient id="shirt-shading" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#000" stopOpacity="0.4" />
+                          <stop offset="15%" stopColor="#fff" stopOpacity="0.25" />
+                          <stop offset="40%" stopColor="#fff" stopOpacity="0.0" />
+                          <stop offset="70%" stopColor="#fff" stopOpacity="0.1" />
+                          <stop offset="90%" stopColor="#000" stopOpacity="0.2" />
+                          <stop offset="100%" stopColor="#000" stopOpacity="0.6" />
+                        </linearGradient>
+
+                        <linearGradient id="leg-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#000" stopOpacity="0.4" />
+                          <stop offset="20%" stopColor="#fff" stopOpacity="0.2" />
+                          <stop offset="80%" stopColor="#000" stopOpacity="0.1" />
+                          <stop offset="100%" stopColor="#000" stopOpacity="0.5" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* MANIQUÍ BASE (Plástico Brillante) */}
+                      <g fill="url(#glossy-plastic)">
+                        {/* Cabeza */}
+                        <ellipse cx="80" cy="22" rx="14" ry="18" />
+                        
+                        {/* Cuello */}
+                        <path d="M 74 38 Q 80 44 86 38 L 84 48 L 76 48 Z" />
+                        
+                        {/* Torso & Caderas Base */}
+                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 108 115, 110 135 C 100 145, 90 155, 80 155 C 70 155, 60 145, 50 135 C 52 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" />
+
+                        {/* Brazo Izquierdo */}
+                        <path d="M 46 48 C 30 65, 20 90, 18 125 C 16 135, 24 140, 28 132 C 34 115, 44 85, 50 75 Z" />
+                        
+                        {/* Brazo Derecho */}
+                        <path d="M 114 48 C 130 65, 140 90, 142 125 C 144 135, 136 140, 132 132 C 126 115, 116 85, 110 75 Z" />
+                        
+                        {/* Piernas (Muslos y Gemelos) */}
+                        <path d="M 50 135 C 45 160, 50 195, 52 230 C 62 230, 68 190, 68 150 C 68 145, 75 145, 80 155 Z" />
+                        <path d="M 110 135 C 115 160, 110 195, 108 230 C 98 230, 92 190, 92 150 C 92 145, 85 145, 80 155 Z" />
+                      </g>
+
+                      {/* CAMISETA */}
+                      <g filter="url(#fabric-shadow)">
+                        {/* Manga Izquierda */}
+                        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill={kitShirtColor} />
+                        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Manga Derecha */}
+                        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill={kitShirtColor} />
+                        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Cuerpo Camiseta */}
+                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill={kitShirtColor} />
+                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Arrugas Camiseta */}
+                        <path d="M 60 130 C 65 100, 62 80, 58 60" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
+                        <path d="M 100 130 C 95 100, 98 80, 102 60" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
+                        <path d="M 80 132 L 80 70" stroke="#000" strokeWidth="1.5" strokeOpacity="0.08" fill="none" />
+                        <path d="M 54 95 Q 65 110 70 130" stroke="#000" strokeWidth="1.5" strokeOpacity="0.1" fill="none" />
+                        <path d="M 106 95 Q 95 110 90 130" stroke="#000" strokeWidth="1.5" strokeOpacity="0.1" fill="none" />
+                        
+                        {/* Cuello Pico */}
+                        <path d="M 70 47 Q 80 60 90 47 Q 80 49 70 47 Z" fill="url(#glossy-plastic)" />
+                        <path d="M 68 46 Q 80 62 92 46" stroke={kitShirtColor} strokeWidth="3" fill="none" filter="brightness(0.7)" />
+                      </g>
+
+                      {/* ESCUDO */}
+                      <image
+                        href="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png"
+                        x="88"
+                        y="58"
+                        width="18"
+                        height="18"
+                        className="drop-shadow-sm"
+                      />
+
+                      {/* PANTALÓN */}
+                      <g filter="url(#fabric-shadow)">
+                        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill={kitShortsColor} />
+                        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill="url(#shirt-shading)" />
+                        
+                        {/* Arrugas Pantalón */}
+                        <path d="M 58 132 Q 60 150 54 167" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                        <path d="M 102 132 Q 100 150 106 167" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                        <path d="M 80 132 L 80 155" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
+                        <path d="M 68 132 Q 72 145 68 158" stroke="#000" strokeWidth="1" strokeOpacity="0.1" fill="none" />
+                        <path d="M 92 132 Q 88 145 92 158" stroke="#000" strokeWidth="1" strokeOpacity="0.1" fill="none" />
+                      </g>
+
+                      {/* MEDIAS / CALZAS (Textura ajustada) */}
+                      <g filter="url(#fabric-shadow)">
+                        {/* Izquierda */}
+                        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill={kitSocksColor} />
+                        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill="url(#leg-gradient)" />
+                        
+                        {/* Derecha */}
+                        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill={kitSocksColor} />
+                        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill="url(#leg-gradient)" />
+                        
+                        {/* Doblez superior y elásticos */}
+                        <path d="M 50 195 Q 58 198 66 195" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                        <path d="M 110 195 Q 102 198 94 195" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
+                      </g>
+
+                      {/* BOTAS */}
+                      <g filter="url(#fabric-shadow)">
+                        <path d="M 50 230 C 42 232, 38 238, 44 242 L 60 242 C 63 242, 64 235, 62 230 Z" fill="#111827" />
+                        <path d="M 46 238 L 56 238" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" fill="none" />
+                        
+                        <path d="M 110 230 C 118 232, 122 238, 116 242 L 100 242 C 97 242, 96 235, 98 230 Z" fill="#111827" />
+                        <path d="M 114 238 L 104 238" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" fill="none" />
+                      </g>
+                    </svg>
+);
+
 export const Matches: React.FC = () => {
+
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
@@ -65,6 +200,7 @@ export const Matches: React.FC = () => {
   
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
+  const [showDeleteCallupConfirm, setShowDeleteCallupConfirm] = useState(false);
 
   // Campos de formulario
   const [rival, setRival] = useState('');
@@ -132,6 +268,7 @@ export const Matches: React.FC = () => {
   const [kitShortsColor, setKitShortsColor] = useState('#000000'); // Negro por defecto
   const [kitSocksColor, setKitSocksColor] = useState('#000000'); // Negro por defecto
   const [squadTab, setSquadTab] = useState<'primer_equipo' | 'juvenil'>('primer_equipo');
+  const [squadModalMode, setSquadModalMode] = useState<'view' | 'edit'>('edit');
 
   // Redefinición local de getTeamLogo para usar los escudos de la base de datos
   const getTeamLogo = (teamName: string): string => {
@@ -169,7 +306,14 @@ export const Matches: React.FC = () => {
       let calledUpIds = currentStats.filter(x => x.is_called_up).map(x => x.player_id);
       
       if (calledUpIds.length === 0) {
-        calledUpIds = dbPlayers.filter(p => p.physical_status !== 'Baja' && p.team_category !== 'Juvenil').map(p => p.id);
+        let playersToFilter = dbPlayers;
+        if (playersToFilter.length === 0) {
+          playersToFilter = await dataService.getPlayers();
+        }
+        calledUpIds = playersToFilter.filter(p => p.physical_status !== 'Baja' && p.team_category !== 'Juvenil').map(p => p.id);
+        setSquadModalMode('edit');
+      } else {
+        setSquadModalMode('view');
       }
       
       setSelectedSquadPlayerIds(calledUpIds);
@@ -269,6 +413,19 @@ export const Matches: React.FC = () => {
     onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo guardar la convocatoria.')
   });
 
+  const deleteCallupsMutation = useMutation({
+    mutationFn: async (matchId: string) => {
+      await dataService.deleteMatchCallups(matchId);
+    },
+    onSuccess: (_, matchId) => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['playerMatchStats', matchId] });
+      showToast('success', 'Convocatoria borrada', 'Se ha eliminado la convocatoria del partido.');
+      setIsSquadModalOpen(false);
+    },
+    onError: (err: any) => showToast('error', 'Error', err.message || 'No se pudo borrar la convocatoria.')
+  });
+
   const updateDorsalMutation = useMutation({
     mutationFn: async ({ id, dorsal }: { id: string, dorsal: number | null }) => {
       return dataService.updatePlayer(id, { dorsal: dorsal === null ? undefined : dorsal });
@@ -293,6 +450,10 @@ export const Matches: React.FC = () => {
 
     if (selectedSquadPlayerIds.length === 0) {
       showToast('error', 'Faltan jugadores', 'Debes seleccionar al menos un jugador convocado.');
+      return;
+    }
+
+    if (!window.confirm('¿Confirmas que deseas guardar los cambios en la convocatoria?')) {
       return;
     }
 
@@ -1511,43 +1672,70 @@ export const Matches: React.FC = () => {
         onClose={() => setIsActionModalOpen(false)}
         title="Acciones de Partido"
       >
-        <div className="space-y-4 text-center">
-          <p className="text-sm text-brand-gray-light font-medium">
-            ¿Qué deseas hacer con el partido contra <span className="text-brand-red-600 font-bold">{selectedMatchForActions?.rival}</span>?
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-            <button
-              onClick={handleOpenSquadModal}
-              className="flex flex-col items-center justify-center p-5 bg-brand-black/50 border border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover rounded-xl group transition-all"
-            >
-              <Users className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
-              <span className="text-sm font-bold text-brand-gray-light">Preparar Convocatoria</span>
-              <span className="text-xs text-brand-gray-muted mt-1 text-center">
-                Selecciona la lista de jugadores convocados.
-              </span>
-            </button>
+        {(() => {
+          const hasConvocatoria = !!selectedMatchForActions?.callup_time || !!selectedMatchForActions?.callup_location;
+          const hasActa = typeof selectedMatchForActions?.score_us === 'number' || !!selectedMatchForActions?.tactical_system;
 
-            <button
-              onClick={handleOpenStatsModal}
-              className="flex flex-col items-center justify-center p-5 bg-brand-black/50 border border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover rounded-xl group transition-all"
-            >
-              <Clock className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
-              <span className="text-sm font-bold text-brand-gray-light">Acta</span>
-              <span className="text-xs text-brand-gray-muted mt-1 text-center">
-                Introduce las estadísticas de rendimiento de los jugadores.
-              </span>
-            </button>
-          </div>
-          <div className="flex justify-end pt-2">
-            <button
-              type="button"
-              onClick={() => setIsActionModalOpen(false)}
-              className="btn-secondary py-2 text-xs"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
+          return (
+            <div className="space-y-4 text-center">
+              <p className="text-sm text-brand-gray-light font-medium">
+                ¿Qué deseas hacer con el partido contra <span className="text-brand-red-600 font-bold">{selectedMatchForActions?.rival}</span>?
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <button
+                  onClick={handleOpenSquadModal}
+                  className={`flex flex-col items-center justify-center p-5 border rounded-xl group transition-all ${
+                    hasConvocatoria 
+                      ? 'bg-emerald-950/20 border-emerald-900/50 hover:bg-emerald-900/30' 
+                      : 'bg-brand-black/50 border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover'
+                  }`}
+                >
+                  {hasConvocatoria ? (
+                    <CheckCircle className="w-8 h-8 text-emerald-500 group-hover:scale-110 transition-transform mb-2" />
+                  ) : (
+                    <Users className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
+                  )}
+                  <span className={`text-sm font-bold ${hasConvocatoria ? 'text-emerald-400' : 'text-brand-gray-light'}`}>
+                    {hasConvocatoria ? 'Ver Convocatoria' : 'Preparar Convocatoria'}
+                  </span>
+                  <span className="text-xs text-brand-gray-muted mt-1 text-center">
+                    {hasConvocatoria ? 'La convocatoria ya está lista. Haz clic para visualizarla o editarla.' : 'Selecciona la lista de jugadores convocados.'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={handleOpenStatsModal}
+                  className={`flex flex-col items-center justify-center p-5 border rounded-xl group transition-all ${
+                    hasActa 
+                      ? 'bg-emerald-950/20 border-emerald-900/50 hover:bg-emerald-900/30' 
+                      : 'bg-brand-black/50 border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-hover'
+                  }`}
+                >
+                  {hasActa ? (
+                    <CheckCircle className="w-8 h-8 text-emerald-500 group-hover:scale-110 transition-transform mb-2" />
+                  ) : (
+                    <Clock className="w-8 h-8 text-brand-red-600 group-hover:scale-110 transition-transform mb-2" />
+                  )}
+                  <span className={`text-sm font-bold ${hasActa ? 'text-emerald-400' : 'text-brand-gray-light'}`}>
+                    {hasActa ? 'Ver Acta' : 'Rellenar Acta'}
+                  </span>
+                  <span className="text-xs text-brand-gray-muted mt-1 text-center">
+                    {hasActa ? 'El acta ya está rellenada. Haz clic para visualizarla o editarla.' : 'Introduce las estadísticas de rendimiento de los jugadores.'}
+                  </span>
+                </button>
+              </div>
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsActionModalOpen(false)}
+                  className="btn-secondary py-2 text-xs"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* =====================================================================
@@ -1558,7 +1746,7 @@ export const Matches: React.FC = () => {
         onClose={() => setIsSquadModalOpen(false)}
         title={`Convocatoria - vs ${selectedMatchForActions?.rival}`}
       >
-        <form onSubmit={handleSaveSquad} className="space-y-4">
+        <div className="space-y-4">
           
           {/* Cabecera de Convocatoria con Escudo del Club */}
           <div className="flex flex-col items-center border-b border-brand-black-border pb-4 mb-4 text-center">
@@ -1584,10 +1772,93 @@ export const Matches: React.FC = () => {
             </span>
           </div>
 
-          {/* Diseño en Filas (Row Layout) */}
-          <div className="flex flex-col gap-4 pb-2">
-            
-            {/* --- FILA 1: HORA Y LUGAR --- */}
+          {squadModalMode === 'view' ? (
+            <div className="flex flex-col gap-4 pb-2">
+              {/* VISTA DE SOLO LECTURA */}
+              <div className="bg-brand-black-card/40 p-4 rounded-xl border border-brand-black-border/60">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Hora de Convocatoria</span>
+                    <span className="text-sm font-semibold text-brand-gray-light">{callupTime || 'No especificada'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Reunión (Lugar / Google Maps)</span>
+                    <span className="text-sm font-semibold text-brand-gray-light">{callupLocation || 'No especificada'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-brand-black-card/40 p-4 rounded-xl border border-brand-black-border/60">
+                 <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-4">Jugadores Convocados ({selectedSquadPlayerIds.length})</span>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                   {dbPlayers.filter(p => selectedSquadPlayerIds.includes(p.id)).map(player => (
+                     <div key={player.id} className="flex items-center gap-2 p-2 rounded border border-brand-black-border bg-brand-black/40">
+                       <div className="w-8 h-8 rounded-full border border-brand-black-border overflow-hidden bg-brand-black shrink-0">
+                         {player.photo_url ? (
+                           <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                         ) : (
+                           <Users className="w-4 h-4 text-brand-gray-dark m-2" />
+                         )}
+                       </div>
+                       <div className="flex-1 flex flex-col justify-center min-w-0">
+                         <span className="text-xs font-bold text-brand-gray-light flex items-start gap-1">
+                           {player.dorsal && <span className="text-[10px] bg-brand-black-bg text-brand-gray-muted px-1 rounded shrink-0 mt-[1px]">{player.dorsal}</span>}
+                           <span className="whitespace-normal break-words leading-tight">{player.nickname || player.full_name}</span>
+                         </span>
+                         {player.team_category === 'Juvenil' && (
+                           <span className="text-[9px] text-brand-red-500 font-bold uppercase">Juvenil</span>
+                         )}
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+              </div>
+              
+              <div className="bg-brand-black-card/40 p-4 rounded-xl border border-brand-black-border/60">
+                <span className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-4">Equipación Oficial</span>
+                <div className="flex justify-center scale-75 origin-top -mb-10">
+                  <KitMannequin kitShirtColor={kitShirtColor} kitShortsColor={kitShortsColor} kitSocksColor={kitSocksColor} />
+                </div>
+              </div>
+
+              <div className="sticky -bottom-6 bg-brand-black-card z-20 grid grid-cols-2 sm:flex sm:flex-row flex-wrap gap-2 pt-4 pb-6 px-6 -mx-6 mt-4 border-t border-brand-black-border sm:justify-end shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.5)]">
+                <button
+                  type="button"
+                  onClick={handleExportCallupPDF}
+                  className="btn-secondary py-2 text-xs flex items-center justify-center gap-1 w-full sm:w-auto bg-brand-black-card text-brand-gray-light border-brand-gray-muted hover:bg-brand-gray-dark"
+                >
+                  <FileText className="w-3.5 h-3.5" /> PDF
+                </button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSquadModalMode('edit')}
+                    className="btn-secondary py-2 text-xs flex items-center justify-center gap-1 w-full flex-1"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" /> Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteCallupConfirm(true)}
+                    className="btn-secondary py-2 text-xs flex items-center justify-center gap-1 w-full flex-1 border-brand-red-600 text-brand-red-600 hover:bg-brand-red-900/30"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Borrar
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSquadModalOpen(false)}
+                  className="btn-primary py-2 text-xs flex items-center justify-center w-full sm:w-auto bg-brand-yellow text-black border-brand-yellow hover:bg-brand-yellow/90"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSaveSquad} className="contents">
+              <div className="flex flex-col gap-4 pb-2">
+              
+              {/* --- FILA 1: HORA Y LUGAR --- */}
             <div className="bg-brand-black-card/40 p-4 rounded-xl border border-brand-black-border/60">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -1698,7 +1969,7 @@ export const Matches: React.FC = () => {
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] font-semibold text-brand-gray-muted leading-tight break-words">
+                              <span className="text-[11px] font-semibold text-brand-gray-muted leading-tight break-words whitespace-normal">
                                 {player.nickname || player.full_name}
                               </span>
                             </div>
@@ -1728,137 +1999,7 @@ export const Matches: React.FC = () => {
               <div className="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16">
                 
                 {/* Maniquí */}
-                <div className="flex flex-col items-center justify-center bg-brand-black/30 rounded-lg p-2.5 border border-brand-black-border/40 min-w-[150px]">
-                  <svg width="130" height="220" viewBox="0 0 160 240" className="mx-auto drop-shadow-2xl">
-                      {/* Definición de filtros y gradientes 3D realistas */}
-                      <defs>
-                        <filter id="fabric-shadow" x="-20%" y="-20%" width="140%" height="140%">
-                          <feDropShadow dx="0" dy="3" stdDeviation="4" floodOpacity="0.3" floodColor="#000" />
-                        </filter>
-                        
-                        {/* Gradiente de Plástico Brillante (Maniquí real) */}
-                        <linearGradient id="glossy-plastic" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="#9ca3af" /> {/* Sombra izquierda */}
-                          <stop offset="15%" stopColor="#f3f4f6" /> {/* Brillo especular fuerte */}
-                          <stop offset="35%" stopColor="#d1d5db" />
-                          <stop offset="65%" stopColor="#e5e7eb" /> {/* Luz secundaria */}
-                          <stop offset="85%" stopColor="#9ca3af" />
-                          <stop offset="100%" stopColor="#4b5563" /> {/* Sombra profunda derecha */}
-                        </linearGradient>
-
-                        {/* Sombreado de tela (brillos y sombras de la ropa) */}
-                        <linearGradient id="shirt-shading" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="#000" stopOpacity="0.4" />
-                          <stop offset="15%" stopColor="#fff" stopOpacity="0.25" />
-                          <stop offset="40%" stopColor="#fff" stopOpacity="0.0" />
-                          <stop offset="70%" stopColor="#fff" stopOpacity="0.1" />
-                          <stop offset="90%" stopColor="#000" stopOpacity="0.2" />
-                          <stop offset="100%" stopColor="#000" stopOpacity="0.6" />
-                        </linearGradient>
-
-                        <linearGradient id="leg-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="#000" stopOpacity="0.4" />
-                          <stop offset="20%" stopColor="#fff" stopOpacity="0.2" />
-                          <stop offset="80%" stopColor="#000" stopOpacity="0.1" />
-                          <stop offset="100%" stopColor="#000" stopOpacity="0.5" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* MANIQUÍ BASE (Plástico Brillante) */}
-                      <g fill="url(#glossy-plastic)">
-                        {/* Cabeza */}
-                        <ellipse cx="80" cy="22" rx="14" ry="18" />
-                        
-                        {/* Cuello */}
-                        <path d="M 74 38 Q 80 44 86 38 L 84 48 L 76 48 Z" />
-                        
-                        {/* Torso & Caderas Base */}
-                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 108 115, 110 135 C 100 145, 90 155, 80 155 C 70 155, 60 145, 50 135 C 52 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" />
-
-                        {/* Brazo Izquierdo */}
-                        <path d="M 46 48 C 30 65, 20 90, 18 125 C 16 135, 24 140, 28 132 C 34 115, 44 85, 50 75 Z" />
-                        
-                        {/* Brazo Derecho */}
-                        <path d="M 114 48 C 130 65, 140 90, 142 125 C 144 135, 136 140, 132 132 C 126 115, 116 85, 110 75 Z" />
-                        
-                        {/* Piernas (Muslos y Gemelos) */}
-                        <path d="M 50 135 C 45 160, 50 195, 52 230 C 62 230, 68 190, 68 150 C 68 145, 75 145, 80 155 Z" />
-                        <path d="M 110 135 C 115 160, 110 195, 108 230 C 98 230, 92 190, 92 150 C 92 145, 85 145, 80 155 Z" />
-                      </g>
-
-                      {/* CAMISETA */}
-                      <g filter="url(#fabric-shadow)">
-                        {/* Manga Izquierda */}
-                        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill={kitShirtColor} />
-                        <path d="M 46 48 C 34 60, 24 75, 22 85 L 36 88 L 50 75 Z" fill="url(#shirt-shading)" />
-                        
-                        {/* Manga Derecha */}
-                        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill={kitShirtColor} />
-                        <path d="M 114 48 C 126 60, 136 75, 138 85 L 124 88 L 110 75 Z" fill="url(#shirt-shading)" />
-                        
-                        {/* Cuerpo Camiseta */}
-                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill={kitShirtColor} />
-                        <path d="M 46 48 Q 80 42 114 48 C 116 60, 110 70, 110 75 C 108 95, 106 115, 106 130 Q 80 136 54 130 C 54 115, 52 95, 50 75 C 50 70, 44 60, 46 48 Z" fill="url(#shirt-shading)" />
-                        
-                        {/* Arrugas Camiseta */}
-                        <path d="M 60 130 C 65 100, 62 80, 58 60" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
-                        <path d="M 100 130 C 95 100, 98 80, 102 60" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
-                        <path d="M 80 132 L 80 70" stroke="#000" strokeWidth="1.5" strokeOpacity="0.08" fill="none" />
-                        <path d="M 54 95 Q 65 110 70 130" stroke="#000" strokeWidth="1.5" strokeOpacity="0.1" fill="none" />
-                        <path d="M 106 95 Q 95 110 90 130" stroke="#000" strokeWidth="1.5" strokeOpacity="0.1" fill="none" />
-                        
-                        {/* Cuello Pico */}
-                        <path d="M 70 47 Q 80 60 90 47 Q 80 49 70 47 Z" fill="url(#glossy-plastic)" />
-                        <path d="M 68 46 Q 80 62 92 46" stroke={kitShirtColor} strokeWidth="3" fill="none" filter="brightness(0.7)" />
-                      </g>
-
-                      {/* ESCUDO */}
-                      <image
-                        href="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png"
-                        x="88"
-                        y="58"
-                        width="18"
-                        height="18"
-                        className="drop-shadow-sm"
-                      />
-
-                      {/* PANTALÓN */}
-                      <g filter="url(#fabric-shadow)">
-                        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill={kitShortsColor} />
-                        <path d="M 54 130 Q 80 136 106 130 C 108 140, 112 165, 112 170 L 80 155 L 48 170 C 48 165, 52 140, 54 130 Z" fill="url(#shirt-shading)" />
-                        
-                        {/* Arrugas Pantalón */}
-                        <path d="M 58 132 Q 60 150 54 167" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
-                        <path d="M 102 132 Q 100 150 106 167" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
-                        <path d="M 80 132 L 80 155" stroke="#000" strokeWidth="2" strokeOpacity="0.15" fill="none" />
-                        <path d="M 68 132 Q 72 145 68 158" stroke="#000" strokeWidth="1" strokeOpacity="0.1" fill="none" />
-                        <path d="M 92 132 Q 88 145 92 158" stroke="#000" strokeWidth="1" strokeOpacity="0.1" fill="none" />
-                      </g>
-
-                      {/* MEDIAS / CALZAS (Textura ajustada) */}
-                      <g filter="url(#fabric-shadow)">
-                        {/* Izquierda */}
-                        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill={kitSocksColor} />
-                        <path d="M 51 190 C 46 205, 48 225, 50 230 C 62 230, 64 205, 65 190 Q 58 193 51 190 Z" fill="url(#leg-gradient)" />
-                        
-                        {/* Derecha */}
-                        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill={kitSocksColor} />
-                        <path d="M 109 190 C 114 205, 112 225, 110 230 C 98 230, 96 205, 95 190 Q 102 193 109 190 Z" fill="url(#leg-gradient)" />
-                        
-                        {/* Doblez superior y elásticos */}
-                        <path d="M 50 195 Q 58 198 66 195" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
-                        <path d="M 110 195 Q 102 198 94 195" stroke="#000" strokeWidth="2" strokeOpacity="0.2" fill="none" />
-                      </g>
-
-                      {/* BOTAS */}
-                      <g filter="url(#fabric-shadow)">
-                        <path d="M 50 230 C 42 232, 38 238, 44 242 L 60 242 C 63 242, 64 235, 62 230 Z" fill="#111827" />
-                        <path d="M 46 238 L 56 238" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" fill="none" />
-                        
-                        <path d="M 110 230 C 118 232, 122 238, 116 242 L 100 242 C 97 242, 96 235, 98 230 Z" fill="#111827" />
-                        <path d="M 114 238 L 104 238" stroke="#fff" strokeWidth="1" strokeOpacity="0.4" fill="none" />
-                      </g>
-                    </svg>
+                <div className="flex flex-col items-center justify-center bg-brand-black/30 rounded-lg p-2.5 border border-brand-black-border/40 min-w-[150px]">                  <KitMannequin kitShirtColor={kitShirtColor} kitShortsColor={kitShortsColor} kitSocksColor={kitSocksColor} />
                 </div>
 
                 {/* Colores */}
@@ -1971,7 +2112,46 @@ export const Matches: React.FC = () => {
               {saveSquadMutation.isPending ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
-        </form>
+            </form>
+          )}
+        </div>
+      </Modal>
+
+      {/* Modal confirmación borrado convocatoria */}
+      <Modal
+        isOpen={showDeleteCallupConfirm}
+        onClose={() => setShowDeleteCallupConfirm(false)}
+        title="Borrar Convocatoria"
+        maxWidth="max-w-sm"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-brand-gray-muted leading-relaxed">
+            ¿Seguro que deseas borrar la convocatoria de este partido?
+            <span className="block mt-2 font-semibold text-brand-red-500">Esta acción no se puede deshacer.</span>
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setShowDeleteCallupConfirm(false)}
+              className="btn-secondary py-2 px-4 text-xs font-bold"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedMatchForActions) {
+                  deleteCallupsMutation.mutate(selectedMatchForActions.id);
+                  setShowDeleteCallupConfirm(false);
+                }
+              }}
+              disabled={deleteCallupsMutation.isPending}
+              className="btn-primary py-2 px-4 text-xs font-bold bg-brand-red-600 hover:bg-brand-red-700 border-brand-red-600"
+            >
+              {deleteCallupsMutation.isPending ? 'Borrando...' : 'Sí, borrar'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
     </div>

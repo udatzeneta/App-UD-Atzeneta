@@ -5,7 +5,7 @@ import { Player, PlayerMatchStats } from '../types';
 import { Check, ChevronLeft, ChevronRight, AlertCircle, Plus, Trash2 } from 'lucide-react';
 
 export interface WizardEventPayload {
-  type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury';
+  type: 'goals' | 'assists' | 'yellow_cards' | 'red_card' | 'conceded_goals' | 'own_goals' | 'substitution' | 'penalty_goals' | 'conceded_penalty_goals' | 'opponent_goal' | 'opponent_yellow_card' | 'injury' | 'opponent_own_goal' | 'own_goal_team';
   minuteStr: string;
   playerId?: string;
   playerInId?: string;
@@ -32,7 +32,6 @@ const CATEGORIES = [
   { id: 'substitution', label: 'Sustituciones', icon: '🔄', color: 'text-brand-gray-light', bg: 'bg-brand-black-hover border-brand-black-border' },
   { id: 'injury', label: 'Lesión', icon: '🏥', color: 'text-amber-500', bg: 'bg-amber-950/40 border-amber-800' },
   { id: 'conceded', label: 'Goles en Contra', icon: '🥅', color: 'text-cyan-400', bg: 'bg-cyan-950/40 border-cyan-800' },
-  { id: 'own', label: 'Gol en Propia', icon: '💥', color: 'text-orange-400', bg: 'bg-orange-950/40 border-orange-800' },
   { id: 'opponent', label: 'Evento del Rival', icon: '👤', color: 'text-brand-red-500', bg: 'bg-brand-red-600/10 border-brand-red-600/30' },
 ];
 
@@ -81,7 +80,14 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
     if (step === 2) {
       // Basic validations before review
       if (category === 'opponent' && !eventType) return;
-      if (category !== 'opponent' && category !== 'substitution' && !playerId) return;
+      
+      const isNoPlayerNeeded = 
+        category === 'opponent' || 
+        category === 'substitution' || 
+        (category === 'goals' && eventType === 'opponent_own_goal') ||
+        (category === 'conceded' && eventType === 'own_goal_team');
+        
+      if (!isNoPlayerNeeded && !playerId) return;
       if (category === 'substitution') {
         const isValid = substitutions.every(s => s.playerOut && s.playerIn && s.position);
         if (!isValid) return;
@@ -125,7 +131,7 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
       let finalType = category;
       if (category === 'goals') {
         finalType = eventType || 'goals';
-        if (assistId) {
+        if (finalType !== 'opponent_own_goal' && assistId) {
           payloads.push({
             type: 'assists',
             minuteStr: finalMinute,
@@ -135,7 +141,6 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
       }
       if (category === 'cards') finalType = eventType || 'yellow_cards';
       if (category === 'conceded') finalType = eventType || 'conceded_goals';
-      if (category === 'own') finalType = 'own_goals';
 
       payloads.push({
         type: finalType as any,
@@ -152,12 +157,15 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
   const renderStep1 = () => (
     <div className="space-y-4 animate-fadeIn">
       <p className="text-xs text-brand-gray-muted text-center mb-6">¿Qué tipo de incidencia deseas registrar?</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {CATEGORIES.map(cat => (
           <button
             key={cat.id}
             onClick={() => {
               setCategory(cat.id);
+              if (cat.id === 'goals') setEventType('goals');
+              if (cat.id === 'conceded') setEventType('conceded_goals');
+              if (cat.id === 'cards') setEventType('yellow_cards');
               setStep(2);
             }}
             className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all ${
@@ -286,15 +294,28 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
           <div className="space-y-4">
             <div>
               <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Tipo de Gol</label>
-              <select value={eventType} onChange={(e) => setEventType(e.target.value)} className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border">
+              <select 
+                value={eventType} 
+                onChange={(e) => {
+                  setEventType(e.target.value);
+                  if (e.target.value === 'opponent_own_goal') {
+                    setPlayerId('');
+                    setAssistId('');
+                  }
+                }} 
+                className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border"
+              >
                 <option value="goals">Gol Normal</option>
                 <option value="penalty_goals">Gol de Penalti</option>
+                <option value="opponent_own_goal">💥 Gol en Propia (del Rival)</option>
               </select>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {renderPlayerSelector('Goleador', playerId, setPlayerId)}
-              {renderPlayerSelector('Asistente (Opcional)', assistId, setAssistId)}
-            </div>
+            {eventType !== 'opponent_own_goal' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                {renderPlayerSelector('Goleador', playerId, setPlayerId)}
+                {renderPlayerSelector('Asistente (Opcional)', assistId, setAssistId)}
+              </div>
+            )}
           </div>
         )}
 
@@ -315,16 +336,24 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
           <div className="space-y-4">
             <div>
               <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Tipo de Gol Recibido</label>
-              <select value={eventType} onChange={(e) => setEventType(e.target.value)} className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border">
+              <select 
+                value={eventType} 
+                onChange={(e) => {
+                  setEventType(e.target.value);
+                  if (e.target.value === 'own_goal_team') {
+                    setPlayerId('');
+                  }
+                }} 
+                className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border"
+              >
                 <option value="conceded_goals">Gol Normal</option>
                 <option value="conceded_penalty_goals">Gol de Penalti</option>
+                <option value="own_goal_team">💥 Gol en Propia (de la U.D. Atzeneta)</option>
               </select>
             </div>
-            {renderPlayerSelector('Portero Afectado', playerId, setPlayerId)}
+            {eventType !== 'own_goal_team' && renderPlayerSelector('Portero Afectado', playerId, setPlayerId)}
           </div>
         )}
-
-        {category === 'own' && renderPlayerSelector('Jugador (Gol en Propia)', playerId, setPlayerId)}
 
         {category === 'opponent' && (
           <div className="space-y-4">
@@ -400,14 +429,24 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
             })}
           </div>
         )}
-        {(category === 'goals' || category === 'cards' || category === 'own' || category === 'conceded' || category === 'injury') && (
+        {eventType === 'opponent_own_goal' && (
           <p className="text-sm text-brand-gray-light border-t border-brand-black-border pt-2 mt-2">
-            <span className="text-brand-gray-muted">Jugador:</span> {calledUpPlayers.find(p => p.id === playerId)?.nickname}
+            <span className="text-brand-gray-muted">Tipo:</span> Gol en Propia (Rival)
+          </p>
+        )}
+        {eventType === 'own_goal_team' && (
+          <p className="text-sm text-brand-gray-light border-t border-brand-black-border pt-2 mt-2">
+            <span className="text-brand-gray-muted">Tipo:</span> Gol en Propia (U.D. Atzeneta)
+          </p>
+        )}
+        {(category === 'goals' || category === 'cards' || category === 'conceded' || category === 'injury') && playerId && (
+          <p className="text-sm text-brand-gray-light border-t border-brand-black-border pt-2 mt-2">
+            <span className="text-brand-gray-muted">Jugador:</span> {calledUpPlayers.find(p => p.id === playerId)?.nickname || '-'}
           </p>
         )}
         {category === 'goals' && assistId && (
           <p className="text-sm text-brand-gray-light mt-1">
-            <span className="text-brand-gray-muted">Asistente:</span> {calledUpPlayers.find(p => p.id === assistId)?.nickname}
+            <span className="text-brand-gray-muted">Asistente:</span> {calledUpPlayers.find(p => p.id === assistId)?.nickname || '-'}
           </p>
         )}
         {category === 'injury' && (
