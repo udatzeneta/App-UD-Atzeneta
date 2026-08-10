@@ -4,6 +4,7 @@ import { ZONE_LABELS } from '../BodyMap';
 interface PlayerFullPrintViewProps {
   player: any;
   stats: {
+    calledUp: number;
     matchesPlayed: number;
     minutesPlayed: number;
     goals: number;
@@ -128,9 +129,13 @@ export const PlayerFullPrintView: React.FC<PlayerFullPrintViewProps> = ({
           <h3 className="text-sm font-black text-[#0f0f0f] bg-gray-100 py-1.5 px-3 rounded uppercase tracking-wider mb-4 border-l-4 border-[#C1121F]">
             Rendimiento Deportivo Global
           </h3>
-          <div className="grid grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-5 gap-2 mb-6">
             <div className="bg-white border border-gray-200 p-3 rounded-xl text-center shadow-sm">
-              <span className="text-[9px] text-gray-500 uppercase font-black block mb-1">Partidos</span>
+              <span className="text-[9px] text-gray-500 uppercase font-black block mb-1">Convocatorias</span>
+              <span className="text-2xl font-black text-gray-900">{stats.calledUp}</span>
+            </div>
+            <div className="bg-white border border-gray-200 p-3 rounded-xl text-center shadow-sm">
+              <span className="text-[9px] text-gray-500 uppercase font-black block mb-1">P. Jugados</span>
               <span className="text-2xl font-black text-gray-900">{stats.matchesPlayed}</span>
             </div>
             <div className="bg-white border border-gray-200 p-3 rounded-xl text-center shadow-sm">
@@ -245,7 +250,7 @@ export const PlayerFullPrintView: React.FC<PlayerFullPrintViewProps> = ({
                 const monthStr = a.date.substring(0, 7);
                 if (!byMonth[monthStr]) byMonth[monthStr] = { total: 0, attended: 0 };
                 byMonth[monthStr].total++;
-                if (a.status === 'Entrena') byMonth[monthStr].attended++;
+                if (a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED') byMonth[monthStr].attended++;
               });
               const months = Object.keys(byMonth).sort();
               if (months.length === 0) return null;

@@ -237,6 +237,7 @@ export const PlayerDetail: React.FC = () => {
   const dynAssists = filteredMatchStats.reduce((acc, s) => acc + (s.assists || 0), 0);
   const dynYellows = filteredMatchStats.reduce((acc, s) => acc + (s.yellow_cards || 0), 0);
   const dynReds = filteredMatchStats.filter(s => s.red_card).length;
+  const dynCalledUp = filteredMatchStats.filter(s => s.is_called_up).length;
 
   // ---- Mutations ----
   const createInjuryMutation = useMutation({
@@ -526,7 +527,7 @@ export const PlayerDetail: React.FC = () => {
       const monthStr = a.date.substring(0, 7); // YYYY-MM
       if (!byMonth[monthStr]) byMonth[monthStr] = { total: 0, attended: 0 };
       byMonth[monthStr].total++;
-      if (a.status === 'Entrena') byMonth[monthStr].attended++;
+      if (a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED') byMonth[monthStr].attended++;
     });
 
     const months = Object.keys(byMonth).sort();
@@ -777,6 +778,7 @@ export const PlayerDetail: React.FC = () => {
         <PlayerFullPrintView 
           player={player}
           stats={{
+            calledUp: dynCalledUp,
             matchesPlayed: dynMatchesPlayed,
             minutesPlayed: dynMinutesPlayed,
             goals: dynGoals,
@@ -784,7 +786,7 @@ export const PlayerDetail: React.FC = () => {
             yellows: dynYellows,
             reds: dynReds,
             attendanceRate: attendanceRecords.length > 0 
-              ? ((attendanceRecords.filter(a => a.status === 'Entrena').length / attendanceRecords.length) * 100).toFixed(0) 
+              ? ((attendanceRecords.filter(a => a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED').length / attendanceRecords.length) * 100).toFixed(0) 
               : '0'
           }}
           injuries={injuries}
@@ -1032,8 +1034,9 @@ export const PlayerDetail: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-left">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-left">
               {[
+                { label: 'Convocatorias', value: dynCalledUp, color: 'text-brand-gray-light' },
                 { label: 'Partidos Jugados', value: dynMatchesPlayed, color: 'text-brand-gray-light' },
                 { label: 'Minutos Jugados', value: `${dynMinutesPlayed}'`, color: 'text-brand-gray-light' },
                 { label: 'Goles Anotados', value: `+${dynGoals}`, color: 'text-emerald-500' },
@@ -1065,13 +1068,13 @@ export const PlayerDetail: React.FC = () => {
                 <div className="bg-emerald-950/20 p-3 rounded-lg text-center border border-emerald-900/30">
                   <span className="text-[9px] text-emerald-600/80 uppercase font-bold block">Asiste</span>
                   <span className="text-xl font-extrabold text-emerald-500">
-                    {filteredAttendance.filter(a => a.status === 'Entrena').length}
+                    {filteredAttendance.filter(a => a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED').length}
                   </span>
                 </div>
                 <div className="bg-brand-red-600/10 p-3 rounded-lg text-center border border-brand-red-600/20">
                   <span className="text-[9px] text-brand-red-600/80 uppercase font-bold block">Falta</span>
                   <span className="text-xl font-extrabold text-brand-red-600">
-                    {filteredAttendance.filter(a => a.status !== 'Entrena').length}
+                    {filteredAttendance.filter(a => !(a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED')).length}
                   </span>
                 </div>
               </div>
@@ -1079,11 +1082,11 @@ export const PlayerDetail: React.FC = () => {
               {/* Gráfica de Asistencia */}
               {renderAttendanceEvolutionChart()}
 
-              {filteredAttendance.filter(a => a.status !== 'Entrena').length > 0 && (
+              {filteredAttendance.filter(a => !(a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED')).length > 0 && (
                 <div className="mt-4">
                   <span className="text-[10px] text-brand-gray-muted uppercase font-bold block mb-2">Desglose de Ausencias</span>
                   <div className="max-h-[250px] overflow-y-auto space-y-2 pr-1 no-scrollbar">
-                    {filteredAttendance.filter(a => a.status !== 'Entrena')
+                    {filteredAttendance.filter(a => !(a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED'))
                       .sort((a, b) => {
                         const tA = trainings.find((tr: Training) => tr.id === a.training_id)?.date || '';
                         const tB = trainings.find((tr: Training) => tr.id === b.training_id)?.date || '';
