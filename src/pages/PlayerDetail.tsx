@@ -512,63 +512,87 @@ export const PlayerDetail: React.FC = () => {
   };
 
   const renderAttendanceEvolutionChart = () => {
-    if (filteredAttendance.length === 0) return null;
+    const getShortDate = (dateStr: string) => {
+      if (!dateStr) return '';
+      const parts = dateStr.split('T')[0].split('-');
+      if (parts.length < 3) return dateStr;
+      return `${parts[2]}/${parts[1]}`;
+    };
 
-    const attWithDate = filteredAttendance.map(a => {
+    // 1. Trainings:
+    const trainingSessions = filteredAttendance.map(a => {
       const t = trainings.find((tr: Training) => tr.id === a.training_id);
-      return { ...a, date: t?.date || '?' };
-    }).filter(a => a.date !== '?')
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const date = t?.date || '';
+      const isPresent = a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED';
+      return {
+        date,
+        label: `E ${getShortDate(date)}`,
+        attended: isPresent ? 1 : 0
+      };
+    }).filter(s => s.date);
 
-    if (attWithDate.length === 0) return null;
+    // 2. Matches:
+    const matchSessions = matches.map((m: Match) => {
+      const date = m.date || '';
+      const stat = filteredMatchStats.find(s => s.match_id === m.id);
+      const isPresent = stat ? stat.is_called_up : false;
+      return {
+        date,
+        label: `P ${getShortDate(date)}`,
+        attended: isPresent ? 1 : 0
+      };
+    }).filter(s => s.date);
 
-    const byMonth: Record<string, { total: number, attended: number }> = {};
-    attWithDate.forEach(a => {
-      const monthStr = a.date.substring(0, 7); // YYYY-MM
-      if (!byMonth[monthStr]) byMonth[monthStr] = { total: 0, attended: 0 };
-      byMonth[monthStr].total++;
-      if (a.status === 'ENT' || a.status === 'Entrena' || a.status === 'ED') byMonth[monthStr].attended++;
-    });
+    // 3. Combined & sorted chronologically (only past or today's sessions):
+    const todayStr = new Date().toISOString().split('T')[0];
+    const sessions = [...trainingSessions, ...matchSessions]
+      .filter(s => s.date && s.date.split('T')[0] <= todayStr)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const months = Object.keys(byMonth).sort();
-    if (months.length === 0) return null;
+    const sessionsCount = sessions.length;
+    if (sessionsCount === 0) return null;
 
-    const svgW = 600; const svgH = 140; const padX = 40; const padY = 20;
-    const chartW = svgW - 2 * padX; const chartH = svgH - 2 * padY;
+    const padX = 50; const padY = 25;
+    const itemWidth = 35; // 35px per session
+    const svgW = Math.max(600, sessionsCount * itemWidth + 2 * padX); 
+    const svgH = 160;
+    const chartW = svgW - 2 * padX; 
+    const chartH = svgH - 2 * padY;
 
-    const points = months.map((m, idx) => {
-      const data = byMonth[m];
-      const pct = data.total > 0 ? (data.attended / data.total) * 100 : 0;
-      const x = padX + (idx / Math.max(months.length - 1, 1)) * chartW;
-      const y = padY + chartH - (pct / 100) * chartH;
-      const [yy, mm] = m.split('-');
-      return { x, y, pct: Math.round(pct), label: `${mm}/${yy.substring(2)}` };
+    const points = sessions.map((s, idx) => {
+      const x = padX + (idx / Math.max(sessionsCount - 1, 1)) * chartW;
+      const y = s.attended === 1 ? padY : padY + chartH; // Attended = Top, Absent = Bottom
+      return { x, y, label: s.label, attended: s.attended };
     });
 
     const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
     return (
-      <div className="mt-4 bg-brand-black/20 p-4 border border-brand-black-border rounded-xl overflow-x-auto">
-        <span className="text-[10px] text-brand-gray-muted uppercase font-bold block mb-2">Evolución Asistencia (%)</span>
-        <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="min-w-[500px] overflow-visible">
-          {[0, 0.5, 1].map((ratio, i) => {
-            const y = padY + chartH * ratio;
-            const pct = (100 - ratio * 100).toFixed(0);
+      <div className="mt-4 bg-brand-black/20 p-4 border border-brand-black-border rounded-xl overflow-x-auto no-scrollbar">
+        <span className="text-[10px] text-brand-gray-muted uppercase font-bold block mb-2">Evolución Asistencia (Entrenamientos/Partidos)</span>
+        <svg width={svgW} height={svgH} className="overflow-visible">
+          {/* Grid horizontal lines */}
+          <g className="opacity-40">
+            <line x1={padX} y1={padY} x2={padX + chartW} y2={padY} stroke="#4b5563" strokeDasharray="3,3" />
+            <text x={padX - 8} y={padY + 3} fill="#10b981" fontSize="10" textAnchor="end" fontWeight="bold">Asiste</text>
+          </g>
+          <g className="opacity-40">
+            <line x1={padX} y1={padY + chartH} x2={padX + chartW} y2={padY + chartH} stroke="#4b5563" strokeDasharray="3,3" />
+            <text x={padX - 8} y={padY + chartH + 3} fill="#ef4444" fontSize="10" textAnchor="end" fontWeight="bold">Falta</text>
+          </g>
+
+          {points.length > 1 && <path d={pathData} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90" />}
+          {points.map((p, idx) => {
+            const isPresent = p.attended === 1;
+            const color = isPresent ? '#10b981' : '#ef4444';
             return (
-              <g key={i} className="opacity-20">
-                <line x1={padX} y1={y} x2={padX + chartW} y2={y} stroke="#4b5563" strokeDasharray="3,3" />
-                <text x={padX - 8} y={y + 3} fill="#9ca3af" fontSize="10" textAnchor="end">{pct}%</text>
+              <g key={idx}>
+                <circle cx={p.x} cy={p.y} r="4" fill="#1f2937" stroke={color} strokeWidth="2" />
+                <text x={p.x} y={padY + chartH + 15} fill="#9ca3af" fontSize="9" textAnchor="middle" fontWeight="bold">{p.label}</text>
+                <text x={p.x} y={p.y - 8} fill={color} fontSize="8" textAnchor="middle" fontWeight="bold">{isPresent ? 'Sí' : 'No'}</text>
               </g>
             );
           })}
-          {points.length > 1 && <path d={pathData} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-90" />}
-          {points.map((p, idx) => (
-            <g key={idx}>
-              <circle cx={p.x} cy={p.y} r="4" fill="#1f2937" stroke="#10b981" strokeWidth="2" />
-              <text x={p.x} y={p.y - 10} fill="#34d399" fontSize="9" textAnchor="middle" fontWeight="bold">{p.pct}%</text>
-              <text x={p.x} y={padY + chartH + 15} fill="#9ca3af" fontSize="9" textAnchor="middle">{p.label}</text>
-            </g>
-          ))}
         </svg>
       </div>
     );

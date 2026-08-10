@@ -5,8 +5,10 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
-import { TrainingAttendance, Player } from '../types';
+import { TrainingAttendance, Player, Match } from '../types';
+import { supabase } from '../lib/supabase';
 import { exportToCSV, exportToPDF, exportAttendanceToPDF, ExportCell } from '../utils/export';
+import logos from '../assets/logos.json';
 import {
   ClipboardCheck, Download, FileText, Calendar,
   TrendingUp, Info, Award, UserCheck, MessageSquare,
@@ -84,6 +86,7 @@ export const Attendance: React.FC = () => {
   } | null>(null);
   const [rollCallList, setRollCallList] = useState<Record<string, { status: string; observations: string; intent?: boolean | null; intentReason?: string }>>({});
   const [rollCallOpen, setRollCallOpen] = useState(false);
+  const [rollCallTeamTab, setRollCallTeamTab] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat]       = useState<'csv' | 'pdf'>('pdf');
   const [exportRange, setExportRange]         = useState<'current' | 'all' | 'custom'>('current');
@@ -92,6 +95,23 @@ export const Attendance: React.FC = () => {
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: players = [],        isLoading: lPlayers   } = useQuery({ queryKey: ['players'],   queryFn: () => dataService.getPlayers() });
   const { data: trainings = [],      isLoading: lTrainings } = useQuery({ queryKey: ['trainings'], queryFn: () => dataService.getTrainings() });
+  const { data: matches = [],        isLoading: lMatches   } = useQuery({ queryKey: ['matches'],   queryFn: () => dataService.getMatches() });
+  const { data: allPlayerMatchStats = [], isLoading: lPlayerMatchStats } = useQuery({
+    queryKey: ['allPlayerMatchStats'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('player_match_stats').select('*');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+  const { data: rivalTeams = [],     isLoading: lRivalTeams } = useQuery({
+    queryKey: ['rivalTeams'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('rival_teams').select('*');
+      if (error) throw error;
+      return data || [];
+    }
+  });
   const { data: attendanceData = [], isLoading: lAtt }       = useQuery({
     queryKey: ['attendance', selectedYear, selectedMonth],
     queryFn:  () => dataService.getAttendanceByMonth(selectedYear, selectedMonth),
@@ -101,8 +121,20 @@ export const Attendance: React.FC = () => {
     queryFn:  () => dataService.getAllAttendance(),
   });
 
-  const isLoading      = lPlayers || lTrainings || lAtt;
-  const isCumulLoading = lPlayers || lTrainings || lAllAtt;
+  const isLoading      = lPlayers || lTrainings || lAtt || lMatches || lPlayerMatchStats || lRivalTeams;
+  const isCumulLoading = lPlayers || lTrainings || lAllAtt || lMatches || lPlayerMatchStats || lRivalTeams;
+
+  const getTeamLogo = (teamName: string): string => {
+    const opt = rivalTeams.find((rt: any) => rt.name === teamName);
+    if (opt?.shield_url) return opt.shield_url;
+    const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim();
+    const target = normalize(teamName);
+    const matchKey = Object.keys(logos).find(key => normalize(key) === target);
+    if (matchKey) {
+      return (logos as Record<string, string>)[matchKey];
+    }
+    return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+  };
 
   // ── Datos derivados ────────────────────────────────────────────────────────
   const visiblePlayers: Player[] = isPlayerRole && user
@@ -117,6 +149,18 @@ export const Attendance: React.FC = () => {
       return d.getFullYear() === selectedYear && d.getMonth() + 1 === selectedMonth;
     })
     .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const filteredMatches = matches.filter((m: any) => (m.team_category || 'Primer Equipo') === filterTeam);
+  const monthlyMatches = filteredMatches
+    .filter((m: any) => {
+      const d = new Date(m.date);
+      return d.getFullYear() === selectedYear && d.getMonth() + 1 === selectedMonth;
+    });
+
+  const monthlySessions = [
+    ...monthlyTrainings.map(t => ({ ...t, type: 'entrenamiento' })),
+    ...monthlyMatches.map(m => ({ ...m, type: 'partido', objective: `Partido vs ${m.rival}` }))
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   const completedTrainings    = monthlyTrainings.filter((t: any) => attendanceData.some((a: any) => a.training_id === t.id));
   const allCompletedTrainings = filteredTrainings.filter((t: any) => allAttendanceData.some((a: any) => a.training_id === t.id));
@@ -134,23 +178,34 @@ export const Attendance: React.FC = () => {
   }, [players, filterTeam]);
 
   useEffect(() => {
+    if (rollCallOpen) {
+      setRollCallTeamTab(filterTeam === 'Juvenil' ? 'Juvenil' : 'Primer Equipo');
+    }
+  }, [rollCallOpen, filterTeam]);
+
+  useEffect(() => {
     setSelectedTrainingId(monthlyTrainings.length > 0 ? monthlyTrainings[0].id : '');
   }, [selectedMonth, selectedYear, trainings]);
 
   useEffect(() => {
     if (!selectedTrainingId) return;
+    const currentTraining = trainings.find((t: any) => t.id === selectedTrainingId);
+    const trainingTeam = currentTraining?.team_category || 'Primer Equipo';
+
     const init: Record<string, { status: string; observations: string; intent?: boolean | null; intentReason?: string }> = {};
-    visiblePlayers.forEach(p => {
+    players.forEach(p => {
       const log = attendanceData.find((a: any) => a.training_id === selectedTrainingId && a.player_id === p.id) 
                || allAttendanceData.find((a: any) => a.training_id === selectedTrainingId && a.player_id === p.id);
       const isBaja = p.physical_status === 'Baja';
-      let defaultStatus = isBaja ? 'L' : 'ENT';
-      if (log?.player_intent === false && defaultStatus === 'ENT') defaultStatus = 'AA';
+      
+      const isSameTeam = (p.team_category || 'Primer Equipo') === trainingTeam;
+      let defaultStatus = isSameTeam ? (isBaja ? 'L' : 'ENT') : '-';
+      if (isSameTeam && log?.player_intent === false && defaultStatus === 'ENT') defaultStatus = 'AA';
       
       let initialObservations = log?.observations || '';
       if (!initialObservations) {
-        if (isBaja) initialObservations = 'Baja médica';
-        else if (log?.player_intent === false && log?.player_reason) initialObservations = `Motivo: ${log.player_reason}`;
+        if (isSameTeam && isBaja) initialObservations = 'Baja médica';
+        else if (isSameTeam && log?.player_intent === false && log?.player_reason) initialObservations = `Motivo: ${log.player_reason}`;
       }
 
       init[p.id] = { 
@@ -161,7 +216,7 @@ export const Attendance: React.FC = () => {
       };
     });
     setRollCallList(init);
-  }, [selectedTrainingId, attendanceData, allAttendanceData]);
+  }, [selectedTrainingId, attendanceData, allAttendanceData, players, trainings]);
 
   // ── Mutaciones ─────────────────────────────────────────────────────────────
   const updateMut = useMutation({
@@ -451,8 +506,8 @@ export const Attendance: React.FC = () => {
             <TableSkeleton />
           ) : visiblePlayers.length === 0 ? (
             <EmptyState text="No hay jugadores en la plantilla." />
-          ) : monthlyTrainings.length === 0 ? (
-            <EmptyState text="No hay entrenamientos en el mes seleccionado." />
+          ) : monthlySessions.length === 0 ? (
+            <EmptyState text="No hay entrenamientos ni partidos en el mes seleccionado." />
           ) : (
             <>
               <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-hidden shadow-premium">
@@ -463,15 +518,30 @@ export const Attendance: React.FC = () => {
                         <th className="py-2 px-3 text-left text-[10px] font-semibold text-brand-gray-muted uppercase tracking-wider sticky left-0 z-10 bg-brand-black border-r border-brand-black-border" style={{ minWidth: 160 }}>
                           Jugador
                         </th>
-                        {monthlyTrainings.map((t: any) => (
-                          <th key={t.id} className="py-2 text-center" style={{ minWidth: 52 }} title={`${t.date} — ${t.objective}`}>
-                            <div className="flex flex-col items-center gap-0.5">
-                              <span className="text-[10px] text-brand-gray-muted font-medium">
-                                {t.date.split('-').slice(1).reverse().join('/')}
-                              </span>
-                            </div>
-                          </th>
-                        ))}
+                        {monthlySessions.map((session: any) => {
+                          const isMatch = session.type === 'partido';
+                          return (
+                            <th key={session.id} className="py-2 text-center" style={{ minWidth: 52 }} title={`${session.date} — ${session.objective}`}>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className={`text-[10px] font-bold ${isMatch ? 'text-brand-red-500' : 'text-brand-gray-muted'}`}>
+                                  {session.date.split('-').slice(1).reverse().join('/')}
+                                </span>
+                                {isMatch ? (
+                                  <img 
+                                    src={getTeamLogo(session.rival)} 
+                                    alt={session.rival} 
+                                    className="w-5 h-5 object-contain mt-0.5" 
+                                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png'; }}
+                                  />
+                                ) : (
+                                  <span className="text-[8px] font-extrabold px-1 rounded bg-brand-black-border text-brand-gray-muted">
+                                    ENT
+                                  </span>
+                                )}
+                              </div>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-brand-black-border">
@@ -492,29 +562,46 @@ export const Attendance: React.FC = () => {
                                 </div>
                               </div>
                             </td>
-                            {monthlyTrainings.map((t: any) => {
-                              const log    = attendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
-                              const status = log?.status || '-';
-                              const hasData = status !== '-';
-                              let cellBg = 'bg-brand-black/60';
-                              let textCl = 'text-brand-gray-dark';
-                              if (hasData) {
-                                if (isPresent(status)) { cellBg = 'bg-emerald-600/20 hover:bg-emerald-600/30 border-b-2 border-emerald-500/40'; textCl = 'text-emerald-400'; }
-                                else if (isMedical(status)) { cellBg = 'bg-orange-600/15 hover:bg-orange-600/25 border-b-2 border-orange-500/30'; textCl = 'text-orange-400'; }
-                                else { cellBg = 'bg-rose-600/20 hover:bg-rose-600/30 border-b-2 border-rose-500/40'; textCl = 'text-rose-400'; }
+                            {monthlySessions.map((session: any) => {
+                              const isMatch = session.type === 'partido';
+                              if (isMatch) {
+                                const stat = allPlayerMatchStats.find((s: any) => s.match_id === session.id && s.player_id === p.id);
+                                const isPresent = stat ? stat.is_called_up : false;
+                                const cellBg = isPresent ? 'bg-emerald-600/20 border-b-2 border-emerald-500/40' : 'bg-rose-600/10 border-b-2 border-rose-500/20';
+                                const textCl = isPresent ? 'text-emerald-400' : 'text-rose-500';
+                                return (
+                                  <td key={session.id} className="p-0 text-center relative">
+                                    <div className={`w-full min-h-[32px] flex flex-col items-center justify-center transition-all ${cellBg}`} title={`${session.date} — Partido contra ${session.rival}. ${isPresent ? 'Convocado' : 'No convocado'}`}>
+                                      <span className={`text-[9px] font-extrabold ${textCl}`}>
+                                        {isPresent ? 'CONV' : 'NC'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                );
+                              } else {
+                                const log    = attendanceData.find((a: any) => a.training_id === session.id && a.player_id === p.id);
+                                const status = log?.status || '-';
+                                const hasData = status !== '-';
+                                let cellBg = 'bg-brand-black/60';
+                                let textCl = 'text-brand-gray-dark';
+                                if (hasData) {
+                                  if (isPresent(status)) { cellBg = 'bg-emerald-600/20 hover:bg-emerald-600/30 border-b-2 border-emerald-500/40'; textCl = 'text-emerald-400'; }
+                                  else if (isMedical(status)) { cellBg = 'bg-orange-600/15 hover:bg-orange-600/25 border-b-2 border-orange-500/30'; textCl = 'text-orange-400'; }
+                                  else { cellBg = 'bg-rose-600/20 hover:bg-rose-600/30 border-b-2 border-rose-500/40'; textCl = 'text-rose-400'; }
+                                }
+                                return (
+                                  <td key={session.id} className="p-0 text-center relative">
+                                    <button onClick={() => handleCellClick(session.id, p.id)} disabled={!canEdit}
+                                      title={`${session.date} — ${hasData ? getLabel(status) : 'Sin registro'}${log?.observations ? `\nObs: ${log.observations}` : ''}${log?.player_intent !== undefined && log?.player_intent !== null ? `\nConfirmación Jugador: ${log.player_intent ? 'Sí asiste' : 'No asiste'}${log.player_reason ? ` (${log.player_reason})` : ''}` : ''}`}
+                                      className={`w-full min-h-[32px] flex items-center justify-center transition-all ${cellBg} ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}>
+                                      <span className={`text-[10px] font-bold ${textCl}`}>{hasData && status !== '-' ? getShort(status) : '·'}</span>
+                                      {log?.observations && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-brand-red-600" />}
+                                      {log?.player_intent === false && <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" title="Confirmó que no asistiría" />}
+                                      {log?.player_intent === true && <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500" title="Confirmó que asistiría" />}
+                                    </button>
+                                  </td>
+                                );
                               }
-                              return (
-                                <td key={t.id} className="p-0 text-center relative">
-                                  <button onClick={() => handleCellClick(t.id, p.id)} disabled={!canEdit}
-                                    title={`${t.date} — ${hasData ? getLabel(status) : 'Sin registro'}${log?.observations ? `\nObs: ${log.observations}` : ''}${log?.player_intent !== undefined && log?.player_intent !== null ? `\nConfirmación Jugador: ${log.player_intent ? 'Sí asiste' : 'No asiste'}${log.player_reason ? ` (${log.player_reason})` : ''}` : ''}`}
-                                    className={`w-full min-h-[32px] flex items-center justify-center transition-all ${cellBg} ${canEdit ? 'cursor-pointer' : 'cursor-default'}`}>
-                                    <span className={`text-[10px] font-bold ${textCl}`}>{hasData && status !== '-' ? getShort(status) : '·'}</span>
-                                    {log?.observations && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-brand-red-600" />}
-                                    {log?.player_intent === false && <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" title="Confirmó que no asistiría" />}
-                                    {log?.player_intent === true && <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500" title="Confirmó que asistiría" />}
-                                  </button>
-                                </td>
-                              );
                             })}
                           </tr>
                         );
@@ -799,44 +886,76 @@ export const Attendance: React.FC = () => {
                     Historial sesiones — {currentMonthName} {selectedYear}
                   </h4>
                 </div>
-                {monthlyTrainings.length === 0 ? (
-                  <p className="text-xs text-brand-gray-muted italic text-center py-6">No hay entrenamientos en este mes.</p>
+                {monthlySessions.length === 0 ? (
+                  <p className="text-xs text-brand-gray-muted italic text-center py-6">No hay entrenamientos ni partidos en este mes.</p>
                 ) : (
                   <div className="divide-y divide-brand-black-border">
-                    {monthlyTrainings.map((t: any) => {
-                      const log    = attendanceData.find((a: any) => a.training_id === t.id && a.player_id === selectedPlayerId);
-                      const status = log?.status || '-';
-                      const pres   = isPresent(status);
-                      const med    = isMedical(status);
+                    {monthlySessions.map((session: any) => {
+                      const isMatch = session.type === 'partido';
+                      let pres = false;
+                      let med = false;
+                      let status = '-';
+                      let label = '';
+                      let details = '';
+                      let obs = '';
+
+                      if (isMatch) {
+                        const stat = allPlayerMatchStats.find((s: any) => s.match_id === session.id && s.player_id === selectedPlayerId);
+                        const isPresent = stat ? stat.is_called_up : false;
+                        pres = isPresent;
+                        status = isPresent ? 'CON' : 'NC';
+                        label = isPresent ? 'Convocado' : 'No Convocado';
+                        details = `Partido vs ${session.rival}`;
+                      } else {
+                        const log    = attendanceData.find((a: any) => a.training_id === session.id && a.player_id === selectedPlayerId);
+                        status = log?.status || '-';
+                        pres   = isPresent(status);
+                        med    = isMedical(status);
+                        label  = log?.status ? getLabel(log.status) : '-';
+                        details = `${session.time} hs · ${session.location}`;
+                        obs = log?.observations || '';
+                      }
+
                       return (
-                        <div key={t.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 hover:bg-brand-black-hover/10 transition-all ${
-                          pres ? 'border-l-2 border-emerald-500/40' : med ? 'border-l-2 border-orange-500/40' : status === '-' ? '' : 'border-l-2 border-rose-500/40'
+                        <div key={session.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 hover:bg-brand-black-hover/10 transition-all ${
+                          pres ? 'border-l-2 border-emerald-500/40' : med ? 'border-l-2 border-orange-500/40' : status === '-' || status === 'NC' ? '' : 'border-l-2 border-rose-500/40'
                         }`}>
                           <div className="flex items-start gap-2">
-                            <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${pres ? 'bg-emerald-500' : med ? 'bg-orange-500' : status === '-' ? 'bg-brand-gray-dark' : 'bg-rose-500'}`} />
+                            <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${pres ? 'bg-emerald-500' : med ? 'bg-orange-500' : status === '-' || status === 'NC' ? 'bg-brand-gray-dark' : 'bg-rose-500'}`} />
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-semibold text-brand-gray-light">{t.date}</span>
-                                <span className="text-[10px] text-brand-gray-muted">{t.time} hs · {t.location}</span>
+                                <span className="text-xs font-semibold text-brand-gray-light">{session.date}</span>
+                                <span className="text-[10px] text-brand-gray-muted">{details}</span>
+                                <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${isMatch ? 'bg-brand-red-600/20 text-brand-red-500' : 'bg-brand-black-border text-brand-gray-muted'}`}>
+                                  {isMatch ? 'PARTIDO' : 'ENTRENO'}
+                                </span>
                               </div>
-                              <p className="text-[10px] text-brand-gray-muted mt-0.5">{t.objective}</p>
-                              {log?.observations && (
+                              <p className="text-[10px] text-brand-gray-muted mt-0.5">{session.objective}</p>
+                              {obs && (
                                 <p className="text-[10px] text-brand-red-600/80 italic flex items-center gap-1 mt-0.5">
-                                  <Info className="w-3 h-3 shrink-0" /> {log.observations}
+                                  <Info className="w-3 h-3 shrink-0" /> {obs}
                                 </p>
                               )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 self-start sm:self-center pl-4 sm:pl-0">
-                            {status !== '-' ? (
-                              <span className={`inline-flex px-2.5 py-1 text-[10px] font-bold rounded border uppercase tracking-wider ${getStatusStyles(status)}`}>
-                                {getLabel(status)}
+                            {status !== '-' && status !== 'NC' ? (
+                              <span className={`inline-flex px-2.5 py-1 text-[10px] font-bold rounded border uppercase tracking-wider ${
+                                isMatch
+                                  ? (pres ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/30' : 'bg-rose-950/25 text-rose-400 border-rose-900/30')
+                                  : getStatusStyles(status)
+                              }`}>
+                                {label}
+                              </span>
+                            ) : status === 'NC' ? (
+                              <span className="inline-flex px-2.5 py-1 text-[10px] font-bold rounded border uppercase tracking-wider bg-rose-950/25 text-rose-400 border-rose-900/30">
+                                {label}
                               </span>
                             ) : (
                               <span className="text-[10px] text-brand-gray-dark italic">Sin registro</span>
                             )}
-                            {canEdit && (
-                              <button onClick={() => handleCellClick(t.id, currentPlayer.id)}
+                            {canEdit && !isMatch && (
+                              <button onClick={() => handleCellClick(session.id, currentPlayer.id)}
                                 className="p-1.5 rounded-lg border border-brand-black-border text-brand-gray-dark hover:text-brand-gray-light hover:border-brand-gray-dark transition-all" title="Editar">
                                 <Zap className="w-3 h-3" />
                               </button>
@@ -952,54 +1071,73 @@ export const Attendance: React.FC = () => {
             </select>
           </div>
 
+          <div className="flex bg-brand-black border border-brand-black-border p-1 rounded-xl w-full">
+            <button 
+              type="button"
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${rollCallTeamTab === 'Primer Equipo' ? 'bg-brand-red-600 text-white shadow-glow-red' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
+              onClick={() => setRollCallTeamTab('Primer Equipo')}
+            >
+              Primer Equipo
+            </button>
+            <button 
+              type="button"
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${rollCallTeamTab === 'Juvenil' ? 'bg-brand-red-600 text-white shadow-glow-red' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
+              onClick={() => setRollCallTeamTab('Juvenil')}
+            >
+              Juveniles
+            </button>
+          </div>
+
           <div className="divide-y divide-brand-black-border border border-brand-black-border rounded-xl overflow-hidden max-h-[55vh] overflow-y-auto">
-            {visiblePlayers.map(p => {
-              const cur = rollCallList[p.id]?.status || 'ENT';
-              const obs = rollCallList[p.id]?.observations || '';
-              return (
-                <div key={p.id} className="p-3 flex flex-col gap-2 hover:bg-brand-black-hover/10 transition-colors">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <img src={p.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} alt={p.full_name}
-                        className="w-8 h-8 rounded-full border border-brand-black-border object-cover shrink-0" />
-                      <div>
-                        <span className="text-xs font-semibold text-brand-gray-light flex items-center gap-1">
-                          {p.nickname || p.full_name}
-                          {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase">JUV</span>}
-                        </span>
-                        {p.dorsal && <span className="text-[9px] text-amber-400 font-bold ml-1">#{p.dorsal}</span>}
-                        {p.physical_status === 'Baja' && (
-                          <span className="text-[9px] font-black bg-brand-red-600 text-white px-1.5 py-0.5 rounded uppercase ml-2">Baja</span>
-                        )}
+            {players
+              .filter((p: Player) => (p.team_category || 'Primer Equipo') === rollCallTeamTab)
+              .map(p => {
+                const cur = rollCallList[p.id]?.status || 'ENT';
+                const obs = rollCallList[p.id]?.observations || '';
+                return (
+                  <div key={p.id} className="p-3 flex flex-col gap-2 hover:bg-brand-black-hover/10 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <img src={p.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} alt={p.full_name}
+                          className="w-8 h-8 rounded-full border border-brand-black-border object-cover shrink-0" />
+                        <div>
+                          <span className="text-xs font-semibold text-brand-gray-light flex items-center gap-1">
+                            {p.nickname || p.full_name}
+                            {p.team_category === 'Juvenil' && <span className="text-[7px] font-black bg-brand-red-600/20 text-brand-red-500 px-1 py-0.5 rounded uppercase">JUV</span>}
+                          </span>
+                          {p.dorsal && <span className="text-[9px] text-amber-400 font-bold ml-1">#{p.dorsal}</span>}
+                          {p.physical_status === 'Baja' && (
+                            <span className="text-[9px] font-black bg-brand-red-600 text-white px-1.5 py-0.5 rounded uppercase ml-2">Baja</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {rollCallList[p.id]?.intent === true && <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title="El jugador confirmó que asiste"><CheckCircle2 className="w-3 h-3" /> Voy</span>}
+                        {rollCallList[p.id]?.intent === false && <span className="text-[10px] text-brand-red-400 font-bold bg-brand-red-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title={rollCallList[p.id]?.intentReason || "El jugador confirmó que NO asiste"}><X className="w-3 h-3" /> No voy</span>}
+                        {rollCallList[p.id]?.intent === null && <span className="text-[10px] text-brand-gray-dark font-bold bg-brand-black-border/50 px-1.5 py-0.5 rounded flex items-center gap-1" title="El jugador no ha respondido"><AlertTriangle className="w-3 h-3" /> N/R</span>}
+                        
+                        <select value={cur}
+                          disabled={p.physical_status === 'Baja'}
+                          onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], status: e.target.value } }))}
+                          className={`text-[11px] font-bold rounded-lg border px-2 py-1.5 focus:ring-0 focus:outline-none cursor-pointer ${getStatusStyles(cur)} ${p.physical_status === 'Baja' ? 'opacity-60 cursor-not-allowed' : 'bg-brand-black'}`}>
+                          <option value="-" className="bg-brand-black text-brand-gray-light">- Pendiente -</option>
+                          {STATUS_OPTIONS.map(o => (
+                            <option key={o.value} value={o.value} className="bg-brand-black text-brand-gray-light">
+                              {o.short} — {o.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {rollCallList[p.id]?.intent === true && <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title="El jugador confirmó que asiste"><CheckCircle2 className="w-3 h-3" /> Voy</span>}
-                      {rollCallList[p.id]?.intent === false && <span className="text-[10px] text-brand-red-400 font-bold bg-brand-red-500/10 px-1.5 py-0.5 rounded flex items-center gap-1" title={rollCallList[p.id]?.intentReason || "El jugador confirmó que NO asiste"}><X className="w-3 h-3" /> No voy</span>}
-                      {rollCallList[p.id]?.intent === null && <span className="text-[10px] text-brand-gray-dark font-bold bg-brand-black-border/50 px-1.5 py-0.5 rounded flex items-center gap-1" title="El jugador no ha respondido"><AlertTriangle className="w-3 h-3" /> N/R</span>}
-                      
-                      <select value={cur}
-                        disabled={p.physical_status === 'Baja'}
-                        onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], status: e.target.value } }))}
-                        className={`text-[11px] font-bold rounded-lg border px-2 py-1.5 focus:ring-0 focus:outline-none cursor-pointer ${getStatusStyles(cur)} ${p.physical_status === 'Baja' ? 'opacity-60 cursor-not-allowed' : 'bg-brand-black'}`}>
-                        <option value="-" className="bg-brand-black text-brand-gray-light">- Pendiente -</option>
-                        {STATUS_OPTIONS.map(o => (
-                          <option key={o.value} value={o.value} className="bg-brand-black text-brand-gray-light">
-                            {o.short} — {o.label}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="relative">
+                      <MessageSquare className="w-3 h-3 text-brand-gray-dark absolute left-2.5 top-2.5" />
+                      <input type="text" placeholder="Observaciones..." value={obs}
+                        onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], observations: e.target.value } }))}
+                        className="form-input text-xs pl-7 w-full bg-brand-black/40" />
                     </div>
                   </div>
-                  <div className="relative">
-                    <MessageSquare className="w-3 h-3 text-brand-gray-dark absolute left-2.5 top-2.5" />
-                    <input type="text" placeholder="Observaciones..." value={obs}
-                      onChange={e => setRollCallList(prev => ({ ...prev, [p.id]: { ...prev[p.id], observations: e.target.value } }))}
-                      className="form-input text-xs pl-7 w-full bg-brand-black/40" />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
 
           <div className="flex gap-2 justify-end">
