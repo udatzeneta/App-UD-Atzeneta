@@ -106,11 +106,7 @@ export const Attendance: React.FC = () => {
   });
   const { data: rivalTeams = [],     isLoading: lRivalTeams } = useQuery({
     queryKey: ['rivalTeams'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('rival_teams').select('*');
-      if (error) throw error;
-      return data || [];
-    }
+    queryFn: () => dataService.getTeams()
   });
   const { data: attendanceData = [], isLoading: lAtt }       = useQuery({
     queryKey: ['attendance', selectedYear, selectedMonth],
@@ -133,7 +129,7 @@ export const Attendance: React.FC = () => {
     if (matchKey) {
       return (logos as Record<string, string>)[matchKey];
     }
-    return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png';
+    return 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/escudo_generico.png';
   };
 
   // ── Datos derivados ────────────────────────────────────────────────────────
@@ -531,7 +527,7 @@ export const Attendance: React.FC = () => {
                                     src={getTeamLogo(session.rival)} 
                                     alt={session.rival} 
                                     className="w-5 h-5 object-contain mt-0.5" 
-                                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png'; }}
+                                    onError={(e) => { (e.target as HTMLImageElement).src = 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/escudo_generico.png'; }}
                                   />
                                 ) : (
                                   <span className="text-[8px] font-extrabold px-1 rounded bg-brand-black-border text-brand-gray-muted">
