@@ -165,8 +165,13 @@ export const Attendance: React.FC = () => {
     if (filterTeam === 'Primer Equipo') {
       return cat === 'Primer Equipo';
     } else {
-      // Juvenil cumulative includes both Primer Equipo and Juvenil sessions
-      return cat === 'Juvenil' || cat === 'Primer Equipo';
+      if (cat === 'Juvenil') return true;
+      // For Primer Equipo trainings in Juvenil tab, only show if a Juvenil attended
+      return allAttendanceData.some((a: any) => {
+        if (a.training_id !== t.id || !isPresent(a.status)) return false;
+        const player = players.find(p => p.id === a.player_id);
+        return player?.team_category === 'Juvenil';
+      });
     }
   });
 
@@ -182,7 +187,13 @@ export const Attendance: React.FC = () => {
     if (filterTeam === 'Primer Equipo') {
       return cat === 'Primer Equipo';
     } else {
-      return cat === 'Juvenil' || cat === 'Primer Equipo';
+      if (cat === 'Juvenil') return true;
+      // For Primer Equipo matches in Juvenil tab, only show if a Juvenil was called up
+      return allPlayerMatchStats.some((s: any) => {
+        if (s.match_id !== m.id || !s.is_called_up) return false;
+        const player = players.find(p => p.id === s.player_id);
+        return player?.team_category === 'Juvenil';
+      });
     }
   });
 
@@ -410,21 +421,24 @@ export const Attendance: React.FC = () => {
       return;
     }
 
-    const targetTrainings = allCompletedTrainings
-      .filter((t: any) => {
-        const d = new Date(t.date);
-        return monthsToExport.includes(d.getMonth() + 1);
-      })
-      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const targetSessions = [
+      ...allCompletedTrainings.filter((t: any) => monthsToExport.includes(new Date(t.date).getMonth() + 1)).map((t: any) => ({ ...t, type: 'entrenamiento' })),
+      ...filteredMatches.filter((m: any) => monthsToExport.includes(new Date(m.date).getMonth() + 1) && new Date(m.date) <= new Date()).map((m: any) => ({ ...m, type: 'partido', objective: `Partido vs ${m.rival}` }))
+    ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     if (exportFormat === 'csv') {
-      const headers = ['Jugador', ...targetTrainings.map((t: any) => t.date), '% Asist', 'ENT', 'AUS', 'ED', 'L', 'E'];
+      const headers = ['Jugador', ...targetSessions.map((t: any) => t.date), '% Asist', 'ENT', 'AUS', 'ED', 'L', 'E'];
       const rows: ExportCell[][] = visiblePlayers.map(p => {
         const st = exportRange === 'current' ? calcPlayerStats(p.id) : calcPlayerStatsCumul(p.id);
         const row: ExportCell[] = [p.nickname || p.full_name];
-        targetTrainings.forEach((t: any) => {
-          const log = allAttendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
-          row.push(log?.status ? getShort(log.status) : '-');
+        targetSessions.forEach((t: any) => {
+          if (t.type === 'partido') {
+            const stat = allPlayerMatchStats.find((s: any) => s.match_id === t.id && s.player_id === p.id);
+            row.push(stat?.is_called_up ? 'CONV' : 'NC');
+          } else {
+            const log = allAttendanceData.find((a: any) => a.training_id === t.id && a.player_id === p.id);
+            row.push(log?.status ? getShort(log.status) : '-');
+          }
         });
         row.push(`${st.pctEnt}%`, st.ent, st.aus, st.ed, st.les, st.enf);
         return row;
@@ -444,8 +458,10 @@ export const Attendance: React.FC = () => {
           monthsToExport,
           months,
           playersWithStats,
-          targetTrainings,
-          allAttendanceData
+          targetSessions,
+          allAttendanceData,
+          activeTab,
+          allPlayerMatchStats
         );
         showToast('success', 'PDF descargado', '');
         setExportModalOpen(false);
@@ -571,8 +587,10 @@ export const Attendance: React.FC = () => {
                         </th>
                         {monthlySessions.map((session: any) => {
                           const isMatch = session.type === 'partido';
+                          const isPrimerEquipo = (session.team_category || 'Primer Equipo') === 'Primer Equipo';
+                          const isTinted = filterTeam === 'Juvenil' && isPrimerEquipo;
                           return (
-                            <th key={session.id} className="py-2 text-center" style={{ minWidth: 52 }} title={`${session.date} — ${session.objective}`}>
+                            <th key={session.id} className={`py-2 text-center ${isTinted ? 'bg-brand-red-600/10 border-b border-brand-red-500/30' : ''}`} style={{ minWidth: 52 }} title={`${session.date} — ${session.objective}`}>
                               <div className="flex flex-col items-center gap-0.5">
                                 <span className={`text-[10px] font-bold ${isMatch ? 'text-brand-red-500' : 'text-brand-gray-muted'}`}>
                                   {session.date.split('-').slice(1).reverse().join('/')}
@@ -676,6 +694,12 @@ export const Attendance: React.FC = () => {
                     <span className="text-[10px] text-brand-gray-muted font-medium">{i.label}</span>
                   </div>
                 ))}
+                {filterTeam === 'Juvenil' && (
+                  <div className="flex items-center gap-1.5 ml-4 border-l border-brand-black-border pl-4">
+                    <div className="w-4 h-4 rounded bg-brand-red-600/10 border border-brand-red-500/30" />
+                    <span className="text-[10px] text-brand-red-400 font-medium">Sesión Primer Equipo</span>
+                  </div>
+                )}
                 {canEdit && <span className="text-[10px] text-brand-gray-dark italic ml-auto">Haz clic en una celda para editar</span>}
               </div>
             </>
