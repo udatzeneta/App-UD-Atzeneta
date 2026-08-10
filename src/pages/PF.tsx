@@ -949,7 +949,7 @@ function DashboardGPS() {
               session={selectedSession}
               records={sessionRecords}
               metrics={METRICS}
-              selectedMetric={selectedMetric}
+              selectedMetric={selectedMetric || null}
             />
           </div>
         </div>

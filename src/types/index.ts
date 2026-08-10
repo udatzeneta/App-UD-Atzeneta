@@ -109,8 +109,9 @@ export interface Match {
   tactical_set_pieces?: string | null;
   tactical_general?: string | null;
   opponent_events?: {
-    goals: { minute: string; dorsal: string }[];
-    yellow_cards: { minute: string; dorsal: string }[];
+    goals: { minute: string; dorsal?: string; isOwnGoal?: boolean }[];
+    yellow_cards: { minute: string; dorsal?: string }[];
+    own_goals?: { minute: string }[];
   } | null;
   team_positive_aspects?: string | null;
   team_improve_aspects?: string | null;

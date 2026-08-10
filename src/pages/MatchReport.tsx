@@ -28,6 +28,7 @@ interface LocalPlayerStats {
   is_starter: boolean;
   position: string;
   minutes_played: number;
+  has_manual_minutes?: boolean;
   goals: number;
   conceded_goals: number;
   own_goals: number;
@@ -375,7 +376,7 @@ export const MatchReport: React.FC = () => {
       setTacticalWithoutBall(matchData.tactical_without_ball || '');
       setTacticalSetPieces(matchData.tactical_set_pieces || '');
       setTacticalGeneral(matchData.tactical_general || '');
-      const oppEvts = matchData.opponent_events || {};
+      const oppEvts = (matchData.opponent_events || {}) as any;
       setOpponentEvents({
         goals: oppEvts.goals || [],
         yellow_cards: oppEvts.yellow_cards || [],
@@ -613,7 +614,7 @@ export const MatchReport: React.FC = () => {
       const player = next[playerId];
       if (!player) return prev;
 
-      let updated = { ...player, [field]: val };
+      let updated: LocalPlayerStats = { ...player, [field]: val };
 
       if (field === 'minutes_played') {
         updated.has_manual_minutes = true;

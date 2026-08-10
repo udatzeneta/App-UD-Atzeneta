@@ -16,6 +16,8 @@ export const GPSSessionPrintView: React.FC<GPSSessionPrintViewProps> = ({
 }) => {
   if (!session || records.length === 0) return null;
 
+  const metricKey = selectedMetric?.key || 'distancia_total';
+
   return (
     <div id="pdf-gps-session" className="bg-white text-black p-8" style={{ width: '1122px', height: '790px', overflow: 'hidden' }}>
       <div className="flex justify-between items-start border-b-4 border-[#C1121F] pb-4 mb-6">
@@ -40,7 +42,7 @@ export const GPSSessionPrintView: React.FC<GPSSessionPrintViewProps> = ({
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
               <XAxis dataKey="playerName" tick={{ fill: '#4b5563', fontSize: 9, fontWeight: 'bold' }} />
               <YAxis tick={{ fill: '#6b7280', fontSize: 9 }} />
-              <Bar isAnimationActive={false} dataKey={selectedMetric?.key} fill="#C1121F" radius={[3, 3, 0, 0]} />
+              <Bar isAnimationActive={false} dataKey={metricKey} fill="#C1121F" radius={[3, 3, 0, 0]} />
             </BarChart>
           </div>
         </div>
@@ -55,13 +57,13 @@ export const GPSSessionPrintView: React.FC<GPSSessionPrintViewProps> = ({
           <div className="border-b pb-2">
             <span className="text-xs text-gray-500 block">Media de {selectedMetric?.label}</span>
             <span className="text-xl font-bold text-[#C1121F]">
-              {(records.reduce((sum, r) => sum + (Number(r[selectedMetric?.key]) || 0), 0) / (records.length || 1)).toFixed(1)}
+              {(records.reduce((sum, r) => sum + (Number(r[metricKey]) || 0), 0) / (records.length || 1)).toFixed(1)}
             </span>
           </div>
           <div>
             <span className="text-xs text-gray-500 block">Valor Máximo</span>
             <span className="text-xl font-bold text-black">
-              {Math.max(...records.map(r => Number(r[selectedMetric?.key]) || 0))}
+              {Math.max(...records.map(r => Number(r[metricKey]) || 0))}
             </span>
           </div>
         </div>
