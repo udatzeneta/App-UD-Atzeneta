@@ -707,7 +707,7 @@ export const Attendance: React.FC = () => {
                           { key: 'ed', val: st.ed },
                           { key: 'les', val: st.les },
                           { key: 'enf', val: st.enf },
-                          { key: 'part', val: st.part },
+                          { key: 'part', val: allPlayerMatchStats.filter((s: any) => s.player_id === p.id && s.is_called_up).length },
                           { key: 'lj', val: st.lj },
                           { key: 'viaje', val: st.viaje },
                           { key: 'aa', val: st.aa },
