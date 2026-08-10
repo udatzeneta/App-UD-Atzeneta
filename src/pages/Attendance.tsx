@@ -133,11 +133,42 @@ export const Attendance: React.FC = () => {
   };
 
   // ── Datos derivados ────────────────────────────────────────────────────────
+  const PE_trainings = trainings.filter((t: any) => (t.team_category || 'Primer Equipo') === 'Primer Equipo');
+  const PE_matches = matches.filter((m: any) => (m.team_category || 'Primer Equipo') === 'Primer Equipo');
+
   const visiblePlayers: Player[] = isPlayerRole && user
     ? players.filter((p: Player) => p.profile_id === user.id || p.id === user.id)
-    : players.filter((p: Player) => (p.team_category || 'Primer Equipo') === filterTeam);
+    : players.filter((p: Player) => {
+        const cat = p.team_category || 'Primer Equipo';
+        if (cat === filterTeam) return true;
+        
+        // Include Juvenil players in Primer Equipo view if they have PE participation
+        if (filterTeam === 'Primer Equipo') {
+          const hasPE_Training = allAttendanceData.some((a: any) => {
+            if (a.player_id !== p.id || a.status === '-') return false;
+            return PE_trainings.some((t: any) => t.id === a.training_id);
+          });
+          if (hasPE_Training) return true;
 
-  const filteredTrainings = trainings.filter((t: any) => (t.team_category || 'Primer Equipo') === filterTeam);
+          const hasPE_Match = allPlayerMatchStats.some((s: any) => {
+            if (s.player_id !== p.id || !s.is_called_up) return false;
+            return PE_matches.some((m: any) => m.id === s.match_id);
+          });
+          if (hasPE_Match) return true;
+        }
+        
+        return false;
+      });
+
+  const filteredTrainings = trainings.filter((t: any) => {
+    const cat = t.team_category || 'Primer Equipo';
+    if (filterTeam === 'Primer Equipo') {
+      return cat === 'Primer Equipo';
+    } else {
+      // Juvenil cumulative includes both Primer Equipo and Juvenil sessions
+      return cat === 'Juvenil' || cat === 'Primer Equipo';
+    }
+  });
 
   const monthlyTrainings = filteredTrainings
     .filter((t: any) => {
@@ -146,7 +177,15 @@ export const Attendance: React.FC = () => {
     })
     .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  const filteredMatches = matches.filter((m: any) => (m.team_category || 'Primer Equipo') === filterTeam);
+  const filteredMatches = matches.filter((m: any) => {
+    const cat = m.team_category || 'Primer Equipo';
+    if (filterTeam === 'Primer Equipo') {
+      return cat === 'Primer Equipo';
+    } else {
+      return cat === 'Juvenil' || cat === 'Primer Equipo';
+    }
+  });
+
   const monthlyMatches = filteredMatches
     .filter((m: any) => {
       const d = new Date(m.date);
@@ -273,16 +312,32 @@ export const Attendance: React.FC = () => {
 
   // ── Estadísticas por jugador ────────────────────────────────────────────────
   const buildStats = (playerId: string, trainingList: any[], attList: any[]) => {
+    const player = players.find((pl: Player) => pl.id === playerId);
+    const playerCat = player?.team_category || 'Primer Equipo';
+
     const logs  = attList.filter((a: any) => a.player_id === playerId);
-    const total = trainingList.length;
+    let playerTotal = 0;
     const counts: Record<string, number> = {};
     STATUS_OPTIONS.forEach(o => { counts[o.value] = 0; });
+    
     trainingList.forEach((t: any) => {
+      const sessionCat = t.team_category || 'Primer Equipo';
       const log = logs.find((a: any) => a.training_id === t.id);
-      const st  = log?.status || 'A';
-      counts[st] = (counts[st] || 0) + 1;
+      
+      if (sessionCat !== playerCat) {
+        if (log && log.status && log.status !== '-') {
+          const st = log.status;
+          counts[st] = (counts[st] || 0) + 1;
+          playerTotal++;
+        }
+      } else {
+        const st = log?.status || 'A';
+        counts[st] = (counts[st] || 0) + 1;
+        playerTotal++;
+      }
     });
-    const pct  = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0;
+
+    const pct  = (n: number) => playerTotal > 0 ? Math.round((n / playerTotal) * 100) : 0;
     const entN = (counts['ENT'] || 0) + (counts['Entrena'] || 0);
     const edN  = counts['ED']  || 0;
     const ausN = counts['A']   || 0;
@@ -295,7 +350,7 @@ export const Attendance: React.FC = () => {
     const descN= counts['D']   || 0;
     const ljN  = counts['LJ']  || 0;
     return {
-      total,
+      total: playerTotal,
       ent: entN,   pctEnt:   pct(entN),
       ed:  edN,    pctEd:    pct(edN),
       aus: ausN,   pctAus:   pct(ausN),
@@ -534,6 +589,9 @@ export const Attendance: React.FC = () => {
                                     ENT
                                   </span>
                                 )}
+                                <span className={`text-[7px] font-bold px-1 rounded mt-0.5 scale-90 ${session.team_category === 'Juvenil' ? 'bg-amber-500/10 text-amber-500' : 'bg-brand-red-600/15 text-brand-red-500'}`}>
+                                  {session.team_category === 'Juvenil' ? 'JUV' : '1ªE'}
+                                </span>
                               </div>
                             </th>
                           );
@@ -707,7 +765,17 @@ export const Attendance: React.FC = () => {
                           { key: 'ed', val: st.ed },
                           { key: 'les', val: st.les },
                           { key: 'enf', val: st.enf },
-                          { key: 'part', val: allPlayerMatchStats.filter((s: any) => s.player_id === p.id && s.is_called_up).length },
+                          { key: 'part', val: allPlayerMatchStats.filter((s: any) => {
+                              if (s.player_id !== p.id || !s.is_called_up) return false;
+                              const m = matches.find((ma: any) => ma.id === s.match_id);
+                              const mCat = m?.team_category || 'Primer Equipo';
+                              if (filterTeam === 'Primer Equipo') {
+                                return mCat === 'Primer Equipo';
+                              } else {
+                                return mCat === 'Juvenil' || mCat === 'Primer Equipo';
+                              }
+                            }).length
+                          },
                           { key: 'lj', val: st.lj },
                           { key: 'viaje', val: st.viaje },
                           { key: 'aa', val: st.aa },
