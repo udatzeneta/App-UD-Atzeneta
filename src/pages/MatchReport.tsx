@@ -2829,7 +2829,7 @@ export const MatchReport: React.FC = () => {
                 </div>
               </div>
 
-              {(teamPositiveAspects || teamImproveAspects || tacticalGeneral) && (
+              {(teamPositiveAspects || teamImproveAspects || tacticalWithBall || tacticalWithoutBall || tacticalSetPieces || tacticalGeneral) && (
                 <div className="bg-brand-black-card/40 border border-brand-black-border rounded-2xl p-6 space-y-5 shadow-lg">
                    {teamPositiveAspects && (
                      <div>
@@ -2841,6 +2841,24 @@ export const MatchReport: React.FC = () => {
                      <div>
                        <span className="text-[10px] font-black text-brand-red-500 uppercase tracking-widest mb-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Aspectos a Mejorar</span>
                        <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{teamImproveAspects}</p>
+                     </div>
+                   )}
+                   {tacticalWithBall && (
+                     <div>
+                       <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Zap className="w-3 h-3"/> Análisis Con Balón</span>
+                       <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{tacticalWithBall}</p>
+                     </div>
+                   )}
+                   {tacticalWithoutBall && (
+                     <div>
+                       <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Zap className="w-3 h-3"/> Análisis Sin Balón</span>
+                       <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{tacticalWithoutBall}</p>
+                     </div>
+                   )}
+                   {tacticalSetPieces && (
+                     <div>
+                       <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Zap className="w-3 h-3"/> Análisis Balón Parado (ABP)</span>
+                       <p className="text-xs text-brand-gray-light leading-relaxed whitespace-pre-wrap">{tacticalSetPieces}</p>
                      </div>
                    )}
                    {tacticalGeneral && (

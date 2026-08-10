@@ -1096,6 +1096,123 @@ export const exportMatchReportToPDF = async (
   printEvents(firstHalf, '1ª PARTE');
   printEvents(secondHalf, '2ª PARTE');
 
+  // ── Página 2: Análisis Táctico y Valoraciones ──────────────────────────────────────
+  if (
+    match.team_positive_aspects || 
+    match.team_improve_aspects || 
+    match.tactical_with_ball || 
+    match.tactical_without_ball || 
+    match.tactical_set_pieces || 
+    match.tactical_general || 
+    match.team_ratings
+  ) {
+    doc.addPage();
+    
+    // Cabecera decorativa
+    doc.setFillColor(...BRAND_RED);
+    doc.rect(0, 8, pageWidth, 4, 'F');
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...BRAND_RED);
+    doc.text('ANÁLISIS TÁCTICO Y VALORACIONES', 14, 20);
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(110, 110, 110);
+    doc.text(`Partido vs ${match.rival} · Fecha: ${match.date}`, 14, 25);
+    
+    let leftY = 35;
+    const colW = 125;
+    
+    const printTextBlock = (title: string, text: string, color: [number, number, number]) => {
+      if (!text) return;
+      if (leftY > pageHeight - 30) {
+        doc.addPage();
+        doc.setFillColor(...BRAND_RED);
+        doc.rect(0, 8, pageWidth, 4, 'F');
+        leftY = 20;
+      }
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...color);
+      doc.text(title.toUpperCase(), 14, leftY);
+      
+      leftY += 4.5;
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 60);
+      const lines = doc.splitTextToSize(text, colW);
+      doc.text(lines, 14, leftY);
+      
+      leftY += (lines.length * 3.5) + 6;
+    };
+    
+    printTextBlock('Aspectos Positivos', match.team_positive_aspects || '', [16, 185, 129]); // emerald
+    printTextBlock('Aspectos a Mejorar', match.team_improve_aspects || '', [239, 68, 68]); // red
+    printTextBlock('Momento Con Balón', match.tactical_with_ball || '', [16, 185, 129]); // emerald
+    printTextBlock('Momento Sin Balón', match.tactical_without_ball || '', [249, 115, 22]); // orange
+    printTextBlock('Acciones a Balón Parado (ABP)', match.tactical_set_pieces || '', [217, 119, 6]); // amber
+    printTextBlock('Resumen General', match.tactical_general || '', [37, 99, 235]); // blue
+    
+    // Right Column: Ratings (Star ratings)
+    let rightY = 35;
+    const rightX = 155;
+    
+    if (match.team_ratings) {
+      const ratings = match.team_ratings;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(30, 30, 30);
+      doc.text('VALORACIONES DE RENDIMIENTO', rightX, rightY);
+      rightY += 8;
+      
+      const printRatingSection = (title: string, values: Record<string, number>, color: [number, number, number]) => {
+        if (!values || Object.keys(values).length === 0) return;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...color);
+        doc.text(title, rightX, rightY);
+        rightY += 4.5;
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(80, 80, 80);
+        
+        Object.entries(values).forEach(([key, val]) => {
+          const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          doc.text(label, rightX, rightY);
+          
+          let starsStr = '';
+          for (let i = 1; i <= 5; i++) {
+            starsStr += i <= val ? '★' : '☆';
+          }
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(245, 158, 11); // amber-500
+          doc.text(starsStr, rightX + 45, rightY);
+          doc.setTextColor(80, 80, 80);
+          doc.setFont('helvetica', 'normal');
+          
+          rightY += 4;
+        });
+        
+        rightY += 4;
+      };
+      
+      if (ratings.with_ball) {
+        printRatingSection('Fase Con Balón', ratings.with_ball, [16, 185, 129]);
+      }
+      if (ratings.without_ball) {
+        printRatingSection('Fase Sin Balón', ratings.without_ball, [249, 115, 22]);
+      }
+      if (ratings.set_pieces) {
+        printRatingSection('Acciones a Balón Parado (ABP)', ratings.set_pieces, [217, 119, 6]);
+      }
+    }
+  }
+
   const filename = `Acta_${match.date}_vs_${match.rival.replace(/\s+/g, '_')}`;
   doc.save(`${filename}.pdf`);
 };
