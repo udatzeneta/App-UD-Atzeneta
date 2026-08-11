@@ -139,19 +139,21 @@ export const MatchReport: React.FC = () => {
   const [isEventWizardOpen, setIsEventWizardOpen] = useState(false);
   const [matchDuration, setMatchDuration] = useState<number>(90);
 
-  const parseAbsoluteMinute = (minuteStr: string): number => {
+  const parseAbsoluteMinute = (minuteStr: any): number => {
+    if (!minuteStr) return matchDuration;
+    const str = String(minuteStr).trim();
     let minuteNum = matchDuration;
-    const parts = minuteStr.trim().split(' ');
+    const parts = str.split(' ');
     if (parts.length > 1) {
       const period = parts[0].toUpperCase();
       const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
       if (period === '1T') minuteNum = min;
       else if (period === '2T') minuteNum = min + Math.floor(matchDuration / 2);
-      else if (period === '1P') minuteNum = min + matchDuration;
-      else if (period === '2P') minuteNum = min + matchDuration + 15;
+      else if (period === '1P' || period === 'PR1') minuteNum = min + matchDuration;
+      else if (period === '2P' || period === 'PR2') minuteNum = min + matchDuration + 15;
       else minuteNum = min;
     } else {
-      minuteNum = parseInt(minuteStr.split('+')[0].replace(/\D/g, '')) || matchDuration;
+      minuteNum = parseInt(str.split('+')[0].replace(/\D/g, '')) || matchDuration;
     }
     return minuteNum;
   };
@@ -404,7 +406,7 @@ export const MatchReport: React.FC = () => {
     statsInitializedRef.current = true;
 
     if (initialStats) {
-      const hasActa = typeof matchData.score_us === 'number' || !!matchData.tactical_system;
+      const hasActa = matchData.status === 'Jugado' || typeof matchData.score_us === 'number' || !!matchData.tactical_system;
       if (hasActa) {
         const params = new URLSearchParams(location.search);
         if (params.get('edit') !== 'true') {
@@ -2875,6 +2877,240 @@ export const MatchReport: React.FC = () => {
                    )}
                 </div>
               )}
+
+              {/* Cronología de Eventos en Vista Lectura */}
+              <div className="bg-brand-black-card/40 border border-brand-black-border rounded-2xl p-6 space-y-4 shadow-lg">
+                <div className="border-b border-brand-black-border pb-3 text-left">
+                  <h3 className="text-sm font-bold text-brand-gray-light flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-brand-red-600" /> Línea de Tiempo de Eventos
+                  </h3>
+                  <p className="text-[10px] text-brand-gray-muted mt-0.5">Historial cronológico de todas las incidencias del partido</p>
+                </div>
+                
+                <div className="max-h-[400px] overflow-y-auto pr-1 no-scrollbar">
+                  {matchEvents.length === 0 ? (
+                    <div className="text-center py-10 bg-brand-black/20 rounded-xl border border-dashed border-brand-black-border text-brand-gray-muted text-xs italic">
+                      No hay incidencias registradas en este partido.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Columna 1ª Parte */}
+                      <div>
+                        <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">1ª Parte</h4>
+                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) <= 45).length === 0 ? (
+                          <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
+                        ) : (
+                          <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
+                            {matchEvents
+                              .filter(e => parseAbsoluteMinute(e.minute) <= 45)
+                              .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
+                              .map(evt => {
+                              let icon = '⚽';
+                              let typeText = 'Gol';
+                              let colorClass = 'text-brand-gray-light';
+                              let bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                              
+                              if (evt.type === 'penalty_goals') {
+                                icon = '⚽ ▭';
+                                typeText = 'Gol de Penalti';
+                                colorClass = 'text-brand-gray-light';
+                                bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                              } else if (evt.type === 'assists') {
+                                icon = '🥾';
+                                typeText = 'Asistencia';
+                                colorClass = 'text-emerald-400';
+                                bgIconColor = 'bg-emerald-950 border-emerald-800 text-emerald-400';
+                              } else if (evt.type === 'yellow_cards') {
+                                icon = '🟨';
+                                typeText = 'T. Amarilla';
+                                colorClass = 'text-yellow-400';
+                                bgIconColor = 'bg-yellow-950 border-yellow-800 text-yellow-400';
+                              } else if (evt.type === 'red_card') {
+                                icon = '🟥';
+                                typeText = 'T. Roja';
+                                colorClass = 'text-red-500';
+                                bgIconColor = 'bg-red-950 border-red-800 text-red-500';
+                              } else if (evt.type === 'conceded_goals') {
+                                icon = '🥅';
+                                typeText = 'Gol en Contra';
+                                colorClass = 'text-cyan-400';
+                                bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                              } else if (evt.type === 'conceded_penalty_goals') {
+                                icon = '🥅 ▭';
+                                typeText = 'Gol Recibido Penalti';
+                                colorClass = 'text-cyan-400';
+                                bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                              } else if (evt.type === 'own_goals') {
+                                icon = '💥';
+                                typeText = 'Gol en Propia';
+                                colorClass = 'text-orange-400';
+                                bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                              } else if (evt.type === 'opponent_own_goal') {
+                                icon = '💥';
+                                typeText = 'Gol en Propia (Rival)';
+                                colorClass = 'text-orange-400';
+                                bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                              } else if (evt.type === 'own_goal_team') {
+                                icon = '💥';
+                                typeText = 'Gol en Propia (U.D. Atzeneta)';
+                                colorClass = 'text-orange-400';
+                                bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                              } else if (evt.type === 'substitution') {
+                                icon = '🔄';
+                                typeText = `Cambio (Entra ${evt.extraInfo})`;
+                                colorClass = 'text-brand-gray-light';
+                                bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                              } else if (evt.type === 'opponent_goal') {
+                                icon = '🥅';
+                                typeText = 'Gol del Rival';
+                                colorClass = 'text-brand-red-500';
+                                bgIconColor = 'bg-brand-red-600/10 border-brand-red-600/30 text-brand-red-500';
+                              } else if (evt.type === 'opponent_yellow_card') {
+                                icon = '🟨';
+                                typeText = 'Amarilla del Rival';
+                                colorClass = 'text-yellow-500';
+                                bgIconColor = 'bg-yellow-950/30 border-yellow-800/30 text-yellow-500';
+                              } else if (evt.type === 'injury') {
+                                icon = '🚑';
+                                typeText = 'Lesión';
+                                colorClass = 'text-amber-500';
+                                bgIconColor = 'bg-amber-950 border-amber-800 text-amber-500';
+                              }
+
+                              return (
+                                <div key={evt.id} className="relative group">
+                                  <div className={`absolute -left-[27px] w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] z-10 ${bgIconColor}`}>
+                                    {icon}
+                                  </div>
+                                  <div className="flex items-center justify-between py-2 px-3 bg-brand-black-card hover:bg-brand-black-hover rounded-xl border border-brand-black-border transition-all group-hover:border-brand-gray-dark shadow-sm ml-1">
+                                    <div className="flex items-center gap-3 text-left">
+                                      <div className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-brand-black/50 border border-brand-black-border shrink-0">
+                                        <span className="text-[11px] font-black text-brand-red-600 leading-none">{evt.minute}'</span>
+                                        <span className="text-[7px] font-bold text-brand-gray-muted uppercase leading-none mt-0.5">Min</span>
+                                      </div>
+                                      <div>
+                                        <span className="font-bold text-xs text-brand-gray-light block leading-tight">{evt.playerName}</span>
+                                        <span className={`text-[9px] font-bold uppercase mt-0.5 block ${colorClass}`}>{typeText}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Columna 2ª Parte */}
+                      <div>
+                        <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">2ª Parte</h4>
+                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) > 45).length === 0 ? (
+                          <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
+                        ) : (
+                          <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
+                            {matchEvents
+                              .filter(e => parseAbsoluteMinute(e.minute) > 45)
+                              .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
+                              .map(evt => {
+                              let icon = '⚽';
+                              let typeText = 'Gol';
+                              let colorClass = 'text-brand-gray-light';
+                              let bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                              
+                              if (evt.type === 'penalty_goals') {
+                                icon = '⚽ ▭';
+                                typeText = 'Gol de Penalti';
+                                colorClass = 'text-brand-gray-light';
+                                bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                              } else if (evt.type === 'assists') {
+                                icon = '🥾';
+                                typeText = 'Asistencia';
+                                colorClass = 'text-emerald-400';
+                                bgIconColor = 'bg-emerald-950 border-emerald-800 text-emerald-400';
+                              } else if (evt.type === 'yellow_cards') {
+                                icon = '🟨';
+                                typeText = 'T. Amarilla';
+                                colorClass = 'text-yellow-400';
+                                bgIconColor = 'bg-yellow-950 border-yellow-800 text-yellow-400';
+                              } else if (evt.type === 'red_card') {
+                                icon = '🟥';
+                                typeText = 'T. Roja';
+                                colorClass = 'text-red-500';
+                                bgIconColor = 'bg-red-950 border-red-800 text-red-500';
+                              } else if (evt.type === 'conceded_goals') {
+                                icon = '🥅';
+                                typeText = 'Gol en Contra';
+                                colorClass = 'text-cyan-400';
+                                bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                              } else if (evt.type === 'conceded_penalty_goals') {
+                                icon = '🥅 ▭';
+                                typeText = 'Gol Recibido Penalti';
+                                colorClass = 'text-cyan-400';
+                                bgIconColor = 'bg-cyan-950 border-cyan-800 text-cyan-400';
+                              } else if (evt.type === 'own_goals') {
+                                icon = '💥';
+                                typeText = 'Gol en Propia';
+                                colorClass = 'text-orange-400';
+                                bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                              } else if (evt.type === 'opponent_own_goal') {
+                                icon = '💥';
+                                typeText = 'Gol en Propia (Rival)';
+                                colorClass = 'text-orange-400';
+                                bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                              } else if (evt.type === 'own_goal_team') {
+                                icon = '💥';
+                                typeText = 'Gol en Propia (U.D. Atzeneta)';
+                                colorClass = 'text-orange-400';
+                                bgIconColor = 'bg-orange-950 border-orange-800 text-orange-400';
+                              } else if (evt.type === 'substitution') {
+                                icon = '🔄';
+                                typeText = `Cambio (Entra ${evt.extraInfo})`;
+                                colorClass = 'text-brand-gray-light';
+                                bgIconColor = 'bg-brand-black border-brand-black-border text-brand-gray-light';
+                              } else if (evt.type === 'opponent_goal') {
+                                icon = '🥅';
+                                typeText = 'Gol del Rival';
+                                colorClass = 'text-brand-red-500';
+                                bgIconColor = 'bg-brand-red-600/10 border-brand-red-600/30 text-brand-red-500';
+                              } else if (evt.type === 'opponent_yellow_card') {
+                                icon = '🟨';
+                                typeText = 'Amarilla del Rival';
+                                colorClass = 'text-yellow-500';
+                                bgIconColor = 'bg-yellow-950/30 border-yellow-800/30 text-yellow-500';
+                              } else if (evt.type === 'injury') {
+                                icon = '🚑';
+                                typeText = 'Lesión';
+                                colorClass = 'text-amber-500';
+                                bgIconColor = 'bg-amber-950 border-amber-800 text-amber-500';
+                              }
+
+                              return (
+                                <div key={evt.id} className="relative group">
+                                  <div className={`absolute -left-[27px] w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] z-10 ${bgIconColor}`}>
+                                    {icon}
+                                  </div>
+                                  <div className="flex items-center justify-between py-2 px-3 bg-brand-black-card hover:bg-brand-black-hover rounded-xl border border-brand-black-border transition-all group-hover:border-brand-gray-dark shadow-sm ml-1">
+                                    <div className="flex items-center gap-3 text-left">
+                                      <div className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-brand-black/50 border border-brand-black-border shrink-0">
+                                        <span className="text-[11px] font-black text-brand-red-600 leading-none">{evt.minute}'</span>
+                                        <span className="text-[7px] font-bold text-brand-gray-muted uppercase leading-none mt-0.5">Min</span>
+                                      </div>
+                                      <div>
+                                        <span className="font-bold text-xs text-brand-gray-light block leading-tight">{evt.playerName}</span>
+                                        <span className={`text-[9px] font-bold uppercase mt-0.5 block ${colorClass}`}>{typeText}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
           

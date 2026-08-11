@@ -896,7 +896,7 @@ export const Matches: React.FC = () => {
                   <Users className="w-3 h-3" /> Convocatoria
                 </button>
               )}
-              {match.tactical_system && (
+              {(match.status === 'Jugado' || match.tactical_system || typeof match.score_us === 'number') && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1021,7 +1021,7 @@ export const Matches: React.FC = () => {
                       <Users className="w-3 h-3" /> Convocatoria
                     </button>
                   )}
-                  {match.tactical_system && (
+                  {(match.status === 'Jugado' || match.tactical_system || typeof match.score_us === 'number') && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1674,7 +1674,7 @@ export const Matches: React.FC = () => {
       >
         {(() => {
           const hasConvocatoria = !!selectedMatchForActions?.callup_time || !!selectedMatchForActions?.callup_location;
-          const hasActa = typeof selectedMatchForActions?.score_us === 'number' || !!selectedMatchForActions?.tactical_system;
+          const hasActa = selectedMatchForActions?.status === 'Jugado' || typeof selectedMatchForActions?.score_us === 'number' || !!selectedMatchForActions?.tactical_system;
 
           return (
             <div className="space-y-4 text-center">

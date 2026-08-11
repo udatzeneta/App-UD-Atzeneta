@@ -1088,10 +1088,24 @@ export const exportMatchReportToPDF = async (
   };
 
   // Separat events into halves
-  const getMinVal = (m: string | number) => parseInt(m.toString().replace("'", '')) || 0;
+  const getMinVal = (m: string | number) => {
+    if (!m) return 90;
+    const str = String(m).trim();
+    const parts = str.split(' ');
+    if (parts.length > 1) {
+      const period = parts[0].toUpperCase();
+      const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
+      if (period === '1T') return min;
+      if (period === '2T') return min + 45;
+      if (period === '1P' || period === 'PR1') return min + 90;
+      if (period === '2P' || period === 'PR2') return min + 105;
+      return min;
+    }
+    return parseInt(str.split('+')[0].replace(/\D/g, '')) || 90;
+  };
   
-  const firstHalf = matchEvents.filter(e => getMinVal(e.minute) <= 45);
-  const secondHalf = matchEvents.filter(e => getMinVal(e.minute) > 45);
+  const firstHalf = matchEvents.filter(e => getMinVal(e.minute) <= 45).sort((a, b) => getMinVal(a.minute) - getMinVal(b.minute));
+  const secondHalf = matchEvents.filter(e => getMinVal(e.minute) > 45).sort((a, b) => getMinVal(a.minute) - getMinVal(b.minute));
 
   printEvents(firstHalf, '1ª PARTE');
   printEvents(secondHalf, '2ª PARTE');
