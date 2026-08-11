@@ -1199,15 +1199,22 @@ export const exportMatchReportToPDF = async (
           const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
           doc.text(label, rightX, rightY);
           
-          let starsStr = '';
+          // Dibujar círculos vectoriales para la valoración en lugar de estrellas unicode
+          const dotRadius = 0.8;
+          const dotSpacing = 3.2;
+          const startX = rightX + 45;
+          
           for (let i = 1; i <= 5; i++) {
-            starsStr += i <= val ? '★' : '☆';
+            const curX = startX + (i - 1) * dotSpacing;
+            if (i <= val) {
+              doc.setFillColor(245, 158, 11); // Lleno (amber-500)
+              doc.circle(curX, rightY - 1, dotRadius, 'F');
+            } else {
+              doc.setDrawColor(180, 180, 180); // Vacío
+              doc.setLineWidth(0.15);
+              doc.circle(curX, rightY - 1, dotRadius, 'D');
+            }
           }
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(245, 158, 11); // amber-500
-          doc.text(starsStr, rightX + 45, rightY);
-          doc.setTextColor(80, 80, 80);
-          doc.setFont('helvetica', 'normal');
           
           rightY += 4;
         });

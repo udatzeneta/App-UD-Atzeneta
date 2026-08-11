@@ -2704,7 +2704,7 @@ export const MatchReport: React.FC = () => {
               <h3 className="text-sm font-bold text-brand-gray-light flex items-center gap-2 uppercase tracking-wider pl-2">
                 <Users className="w-4 h-4 text-emerald-500" /> XI Inicial ({tacticalSystem})
               </h3>
-              <div className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-3xl overflow-hidden shadow-2xl select-none ring-1 ring-white/10">
+              <div id="campograma-capture" className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-3xl overflow-hidden shadow-2xl select-none ring-1 ring-white/10">
                 {/* Franjas del césped */}
                 <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5">
                   {Array.from({ length: 10 }).map((_, i) => (
