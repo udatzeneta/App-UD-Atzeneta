@@ -4,7 +4,7 @@ import { dataService } from '../services/data';
 import { authService } from '../services/auth';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText, AlertTriangle, Activity, TrendingUp } from 'lucide-react';
+import { ShieldAlert, Users, Trophy, ChevronRight, CheckCircle2, ArrowRight, X, Calendar as CalendarIcon, MapPin, Clock, Search, Award, FileText, AlertTriangle, Activity, TrendingUp, AlertCircle, Ban, HeartPulse, Flag, CalendarClock } from 'lucide-react';
 import { Fine, Training, Match, Profile } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -70,6 +70,12 @@ export const Dashboard: React.FC = () => {
     enabled: true
   });
 
+  const { data: rawSocialEvents = [] } = useQuery({
+    queryKey: ['social_events'],
+    queryFn: () => dataService.getSocialEvents(),
+    enabled: true
+  });
+
   const dbPlayers = React.useMemo(() => rawDbPlayers.filter(p => (p.team_category || 'Primer Equipo') === filterTeam), [rawDbPlayers, filterTeam]);
   const trainings = React.useMemo(() => rawTrainings.filter(t => (t.team_category || 'Primer Equipo') === filterTeam), [rawTrainings, filterTeam]);
   const matches = React.useMemo(() => rawMatches.filter(m => (m.team_category || 'Primer Equipo') === filterTeam), [rawMatches, filterTeam]);
@@ -78,6 +84,8 @@ export const Dashboard: React.FC = () => {
     if (!p) return true;
     return (p.team_category || 'Primer Equipo') === filterTeam;
   }), [rawFines, rawDbPlayers, filterTeam]);
+
+  const socialEvents = React.useMemo(() => rawSocialEvents.filter(e => (e.team_category || 'Primer Equipo') === filterTeam), [rawSocialEvents, filterTeam]);
 
   const sortedMatches = React.useMemo(() => {
     const now = new Date().getTime();
@@ -119,73 +127,74 @@ export const Dashboard: React.FC = () => {
   const players = [...combinedPlayers, ...combinedTrainers].sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   // ==========================================
-  // ALERTS STATE & LOGIC
+  // DASHBOARD HIGHLIGHTS & ALERTS LOGIC
   // ==========================================
-  const alerts = React.useMemo(() => {
-    const newAlerts: { id: string, player: typeof combinedPlayers[0], type: 'injury' | 'warning' | 'sanction' | 'red_card', message: string, color: string }[] = [];
+  const highlights = React.useMemo(() => {
+    // 1. Next 2 Events
+    const now = new Date();
+    // Reset time to start of today
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    const allEvents = [
+      ...trainings.map(t => ({ ...t, eventType: 'training' as const, datetime: new Date(`${t.date}T${t.time || '00:00'}`) })),
+      ...matches.map(m => ({ ...m, eventType: 'match' as const, datetime: new Date(`${m.date}T${m.time || '00:00'}`) })),
+      ...socialEvents.map(s => ({ ...s, eventType: 'social' as const, datetime: new Date(`${s.date}T${s.time || '00:00'}`) }))
+    ];
+    
+    // Solo eventos futuros
+    const futureEvents = allEvents.filter(e => e.datetime >= today).sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
+    const nextTwoEvents = futureEvents.slice(0, 2);
 
-    // Filter liga matches
+    // 2. Tarjetas, Sanciones y Lesiones
     const ligaMatchesIds = new Set(matches.filter(m => m.competition === 'Liga').map(m => m.id));
-    const lastPlayedMatch = matches.filter(m => m.status === 'Jugado').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    const playedLigaMatches = matches.filter(m => m.competition === 'Liga' && m.status === 'Jugado').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const lastPlayedMatchId = playedLigaMatches.length > 0 ? playedLigaMatches[0].id : null;
+
+    const warnedPlayers: { player: typeof combinedPlayers[0], count: number }[] = [];
+    const suspendedPlayers: { player: typeof combinedPlayers[0], reason: string }[] = [];
+    const injuredPlayers: { player: typeof combinedPlayers[0], reason: string }[] = [];
+    const debtAlerts: { player: typeof combinedPlayers[0], amount: number }[] = [];
 
     dbPlayers.forEach(p => {
       const playerInfo = combinedPlayers.find(cp => cp.id === p.id);
       if (!playerInfo) return;
 
-      // 1. Injuries
+      // A) Lesionados
       if (p.physical_status === 'Lesionado') {
-        newAlerts.push({
-          id: `${p.id}-injury`,
-          player: playerInfo,
-          type: 'injury',
-          message: 'Baja por lesión deportiva',
-          color: 'text-red-500 border-red-500/30 bg-red-500/10'
-        });
+        injuredPlayers.push({ player: playerInfo, reason: 'Baja por lesión' });
       }
 
-      // Card calculation
-      const pStats = matchStats.filter(s => s.player_id === p.id);
+      // B) Stats de Liga
+      const pLigaStats = matchStats.filter(s => s.player_id === p.id && ligaMatchesIds.has(s.match_id));
       
-      // 2. Red card in last match
-      if (lastPlayedMatch) {
-        const lastMatchStat = pStats.find(s => s.match_id === lastPlayedMatch.id);
-        if (lastMatchStat && lastMatchStat.red_card) {
-          newAlerts.push({
-            id: `${p.id}-red`,
-            player: playerInfo,
-            type: 'red_card',
-            message: 'Expulsado (Últ. Partido)',
-            color: 'text-red-600 border-red-600/30 bg-red-600/10'
-          });
+      // Sancionados (Último partido)
+      if (lastPlayedMatchId) {
+        const lastMatchStat = pLigaStats.find(s => s.match_id === lastPlayedMatchId);
+        if (lastMatchStat) {
+          if (lastMatchStat.red_card) {
+            suspendedPlayers.push({ player: playerInfo, reason: 'Roja Directa (Últ. Partido)' });
+          } else if (lastMatchStat.yellow_cards === 2) {
+            suspendedPlayers.push({ player: playerInfo, reason: 'Doble Amarilla (Últ. Partido)' });
+          }
         }
       }
 
-      // 3. Yellow cards in Liga
-      const ligaStats = pStats.filter(s => ligaMatchesIds.has(s.match_id));
-      const ligaYellows = ligaStats.reduce((sum, s) => sum + (s.yellow_cards || 0), 0);
-
-      if (ligaYellows > 0) {
-        if (ligaYellows % 5 === 0) {
-          newAlerts.push({
-            id: `${p.id}-sanction`,
-            player: playerInfo,
-            type: 'sanction',
-            message: `Sanción: ${ligaYellows} amarillas`,
-            color: 'text-red-500 border-red-500/30 bg-red-500/10'
-          });
-        } else if ((ligaYellows + 1) % 5 === 0) {
-          newAlerts.push({
-            id: `${p.id}-warning`,
-            player: playerInfo,
-            type: 'warning',
-            message: `Apercibido: ${ligaYellows} amarillas`,
-            color: 'text-amber-500 border-amber-500/30 bg-amber-500/10'
-          });
+      // Apercibidos (4 Amarillas, excluyendo dobles amarillas)
+      const singleYellowsLiga = pLigaStats.reduce((sum, s) => {
+        // Ignoramos partidos donde hubo doble amarilla
+        if (s.yellow_cards === 1) { 
+          return sum + 1;
         }
+        return sum;
+      }, 0);
+
+      // Apercibido si el modulo 5 es 4
+      if (singleYellowsLiga > 0 && singleYellowsLiga % 5 === 4) {
+        warnedPlayers.push({ player: playerInfo, count: singleYellowsLiga });
       }
     });
 
-    // 4. Deudas (Multas pendientes)
+    // C) Deudas (Multas pendientes)
     const pendingFines = fines.filter(f => f.status === 'Pendiente');
     const debtsByPlayer = pendingFines.reduce((acc, fine) => {
       acc[fine.user_id] = (acc[fine.user_id] || 0) + fine.amount;
@@ -194,26 +203,16 @@ export const Dashboard: React.FC = () => {
 
     Object.entries(debtsByPlayer).forEach(([userId, amount]) => {
       if (amount <= 0) return;
-      
       const playerInfo = combinedPlayers.find(cp => cp.uid === userId || cp.id === userId);
       if (!playerInfo) return;
-
-      // Si es jugador, solo ver su propia deuda
       if (user?.role_id === 3) {
         if (userId !== user.id && playerInfo.uid !== user.id) return;
       }
-
-      newAlerts.push({
-        id: `${playerInfo.id}-debt`,
-        player: playerInfo,
-        type: 'sanction', // using sanction type for the icon
-        message: `Deuda pendiente: ${amount.toFixed(2)}€`,
-        color: 'text-red-500 border-red-500/30 bg-red-500/10'
-      });
+      debtAlerts.push({ player: playerInfo, amount });
     });
 
-    return newAlerts;
-  }, [dbPlayers, combinedPlayers, matchStats, matches, fines, user]);
+    return { nextTwoEvents, warnedPlayers, suspendedPlayers, injuredPlayers, debtAlerts };
+  }, [dbPlayers, combinedPlayers, matchStats, matches, trainings, socialEvents, fines, user]);
 
   // ==========================================
   // FINES / PAYMENTS STATE & LOGIC
@@ -472,30 +471,121 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Alerts Center */}
-      {alerts.length > 0 && !activeForm && (
-        <div className="mb-8 bg-brand-black-card border border-brand-black-border rounded-2xl p-6 relative overflow-hidden animate-fade-in shadow-premium">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-[60px] pointer-events-none" />
-          <div className="flex items-center gap-3 mb-6 relative z-10">
-            <AlertTriangle className="w-6 h-6 text-amber-500" />
-            <h3 className="text-xl font-bold text-brand-gray-light">Centro de Alertas</h3>
+      {/* Dashboard Highlights Center */}
+      {!activeForm && (
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
+          
+          {/* Próximos 2 Eventos */}
+          <div className="md:col-span-5 bg-brand-black-card border border-brand-black-border rounded-2xl p-6 relative overflow-hidden animate-fade-in shadow-premium flex flex-col h-full">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-[50px] pointer-events-none" />
+            <div className="flex items-center gap-3 mb-5 relative z-10">
+              <CalendarClock className="w-6 h-6 text-emerald-500" />
+              <h3 className="text-xl font-bold text-brand-gray-light">Próximos Eventos</h3>
+            </div>
+            <div className="flex-1 flex flex-col gap-3 relative z-10 justify-center">
+              {highlights.nextTwoEvents.length > 0 ? (
+                highlights.nextTwoEvents.map((evt: { date: string, time?: string, eventType: string, title?: string, rival?: string, location?: string }, i: number) => (
+                  <div key={i} className="flex items-center gap-4 bg-brand-black/40 border border-brand-black-border p-4 rounded-xl">
+                    <div className="w-12 h-12 flex-shrink-0 bg-brand-black border border-brand-black-border rounded-xl flex flex-col items-center justify-center text-center">
+                      <span className="text-[10px] uppercase font-bold text-brand-gray-muted tracking-wide">{formatDateSpanish(evt.date).dayName.substring(0,3)}</span>
+                      <span className="text-lg font-black text-brand-gray-light leading-none">{evt.date.split('-')[2]}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-bold text-brand-gray-light truncate">
+                        {evt.eventType === 'match' ? `vs ${evt.rival}` : evt.eventType === 'training' ? 'Entrenamiento' : evt.title}
+                      </h4>
+                      <p className="text-[11px] text-brand-gray-muted flex items-center gap-1.5 mt-1">
+                        <Clock className="w-3 h-3" /> {evt.time || '--:--'} 
+                        {evt.location && <><span className="mx-1 opacity-40">•</span> <MapPin className="w-3 h-3" /> <span className="truncate">{evt.location}</span></>}
+                      </p>
+                    </div>
+                    <div className={`p-2 rounded-lg ${evt.eventType === 'match' ? 'bg-amber-500/10 text-amber-500' : evt.eventType === 'training' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                      {evt.eventType === 'match' ? <Trophy className="w-5 h-5" /> : evt.eventType === 'training' ? <Activity className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-sm text-brand-gray-muted p-4">No hay próximos eventos programados.</p>
+              )}
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 relative z-10">
-            {alerts.map(alert => (
-              <div key={alert.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:-translate-y-1 hover:shadow-lg ${alert.color}`}>
-                <img src={alert.player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-12 h-12 rounded-full object-cover border-2 border-current/20" />
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold truncate text-brand-gray-light">{alert.player.full_name}</h4>
-                  <p className="text-[10px] uppercase font-bold tracking-wider mt-0.5 truncate flex items-center gap-1 opacity-90">
-                    {alert.type === 'injury' ? <Activity className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-                    {alert.message}
-                  </p>
+
+          {/* Sanciones y Lesiones (Grid) */}
+          <div className="md:col-span-7 bg-brand-black-card border border-brand-black-border rounded-2xl p-6 relative overflow-hidden animate-fade-in shadow-premium">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-[60px] pointer-events-none" />
+            <div className="flex items-center gap-3 mb-5 relative z-10">
+              <AlertTriangle className="w-6 h-6 text-amber-500" />
+              <h3 className="text-xl font-bold text-brand-gray-light">Avisos y Bajas</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10 max-h-[300px] overflow-y-auto no-scrollbar pr-1">
+              
+              {/* Sancionados */}
+              {highlights.suspendedPlayers.map((item, i) => (
+                <div key={`susp-${i}`} className="flex items-center gap-3 p-3 rounded-xl border border-red-600/30 bg-red-600/10">
+                  <div className="relative">
+                    <img src={item.player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-12 h-12 rounded-full object-cover border-2 border-red-600/50" />
+                    <div className="absolute -bottom-1 -right-1 bg-red-600 text-white rounded-full p-1 shadow">
+                      <Ban className="w-3 h-3" />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-brand-gray-light truncate">{item.player.full_name}</h4>
+                    <p className="text-[10px] font-bold text-red-500 uppercase mt-0.5 truncate">{item.reason}</p>
+                  </div>
                 </div>
-                {alert.player.dorsal !== undefined && alert.player.dorsal !== null && (
-                  <span className="text-xl font-black opacity-30 px-2 shrink-0">{alert.player.dorsal}</span>
-                )}
-              </div>
-            ))}
+              ))}
+
+              {/* Apercibidos (4 Amarillas) */}
+              {highlights.warnedPlayers.map((item, i) => (
+                <div key={`warn-${i}`} className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10">
+                  <div className="relative">
+                    <img src={item.player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-12 h-12 rounded-full object-cover border-2 border-amber-500/50" />
+                    <div className="absolute -bottom-1 -right-1 bg-amber-500 text-white rounded-full p-1 shadow">
+                      <AlertCircle className="w-3 h-3" />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-brand-gray-light truncate">{item.player.full_name}</h4>
+                    <p className="text-[10px] font-bold text-amber-500 uppercase mt-0.5 flex gap-1">Apercibido ({item.count} <span className="w-2 h-3 bg-amber-400 rounded-sm inline-block translate-y-[1px]"></span>)</p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Lesionados */}
+              {highlights.injuredPlayers.map((item, i) => (
+                <div key={`inj-${i}`} className="flex items-center gap-3 p-3 rounded-xl border border-blue-500/30 bg-blue-500/10">
+                  <div className="relative">
+                    <img src={item.player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-12 h-12 rounded-full object-cover border-2 border-blue-500/50" />
+                    <div className="absolute -bottom-1 -right-1 bg-blue-500 text-white rounded-full p-1 shadow">
+                      <HeartPulse className="w-3 h-3" />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-brand-gray-light truncate">{item.player.full_name}</h4>
+                    <p className="text-[10px] font-bold text-blue-400 uppercase mt-0.5 truncate">{item.reason}</p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Multas/Deudas */}
+              {highlights.debtAlerts.map((item, i) => (
+                <div key={`debt-${i}`} className="flex items-center gap-3 p-3 rounded-xl border border-red-500/30 bg-brand-black/40">
+                  <img src={item.player.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} className="w-12 h-12 rounded-full object-cover opacity-60" />
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-brand-gray-light truncate">{item.player.full_name}</h4>
+                    <p className="text-[10px] font-bold text-red-500 uppercase mt-0.5 truncate">Multa: {item.amount.toFixed(2)}€</p>
+                  </div>
+                </div>
+              ))}
+
+              {highlights.suspendedPlayers.length === 0 && highlights.warnedPlayers.length === 0 && highlights.injuredPlayers.length === 0 && highlights.debtAlerts.length === 0 && (
+                <div className="col-span-1 sm:col-span-2 py-8 flex flex-col items-center justify-center text-brand-gray-muted border border-dashed border-brand-black-border rounded-xl bg-brand-black/20">
+                  <ShieldAlert className="w-8 h-8 mb-2 opacity-20" />
+                  <p className="text-sm font-medium">No hay bajas, apercibidos ni deudas activas.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
