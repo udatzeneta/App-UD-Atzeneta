@@ -2332,7 +2332,10 @@ export const MatchReport: React.FC = () => {
                       <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
                     ) : (
                       <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
-                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) <= 45).map(evt => {
+                        {matchEvents
+                          .filter(e => parseAbsoluteMinute(e.minute) <= 45)
+                          .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
+                          .map(evt => {
                           let icon = '⚽';
                           let typeText = 'Gol';
                           let colorClass = 'text-brand-gray-light';
@@ -2451,7 +2454,10 @@ export const MatchReport: React.FC = () => {
                       <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
                     ) : (
                       <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
-                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) > 45).map(evt => {
+                        {matchEvents
+                          .filter(e => parseAbsoluteMinute(e.minute) > 45)
+                          .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
+                          .map(evt => {
                           let icon = '⚽';
                           let typeText = 'Gol';
                           let colorClass = 'text-brand-gray-light';

@@ -140,9 +140,24 @@ export const Team: React.FC = () => {
     playersByDemarcation[key].sort((a, b) => b.minutes - a.minutes);
   });
 
-  // --- 3. Gráfica Evolutiva (1 al 90 min) ---
+  // --- 3. Gráfica Evolutiva (1 al 120 min) ---
+  const parseAbsoluteMinute = (minuteStr: any): number => {
+    if (!minuteStr) return NaN;
+    const parts = String(minuteStr).trim().split(' ');
+    if (parts.length > 1) {
+      const period = parts[0].toUpperCase();
+      const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
+      if (period === '1T') return min;
+      if (period === '2T') return min + 45;
+      if (period === '1P' || period === 'PR1') return min + 90;
+      if (period === '2P' || period === 'PR2') return min + 105;
+      return min;
+    }
+    return parseInt(String(minuteStr).split('+')[0].replace(/\D/g, ''));
+  };
+
   const timeline: Record<number, TimelineEvent> = {};
-  for (let i = 1; i <= 95; i++) {
+  for (let i = 1; i <= 120; i++) {
     timeline[i] = { minute: i, positive: 0, negative: 0, description: [] };
   }
 
@@ -150,18 +165,18 @@ export const Team: React.FC = () => {
   matches.filter(m => m.status === 'Jugado').forEach(match => {
     // Goles Rival (Negativos) y Tarjetas Rival
     if (match.opponent_events) {
-      const oppGoals = Array.isArray(match.opponent_events.goals) ? match.opponent_events.goals : [];
-      oppGoals.forEach((g: any) => {
-        const m = parseInt(g?.minute);
-        if (!isNaN(m) && timeline[m]) {
-          timeline[m].negative += 1;
-        }
-      });
-
-      // Goles en propia del rival (a favor de nuestro equipo) -> Evento Positivo
+      // Evaluar goles de los rivales
+      if (match.opponent_events && Array.isArray(match.opponent_events.goals)) {
+        match.opponent_events.goals.forEach((g: any) => {
+          const m = parseAbsoluteMinute(g?.minute);
+          if (!isNaN(m) && timeline[m]) {
+            timeline[m].negative += 1;
+          }
+        });
+      } // Goles en propia del rival (a favor de nuestro equipo) -> Evento Positivo
       const oppOwnGoals = Array.isArray(match.opponent_events.own_goals) ? match.opponent_events.own_goals : [];
       oppOwnGoals.forEach((og: any) => {
-        const m = parseInt(og?.minute);
+        const m = parseAbsoluteMinute(og?.minute);
         if (!isNaN(m) && timeline[m]) {
           timeline[m].positive += 1;
         }
@@ -169,46 +184,56 @@ export const Team: React.FC = () => {
     }
   });
 
+  const playedMatchesIds = new Set(matches.filter(m => m.status === 'Jugado').map(m => m.id));
+
   playerStats.forEach(stat => {
+    if (!playedMatchesIds.has(stat.match_id)) return;
     if (!stat.event_minutes) return;
     
     // Goles Nuestros (Positivos)
     const myGoals = Array.isArray(stat.event_minutes.goals) ? stat.event_minutes.goals : [];
     myGoals.forEach((mStr: any) => {
-      const m = parseInt(mStr);
+      const m = parseAbsoluteMinute(mStr);
       if (!isNaN(m) && timeline[m]) timeline[m].positive += 1;
     });
 
     // Goles de Penalti Nuestros (Positivos)
     const myPenalties = Array.isArray(stat.event_minutes.penalty_goals) ? stat.event_minutes.penalty_goals : [];
     myPenalties.forEach((mStr: any) => {
-      const m = parseInt(mStr);
+      const m = parseAbsoluteMinute(mStr);
       if (!isNaN(m) && timeline[m]) timeline[m].positive += 1;
     });
     
     // Asistencias Nuestras (Positivos)
     const myAssists = Array.isArray(stat.event_minutes.assists) ? stat.event_minutes.assists : [];
     myAssists.forEach((mStr: any) => {
-      const m = parseInt(mStr);
+      const m = parseAbsoluteMinute(mStr);
       if (!isNaN(m) && timeline[m]) timeline[m].positive += 0.5;
     });
     
     // Tarjetas Nuestras (Negativos)
     const myCards = Array.isArray(stat.event_minutes.yellow_cards) ? stat.event_minutes.yellow_cards : [];
     myCards.forEach((mStr: any) => {
-      const m = parseInt(mStr);
+      const m = parseAbsoluteMinute(mStr);
       if (!isNaN(m) && timeline[m]) timeline[m].negative += 0.5;
     });
     
     if (stat.event_minutes.red_card) {
-      const m = parseInt(String(stat.event_minutes.red_card));
+      const m = parseAbsoluteMinute(stat.event_minutes.red_card);
       if (!isNaN(m) && timeline[m]) timeline[m].negative += 1;
     }
 
     // Goles en propia de nuestro equipo (Negativos - para datos antiguos asociados a jugador)
     const myOwnGoals = Array.isArray(stat.event_minutes.own_goals) ? stat.event_minutes.own_goals : [];
     myOwnGoals.forEach((mStr: any) => {
-      const m = parseInt(mStr);
+      const m = parseAbsoluteMinute(mStr);
+      if (!isNaN(m) && timeline[m]) timeline[m].negative += 1;
+    });
+
+    // Goles encajados (Negativos - típicamente asociados al portero)
+    const myConceded = Array.isArray(stat.event_minutes.conceded_goals) ? stat.event_minutes.conceded_goals : [];
+    myConceded.forEach((mStr: any) => {
+      const m = parseAbsoluteMinute(mStr);
       if (!isNaN(m) && timeline[m]) timeline[m].negative += 1;
     });
   });
@@ -216,7 +241,7 @@ export const Team: React.FC = () => {
   // Agrupar timeline en tramos de 5 o 10 minutos para suavizar la gráfica
   const bucketedTimeline = [];
   const BUCKET_SIZE = 5;
-  for (let i = 1; i <= 90; i += BUCKET_SIZE) {
+  for (let i = 1; i <= 120; i += BUCKET_SIZE) {
     let pos = 0;
     let neg = 0;
     for (let j = i; j < i + BUCKET_SIZE; j++) {
