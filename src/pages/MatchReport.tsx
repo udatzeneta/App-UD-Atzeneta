@@ -245,9 +245,9 @@ export const MatchReport: React.FC = () => {
       }
 
       if (detectManualOverride) {
-        const isDifferent = p.minutes_played !== calculatedMinutes;
         const hasStints = stints && stints.length > 0;
-        if (isDifferent && (p.minutes_played > 0 || hasStints)) {
+        const isDifferent = p.minutes_played !== calculatedMinutes;
+        if (!hasStints && isDifferent && p.minutes_played > 0) {
           next[p.player_id].has_manual_minutes = true;
         } else {
           next[p.player_id].minutes_played = calculatedMinutes;
@@ -445,6 +445,7 @@ export const MatchReport: React.FC = () => {
             penalty_goals: init?.event_minutes?.penalty_goals || [],
             conceded_penalty_goals: init?.event_minutes?.conceded_penalty_goals || [],
             injuries: init?.event_minutes?.injuries || [],
+            sub_out: init?.event_minutes?.sub_out || [],
           }
         };
       });
@@ -2048,10 +2049,10 @@ export const MatchReport: React.FC = () => {
             </div>
 
             {/* Representación gráfica del Campo de Fútbol */}
-            <div id="campograma-capture" className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-2xl overflow-hidden shadow-2xl select-none">
+            <div id="campograma-capture" className="relative w-full max-w-sm mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-4 border-emerald-100/20 rounded-2xl shadow-2xl select-none">
 
               {/* Franjas del césped */}
-              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5">
+              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5 rounded-2xl overflow-hidden">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <div key={i} className={`h-[10%] w-full ${i % 2 === 0 ? 'bg-white' : 'bg-transparent'}`} />
                 ))}
@@ -2249,59 +2250,79 @@ export const MatchReport: React.FC = () => {
                         <span className="text-[10px] font-bold leading-none mt-0.5">+</span>
                       </button>
                     )}
-
-                    {/* Popover desplegable para asignar jugador en el slot activo */}
-                    {activeSlotForSelection === idx && (
-                      <div 
-                        className={`absolute bg-brand-black border border-brand-black-border rounded-xl p-2.5 shadow-premium max-h-[350px] overflow-y-auto z-30 w-44 no-scrollbar
-                          ${slot.y > 60 ? 'bottom-11' : 'top-11'} 
-                          ${slot.x < 30 ? 'left-0' : slot.x > 70 ? 'right-0' : 'left-1/2 -translate-x-1/2'}
-                        `}
-                      >
-                        <div className="text-[9px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-1.5 mb-1.5 text-center">
-                          Demarcación: {slot.role}
-                        </div>
-                        {lineup[idx] && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleRemovePlayerFromLineup(idx);
-                              setActiveSlotForSelection(null);
-                            }}
-                            className="w-full text-center p-1.5 mb-2 rounded bg-brand-red-600/20 hover:bg-brand-red-600/40 border border-brand-red-600/30 text-[11px] font-bold text-brand-red-500 transition-colors"
-                          >
-                            Quitar Titular
-                          </button>
-                        )}
-                        {availableSubstitutes.length === 0 ? (
-                          <div className="text-[10px] text-brand-gray-muted text-center py-2.5 italic">
-                            No quedan suplentes en convocatoria.
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {availableSubstitutes.map(p => (
-                              <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => handleAssignPlayer(idx, p.id)}
-                                className="w-full text-left p-1.5 rounded hover:bg-brand-black-hover text-[11px] font-semibold text-brand-gray-light flex items-center justify-between transition-colors"
-                              >
-                                <span>{p.nickname || p.full_name}</span>
-                                {p.dorsal && (
-                                  <span className="text-[9px] font-bold bg-brand-black-border text-brand-red-600 px-1 rounded">
-                                    {p.dorsal}
-                                  </span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 );
               })})()}
             </div>
+
+            {activeSlotForSelection !== null && (() => {
+              const idx = activeSlotForSelection;
+              const slot = (FORMATIONS_SLOTS[tacticalSystem] || FORMATIONS_SLOTS['4-3-3'])[idx];
+              if (!slot) return null;
+              return (
+                <Modal
+                  isOpen={activeSlotForSelection !== null}
+                  onClose={() => setActiveSlotForSelection(null)}
+                  title={`Posición: ${slot.role} (${slot.label})`}
+                  maxWidth="max-w-md"
+                >
+                  <div className="space-y-4 text-left">
+                    {lineup[idx] && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleRemovePlayerFromLineup(idx);
+                          setActiveSlotForSelection(null);
+                        }}
+                        className="w-full text-center p-3 rounded bg-brand-red-600/20 hover:bg-brand-red-600/40 border border-brand-red-600/30 text-xs font-bold text-brand-red-500 transition-colors"
+                      >
+                        Quitar Titular
+                      </button>
+                    )}
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted mb-2">
+                        Jugadores Convocados Disponibles
+                      </h4>
+                      {availableSubstitutes.length === 0 ? (
+                        <div className="text-xs text-brand-gray-muted text-center py-6 border border-dashed border-brand-black-border rounded-xl italic">
+                          No quedan suplentes en convocatoria.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                          {availableSubstitutes.map(p => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                handleAssignPlayer(idx, p.id);
+                                setActiveSlotForSelection(null);
+                              }}
+                              className="w-full text-left p-3 rounded-lg bg-brand-black hover:bg-brand-black-hover border border-brand-black-border hover:border-brand-red-600/50 text-sm font-semibold text-brand-gray-light flex items-center justify-between transition-all"
+                            >
+                              <div className="flex items-center gap-3">
+                                {p.photo_url ? (
+                                  <img src={p.photo_url} alt={p.nickname || p.full_name} className="w-8 h-8 rounded-full object-cover border border-brand-black-border" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-brand-black-card border border-brand-black-border flex items-center justify-center text-xs text-brand-gray-muted font-bold">
+                                    {p.dorsal || '?'}
+                                  </div>
+                                )}
+                                <span>{p.nickname || p.full_name}</span>
+                              </div>
+                              {p.dorsal && (
+                                <span className="text-xs font-bold bg-brand-black-border text-brand-red-600 px-2.5 py-0.5 rounded">
+                                  {p.dorsal}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Modal>
+              );
+            })()}
           </div>
 
 
@@ -2734,11 +2755,19 @@ export const MatchReport: React.FC = () => {
                   let subs: any[] = [];
                   if (player && playerStats[player.id]) {
                     const pStat = playerStats[player.id];
-                    if (pStat.substituted_for && pStat.substituted_minute) {
-                      subs.push({ min: pStat.substituted_minute.toString(), inId: pStat.substituted_for });
-                    }
+                    const seenInIds = new Set<string>();
+                    
                     if (pStat.event_minutes?.sub_out) {
-                      pStat.event_minutes.sub_out.forEach(s => subs.push({ min: s.minute, inId: s.playerInId }));
+                      pStat.event_minutes.sub_out.forEach(s => {
+                        if (!seenInIds.has(s.playerInId)) {
+                          seenInIds.add(s.playerInId);
+                          subs.push({ min: s.minute, inId: s.playerInId });
+                        }
+                      });
+                    }
+                    if (pStat.substituted_for && pStat.substituted_minute && !seenInIds.has(pStat.substituted_for)) {
+                      seenInIds.add(pStat.substituted_for);
+                      subs.push({ min: pStat.substituted_minute.toString(), inId: pStat.substituted_for });
                     }
                   }
 

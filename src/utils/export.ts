@@ -996,7 +996,7 @@ export const exportMatchReportToPDF = async (
       case 'injury': return `Lesión de ${e.playerName}`;
       case 'sub_in': return `Entra ${e.playerName}`;
       case 'sub_out': return `Sale ${e.playerName}`;
-      case 'substitution': return `Sustitución de ${e.playerName}`;
+      case 'substitution': return `Cambio: Sale ${e.playerName}, Entra ${e.extraInfo || 'Jugador'}`;
       case 'opponent_goal': return `Gol ${e.playerName}`;
       case 'opponent_yellow_card': return `Amarilla ${e.playerName}`;
       case 'conceded_goals': return `Gol encajado (${e.playerName})`;
@@ -1060,9 +1060,59 @@ export const exportMatchReportToPDF = async (
         timelineY = 20;
       }
       
-      const iconColor = getEventIconColor(e);
-      doc.setFillColor(...iconColor);
-      doc.circle(timelineX + 5, timelineY, 1.5, 'F');
+      // Draw event symbol
+      doc.setLineWidth(0.1);
+      if (e.type === 'yellow_cards' || e.type === 'opponent_yellow_card') {
+        doc.setFillColor(234, 179, 8); // yellow
+        doc.setDrawColor(180, 140, 0);
+        doc.rect(timelineX + 3.8, timelineY - 1.8, 2.2, 3.2, 'FD');
+      } else if (e.type === 'red_card') {
+        doc.setFillColor(220, 38, 38); // red
+        doc.setDrawColor(150, 20, 20);
+        doc.rect(timelineX + 3.8, timelineY - 1.8, 2.2, 3.2, 'FD');
+      } else if (e.type === 'substitution') {
+        doc.setLineWidth(0.35);
+        // Red down arrow (left side)
+        doc.setDrawColor(220, 38, 38);
+        doc.line(timelineX + 3.8, timelineY - 1.3, timelineX + 3.8, timelineY + 1.3);
+        doc.line(timelineX + 3.2, timelineY + 0.6, timelineX + 3.8, timelineY + 1.3);
+        doc.line(timelineX + 4.4, timelineY + 0.6, timelineX + 3.8, timelineY + 1.3);
+        // Green up arrow (right side)
+        doc.setDrawColor(34, 197, 94);
+        doc.line(timelineX + 5.8, timelineY - 1.3, timelineX + 5.8, timelineY + 1.3);
+        doc.line(timelineX + 5.2, timelineY - 0.6, timelineX + 5.8, timelineY - 1.3);
+        doc.line(timelineX + 6.4, timelineY - 0.6, timelineX + 5.8, timelineY - 1.3);
+      } else if (e.type === 'goals' || e.type === 'penalty_goals' || e.type === 'opponent_goal') {
+        doc.setLineWidth(0.25);
+        doc.setDrawColor(30, 30, 30);
+        doc.setFillColor(255, 255, 255);
+        doc.circle(timelineX + 4.8, timelineY - 0.2, 1.6, 'FD');
+        doc.setFillColor(30, 30, 30);
+        doc.circle(timelineX + 4.8, timelineY - 0.2, 0.5, 'F'); // center dot
+      } else if (e.type === 'own_goals' || e.type === 'opponent_own_goal' || e.type === 'own_goal_team') {
+        doc.setLineWidth(0.25);
+        doc.setDrawColor(249, 115, 22); // orange
+        doc.setFillColor(255, 255, 255);
+        doc.circle(timelineX + 4.8, timelineY - 0.2, 1.6, 'FD');
+        doc.setFillColor(249, 115, 22);
+        doc.circle(timelineX + 4.8, timelineY - 0.2, 0.5, 'F');
+      } else if (e.type === 'assists') {
+        doc.setFillColor(168, 85, 247); // purple
+        doc.circle(timelineX + 4.8, timelineY - 0.2, 1.6, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5);
+        doc.setTextColor(255, 255, 255);
+        doc.text('A', timelineX + 3.8, timelineY + 0.8);
+      } else if (e.type === 'injury') {
+        doc.setLineWidth(0.5);
+        doc.setDrawColor(249, 115, 22); // orange
+        doc.line(timelineX + 3.6, timelineY, timelineX + 6.0, timelineY);
+        doc.line(timelineX + 4.8, timelineY - 1.2, timelineX + 4.8, timelineY + 1.2);
+      } else {
+        const iconColor = getEventIconColor(e);
+        doc.setFillColor(...iconColor);
+        doc.circle(timelineX + 4.8, timelineY - 0.2, 1.5, 'F');
+      }
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
