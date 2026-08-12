@@ -216,8 +216,16 @@ export const PlayerDetail: React.FC = () => {
   }, [matchStats, matches, attendanceRecords, trainings]);
 
   const filteredMatchStats = React.useMemo(() => {
-    if (statsMonthFilter === 'General') return matchStats;
-    return matchStats.filter(s => {
+    // Only keep stats for matches that have an acta (match report)
+    const statsWithActa = matchStats.filter(s => {
+      const match = matches.find((m: Match) => m.id === s.match_id);
+      if (!match) return false;
+      const hasActa = match.status === 'Jugado' || typeof match.score_us === 'number' || !!match.tactical_system;
+      return hasActa;
+    });
+
+    if (statsMonthFilter === 'General') return statsWithActa;
+    return statsWithActa.filter(s => {
       const match = matches.find((m: Match) => m.id === s.match_id);
       return match?.date?.startsWith(statsMonthFilter);
     });
@@ -1009,9 +1017,9 @@ export const PlayerDetail: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-stretch sm:justify-end">
                 <select
-                  className="form-input py-1.5 text-xs w-auto bg-brand-black font-semibold text-brand-gray-light"
+                  className="form-input py-1.5 text-xs bg-brand-black font-semibold text-brand-gray-light flex-1 sm:flex-initial min-w-0"
                   value={statsMonthFilter}
                   onChange={(e) => setStatsMonthFilter(e.target.value)}
                 >
@@ -1051,7 +1059,7 @@ export const PlayerDetail: React.FC = () => {
                       showToast('error', 'Error', 'No se pudo generar el informe en PDF.');
                     }
                   }}
-                  className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 whitespace-nowrap"
+                  className="btn-primary py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 whitespace-nowrap flex-1 sm:flex-initial"
                 >
                   <FileText className="w-3.5 h-3.5" /> Imprimir Informe
                 </button>
