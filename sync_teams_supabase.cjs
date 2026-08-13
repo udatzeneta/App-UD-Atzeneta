@@ -8,6 +8,11 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
+// Fix para Supabase en Node 20
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = require('ws');
+}
+
 const TARGET_TEMPORADA = '22';          // 2026-2027
 const SEASON = '2026-2027';
 const CLASSIF_URL = 'https://ffcv.es/competiciones/';
