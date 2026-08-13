@@ -804,12 +804,14 @@ export const Matches: React.FC = () => {
 
   const executeExport = async () => {
     // Filtrar partidos respetando filtros de búsqueda y estado, pero usando la competición elegida en el modal
-    const matchesToExport = matches.filter(m => {
-      const matchesSearch = m.rival.toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = filterStatus === 'Todos' || m.status === filterStatus;
-      const matchesCompetition = selectedExportComp === 'Todas' || m.competition === selectedExportComp;
-      return matchesSearch && matchesStatus && matchesCompetition;
-    });
+    const matchesToExport = matches
+      .filter(m => {
+        const matchesSearch = m.rival.toLowerCase().includes(search.toLowerCase());
+        const matchesStatus = filterStatus === 'Todos' || m.status === filterStatus;
+        const matchesCompetition = selectedExportComp === 'Todas' || m.competition === selectedExportComp;
+        return matchesSearch && matchesStatus && matchesCompetition;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     if (matchesToExport.length === 0) {
       showToast('info', 'Exportar', 'No hay partidos con los criterios seleccionados para exportar.');
