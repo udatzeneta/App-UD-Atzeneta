@@ -202,6 +202,11 @@ export const Matches: React.FC = () => {
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [showDeleteCallupConfirm, setShowDeleteCallupConfirm] = useState(false);
 
+  // Estados de exportación
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('csv');
+  const [selectedExportComp, setSelectedExportComp] = useState<string>('Todas');
+
   // Campos de formulario
   const [rival, setRival] = useState('');
   const [date, setDate] = useState('');
@@ -791,10 +796,28 @@ export const Matches: React.FC = () => {
     .filter(m => m.status === 'Jugado')
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Datos de exportación (definidos una sola vez, reutilizados por CSV y PDF)
-  const exportHeaders = ['Jornada', 'Fecha', 'Rival', 'Campo', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
-  const buildExportRows = (): ExportCell[][] =>
-    filteredMatches.map(m => [
+  const handleOpenExportModal = (format: 'csv' | 'pdf') => {
+    setExportFormat(format);
+    setSelectedExportComp(filterCompetition);
+    setIsExportModalOpen(true);
+  };
+
+  const executeExport = async () => {
+    // Filtrar partidos respetando filtros de búsqueda y estado, pero usando la competición elegida en el modal
+    const matchesToExport = matches.filter(m => {
+      const matchesSearch = m.rival.toLowerCase().includes(search.toLowerCase());
+      const matchesStatus = filterStatus === 'Todos' || m.status === filterStatus;
+      const matchesCompetition = selectedExportComp === 'Todas' || m.competition === selectedExportComp;
+      return matchesSearch && matchesStatus && matchesCompetition;
+    });
+
+    if (matchesToExport.length === 0) {
+      showToast('info', 'Exportar', 'No hay partidos con los criterios seleccionados para exportar.');
+      return;
+    }
+
+    const exportHeaders = ['Jornada', 'Fecha', 'Rival', 'Campo', 'Ubicación', 'Competición', 'Goles Propios', 'Goles Rival', 'Estado'];
+    const rows = matchesToExport.map(m => [
       m.matchday ?? '',
       m.date,
       m.rival,
@@ -806,22 +829,15 @@ export const Matches: React.FC = () => {
       m.status,
     ]);
 
-  const handleExportCSV = () => {
-    if (filteredMatches.length === 0) {
-      showToast('info', 'Exportar', 'No hay partidos en la lista para exportar.');
-      return;
-    }
-    exportToCSV(`partidos_ud_atzeneta_${Date.now()}`, exportHeaders, buildExportRows());
-    showToast('success', 'CSV Descargado', 'Se ha exportado el archivo con los filtros aplicados.');
-  };
+    setIsExportModalOpen(false);
 
-  const handleExportPDF = async () => {
-    if (filteredMatches.length === 0) {
-      showToast('info', 'Exportar', 'No hay partidos en la lista para exportar.');
-      return;
+    if (exportFormat === 'csv') {
+      exportToCSV(`partidos_ud_atzeneta_${Date.now()}`, exportHeaders, rows);
+      showToast('success', 'CSV Descargado', 'Se ha exportado el archivo CSV.');
+    } else {
+      await exportToPDF('Partidos UD Atzeneta', `partidos_ud_atzeneta_${Date.now()}`, exportHeaders, rows);
+      showToast('success', 'PDF Descargado', 'Se ha generado el informe PDF.');
     }
-    await exportToPDF('Partidos UD Atzeneta', `partidos_ud_atzeneta_${Date.now()}`, exportHeaders, buildExportRows());
-    showToast('success', 'PDF Descargado', 'Se ha generado el informe con los filtros aplicados.');
   };
 
   const months = [
@@ -1159,10 +1175,10 @@ export const Matches: React.FC = () => {
           </Link>
           {canExport && (
             <>
-              <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs">
+              <button onClick={() => handleOpenExportModal('csv')} className="btn-secondary py-2 text-xs">
                 <Download className="w-3.5 h-3.5" /> CSV
               </button>
-              <button onClick={handleExportPDF} className="btn-secondary py-2 text-xs">
+              <button onClick={() => handleOpenExportModal('pdf')} className="btn-secondary py-2 text-xs">
                 <FileText className="w-3.5 h-3.5" /> PDF
               </button>
             </>
@@ -2149,6 +2165,71 @@ export const Matches: React.FC = () => {
               className="btn-primary py-2 px-4 text-xs font-bold bg-brand-red-600 hover:bg-brand-red-700 border-brand-red-600"
             >
               {deleteCallupsMutation.isPending ? 'Borrando...' : 'Sí, borrar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal de selección de tipo de partido para exportación */}
+      <Modal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        title={`Exportar a ${exportFormat.toUpperCase()}`}
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-brand-gray-muted leading-relaxed">
+            Selecciona qué tipo de partidos deseas exportar en formato <strong className="text-brand-gray-light">{exportFormat.toUpperCase()}</strong>:
+          </p>
+
+          <div className="space-y-3">
+            <label className="block text-xs font-semibold text-brand-gray-muted uppercase tracking-wider">
+              Tipo de partidos
+            </label>
+            <div className="grid grid-cols-1 gap-2.5">
+              {[
+                { value: 'Todas', label: 'Todos los partidos' },
+                { value: 'Liga', label: 'Solo partidos de Liga' },
+                { value: 'Copa', label: 'Solo partidos de Copa' },
+                { value: 'Amistoso', label: 'Solo partidos Amistosos' },
+                { value: 'Promoción', label: 'Solo partidos de Promoción' }
+              ].map(opt => (
+                <label
+                  key={opt.value}
+                  className={`flex items-center gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${
+                    selectedExportComp === opt.value
+                      ? 'bg-brand-red-600/10 border-brand-red-600/40 text-brand-gray-light'
+                      : 'bg-brand-black border-brand-black-border text-brand-gray-muted hover:border-brand-black-hover/80 hover:text-brand-gray-light'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="exportCompetition"
+                    value={opt.value}
+                    checked={selectedExportComp === opt.value}
+                    onChange={() => setSelectedExportComp(opt.value)}
+                    className="accent-brand-red-600 w-4 h-4 cursor-pointer"
+                  />
+                  <span className="text-sm font-medium">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-brand-black-border">
+            <button
+              type="button"
+              onClick={() => setIsExportModalOpen(false)}
+              className="btn-secondary py-2.5 px-4 text-xs font-bold w-full sm:w-auto"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={executeExport}
+              className="btn-primary py-2.5 px-5 text-xs font-bold w-full sm:w-auto flex items-center justify-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" /> Exportar
             </button>
           </div>
         </div>
