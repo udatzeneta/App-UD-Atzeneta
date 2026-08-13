@@ -1145,38 +1145,15 @@ export const dataService = {
       await delay(300);
       return MockDatabase.getScouting().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
-      const { count, error: countError } = await supabase
+      const { data, error } = await supabase
         .from('scouting')
-        .select('*', { count: 'exact', head: true })
-        .eq('team_category', teamCategory);
+        .select('*, scouting_player_history(*)')
+        .eq('team_category', teamCategory)
+        .eq('in_wallet', true)
+        .order('created_at', { ascending: false });
 
-      if (countError) throw countError;
-      if (!count) return [];
-
-      const pageSize = 1000;
-      const pages = Math.ceil(count / pageSize);
-      const promises = [];
-
-      for (let i = 0; i < pages; i++) {
-        const start = i * pageSize;
-        const end = start + pageSize - 1;
-        promises.push(
-          supabase
-            .from('scouting')
-            .select('*')
-            .eq('team_category', teamCategory)
-            .order('created_at', { ascending: false })
-            .range(start, end)
-        );
-      }
-
-      const results = await Promise.all(promises);
-      const allData: ScoutingPlayer[] = [];
-      for (const res of results) {
-        if (res.error) throw res.error;
-        if (res.data) allData.push(...(res.data as ScoutingPlayer[]));
-      }
-      return allData;
+      if (error) throw error;
+      return data as ScoutingPlayer[];
     }
   },
 
@@ -1223,7 +1200,11 @@ export const dataService = {
 
   async createScouting(item: Omit<ScoutingPlayer, 'id'>): Promise<ScoutingPlayer> {
     const teamCat = currentUserContext?.team_category || 'Primer Equipo';
-    const itemWithTeam = { ...item, team_category: item.team_category || teamCat };
+    const itemWithTeam = { 
+      ...item, 
+      team_category: item.team_category || teamCat,
+      season: item.season || '2026-2027'
+    };
 
     if (isMockMode) {
       await delay(300);

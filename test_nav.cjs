@@ -32,86 +32,54 @@ async function handleCookies(page) {
   const page = await context.newPage();
 
   try {
-    console.log("Navigating to https://ffcv.es/competiciones/#partidos ...");
+    console.log("Navigating to FFCV to establish session...");
     await page.goto('https://ffcv.es/competiciones/#partidos', { waitUntil: 'load', timeout: 60000 });
     await handleCookies(page);
-
-    console.log("Searching for 'Atzeneta'...");
-    await page.waitForSelector('#club-search');
-    await page.fill('#club-search', 'Atzeneta');
-    await page.waitForSelector('text=U.D. Atzeneta de Castellón', { timeout: 15000 });
-    await page.locator('text=U.D. Atzeneta de Castellón').first().click();
-
-    console.log("Waiting for club page...");
-    await page.waitForSelector('text=Equipos', { timeout: 30000 });
-    await handleCookies(page);
     await page.waitForTimeout(2000);
 
-    console.log("Clicking 'Equipos' tab...");
-    await page.locator('text=Equipos').first().click();
+    console.log("Fetching competitions list via API in browser context...");
+    const competitionsData = await page.evaluate(async (codEquipo) => {
+      try {
+        const response = await fetch(`https://ffcv.es/competiciones/api/equipos/vis_competiciones_equipo.php?codequipo=${encodeURIComponent(codEquipo)}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        return { error: err.message };
+      }
+    }, '18331');
 
-    console.log("Waiting for team link...");
-    const teamLink = page.locator('text="U.D. Atzeneta de Castellón \'A\'"').first();
-    await teamLink.waitFor({ state: 'visible', timeout: 20000 });
+    console.log("API response (Competitions):", competitionsData.competiciones ? competitionsData.competiciones[0] : "no competitions");
 
-    // Click the team link and wait for navigation
-    console.log("Clicking team link...");
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'load', timeout: 30000 }),
-      teamLink.click()
-    ]);
+    if (competitionsData && Array.isArray(competitionsData.competiciones)) {
+      const activeComps = competitionsData.competiciones;
+      console.log(`Found ${activeComps.length} competitions in raw data.`);
 
-    console.log(`Current URL on team page: ${page.url()}`);
-    await page.waitForTimeout(2000);
-    await handleCookies(page);
+      for (const comp of activeComps) {
+        const codGrupo = comp.cod_grupo || comp.codgrupo;
+        const codTemporada = comp.cod_temporada || comp.codtemporada || '22'; // 2026/2027 season code
+        const name = comp.nombre_competicion || comp.nombre || '';
 
-    // List all links containing "Partidos" on this team page
-    const teamPageLinks = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('a')).map(a => ({
-        text: a.innerText.trim(),
-        href: a.getAttribute('href'),
-        className: a.className,
-        parentClass: a.parentElement ? a.parentElement.className : '',
-        parentTag: a.parentElement ? a.parentElement.tagName : '',
-        outerHTML: a.outerHTML.substring(0, 300)
-      })).filter(l => l.text.toLowerCase().includes('partido') || (l.href && l.href.toLowerCase().includes('partido')));
-    });
+        console.log(`\nFetching matches for: ${name} (Grupo: ${codGrupo}, Temporada: ${codTemporada})`);
+        const matchesData = await page.evaluate(async ({ codEquipo, codTemporada, codGrupo }) => {
+          try {
+            const url = `https://ffcv.es/competiciones/api/equipos/partidos_equipo_temporada.php?cod_equipo=${encodeURIComponent(codEquipo)}&cod_temporada=${encodeURIComponent(codTemporada)}&cod_grupo=${encodeURIComponent(codGrupo)}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+          } catch (err) {
+            return { error: err.message };
+          }
+        }, { codEquipo: '18331', codTemporada, codGrupo });
 
-    console.log("Found matches/partidos related links on team page:", JSON.stringify(teamPageLinks, null, 2));
-
-    // Look for the correct tab link. It usually has class "submenu-link"
-    const targetLinkInfo = teamPageLinks.find(l => l.className === 'submenu-link' && l.text === 'Partidos');
-    console.log("Target link info:", targetLinkInfo);
-
-    console.log("Clicking the 'Partidos' tab link...");
-    // Let's locate it by selecting an anchor with class submenu-link and text Partidos
-    const partidosTab = page.locator('a.submenu-link:has-text("Partidos")').first();
-    await partidosTab.click();
-    console.log("Clicked! Waiting for #team-partidos-competicion dropdown...");
-
-    await page.waitForSelector('#team-partidos-competicion', { timeout: 20000 });
-    console.log("Matches select dropdown found!");
-
-    // Get all options in the select element
-    const options = await page.evaluate(() => {
-      const select = document.getElementById('team-partidos-competicion');
-      if (!select) return [];
-      return Array.from(select.options).map(opt => ({
-        value: opt.value,
-        text: opt.textContent.trim()
-      }));
-    });
-    console.log("Found competitions inside dropdown:", JSON.stringify(options, null, 2));
-
-    // Save matches tab screenshot
-    await page.waitForTimeout(2000);
-    await page.screenshot({ path: path.join(__dirname, 'matches_tab_loaded.png') });
-    console.log("Saved matches_tab_loaded.png");
-
-    // Save the page HTML to analyze the table structure
-    const content = await page.content();
-    fs.writeFileSync(path.join(__dirname, 'matches_tab.html'), content);
-    console.log("Saved matches_tab.html");
+        const partidos = matchesData?.partidos || [];
+        console.log(`-> Received ${partidos.length} matches.`);
+        if (partidos.length > 0) {
+          console.log(`-> Sample match: ${JSON.stringify(partidos[0], null, 2)}`);
+        }
+      }
+    } else {
+      console.error("Failed to retrieve competitions array from API response.");
+    }
 
   } catch (err) {
     console.error("Error during execution:", err);

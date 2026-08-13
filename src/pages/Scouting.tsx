@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
+import { supabase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { CardSkeleton } from '../components/Skeletons';
@@ -73,6 +74,10 @@ export const Scouting: React.FC = () => {
   const [leagueSearch, setLeagueSearch] = useState('');
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [competitionFilter, setCompetitionFilter] = useState<string>('all');
+  const [seasonFilter, setSeasonFilter] = useState<string>('2026-2027');
+  const [leaguePlayers, setLeaguePlayers] = useState<ScoutingPlayer[]>([]);
+  const [isLeagueLoading, setIsLeagueLoading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const [selectedAcademies, setSelectedAcademies] = useState<string[]>([]);
   const [isAcademyDropdownOpen, setIsAcademyDropdownOpen] = useState(false);
   const [minConsecutiveFilter, setMinConsecutiveFilter] = useState<number>(0);
@@ -124,12 +129,75 @@ export const Scouting: React.FC = () => {
     queryFn: () => dataService.getScouting()
   });
 
-  // Query Liga con Historial (solo cuando se abre la pestaña)
-  const { data: leagueScoutingList = [] } = useQuery({
-    queryKey: ['scoutingWithHistory'],
-    queryFn: () => dataService.getScoutingWithHistory(),
-    enabled: activeTab === 'league'
-  });
+  // Effect para descargar la Liga con Historial página a página (con progreso)
+  useEffect(() => {
+    if (activeTab === 'league' && leaguePlayers.length === 0 && !isLeagueLoading) {
+      const fetchAllPlayers = async () => {
+        setIsLeagueLoading(true);
+        setDownloadProgress(0);
+        try {
+          // Obtener el category del usuario
+          const { data: { user } } = await supabase.auth.getUser();
+          let teamCategory = 'Primer Equipo';
+          if (user) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('team_category')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (profile?.team_category) {
+              teamCategory = profile.team_category;
+            }
+          }
+
+          // 1. Obtener el conteo total
+          const { count, error: countError } = await supabase
+            .from('scouting')
+            .select('*', { count: 'exact', head: true })
+            .eq('team_category', teamCategory);
+
+          if (countError) throw countError;
+          if (!count) {
+            setIsLeagueLoading(false);
+            return;
+          }
+
+          const pageSize = 500;
+          const pages = Math.ceil(count / pageSize);
+          let loadedData: ScoutingPlayer[] = [];
+
+          for (let i = 0; i < pages; i++) {
+            const start = i * pageSize;
+            const end = start + pageSize - 1;
+
+            const { data, error } = await supabase
+              .from('scouting')
+              .select('*, scouting_player_history(*)')
+              .eq('team_category', teamCategory)
+              .order('created_at', { ascending: false })
+              .range(start, end);
+
+            if (error) throw error;
+            if (data) {
+              loadedData = [...loadedData, ...(data as ScoutingPlayer[])];
+            }
+
+            const percent = Math.round(((i + 1) / pages) * 100);
+            setDownloadProgress(percent);
+          }
+
+          setLeaguePlayers(loadedData);
+        } catch (err) {
+          console.error("Error cargando base de datos de scouting:", err);
+          showToast('error', 'Error de carga', 'No se pudieron descargar los datos completos de la liga.');
+        } finally {
+          setIsLeagueLoading(false);
+        }
+      };
+
+      fetchAllPlayers();
+    }
+  }, [activeTab, leaguePlayers.length, isLeagueLoading]);
 
   // Tablero Táctico
   const { data: tacticalBoard } = useQuery<TacticalBoard>({
@@ -408,7 +476,10 @@ export const Scouting: React.FC = () => {
   };
 
   // Filtrado Cartera
+  console.log("DEBUG: scoutingList length =", scoutingList.length);
+  console.log("DEBUG: favorites in scoutingList =", scoutingList.filter(p => p.in_wallet).map(p => p.player_name));
   const walletList = scoutingList.filter(p => p.in_wallet === true || (!p.season && p.in_wallet !== false));
+  console.log("DEBUG: walletList length =", walletList.length);
   const filteredList = walletList.filter(p => {
     const term = normalizeStr(search);
     return (
@@ -418,8 +489,15 @@ export const Scouting: React.FC = () => {
     );
   });
 
-  // Fuente de datos de la Liga (usa leagueScoutingList con historial cuando está disponible)
-  const leagueSource = leagueScoutingList.length > 0 ? leagueScoutingList : scoutingList;
+  // Fuente de datos de la Liga (usa leaguePlayers cuando está activa la pestaña de Liga)
+  const leagueSource = activeTab === 'league' ? leaguePlayers : scoutingList;
+
+  // Filtrado por Temporada para la Liga
+  const filteredLeagueSource = leagueSource.filter(p => {
+    if (seasonFilter === 'all') return true;
+    const playerSeason = p.season || '2025-2026';
+    return playerSeason === seasonFilter;
+  });
 
   // Temporada actual: si hay datos de esta temporada para un jugador, se muestran esos
   // (equipo/escudo actuales). Si aún no se han descargado, se muestra su última
@@ -430,7 +508,7 @@ export const Scouting: React.FC = () => {
   // cae al registro de la temporada más reciente disponible y lo marca como histórico.
   const dedupedLeaguePlayers: Array<ScoutingPlayer & { previousSeasonLabel?: string }> = (() => {
     const groups = new Map<string, ScoutingPlayer[]>();
-    leagueSource
+    filteredLeagueSource
       .filter(p => p.season || p.competition)
       .forEach(p => {
         const key = normalizeStr(p.player_name);
@@ -1099,7 +1177,7 @@ export const Scouting: React.FC = () => {
         <div className="space-y-6">
           {/* Panel de Filtros */}
           <div className="bg-brand-black border border-brand-black-border p-4 rounded-xl">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
                 <input
@@ -1109,6 +1187,18 @@ export const Scouting: React.FC = () => {
                   value={leagueSearch}
                   onChange={(e) => setLeagueSearch(e.target.value)}
                 />
+              </div>
+
+              <div>
+                <select
+                  className="form-input w-full"
+                  value={seasonFilter}
+                  onChange={(e) => setSeasonFilter(e.target.value)}
+                >
+                  <option value="all">Todas las Temp.</option>
+                  <option value="2026-2027">Temporada 2026-2027</option>
+                  <option value="2025-2026">Temporada 2025-2026</option>
+                </select>
               </div>
 
               <div>
@@ -1402,7 +1492,21 @@ export const Scouting: React.FC = () => {
           </div>
 
           {/* Listado Liga */}
-          {filteredLeaguePlayers.length === 0 ? (
+          {isLeagueLoading ? (
+            <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center space-y-4 max-w-md mx-auto my-8">
+              <div className="flex justify-between text-xs font-bold text-brand-gray-light">
+                <span>Descargando base de datos de jugadores...</span>
+                <span className="font-mono text-brand-red-600">{downloadProgress}%</span>
+              </div>
+              <div className="w-full bg-brand-black-border/40 h-2 rounded-full overflow-hidden">
+                <div 
+                  className="bg-gradient-to-r from-brand-red-600 to-amber-500 h-full transition-all duration-300 ease-out"
+                  style={{ width: `${downloadProgress}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-brand-gray-muted">Sincronizando plantillas e historiales con Supabase. Esto puede tomar unos segundos debido al gran volumen de datos.</p>
+            </div>
+          ) : filteredLeaguePlayers.length === 0 ? (
             <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center">
               <p className="text-sm text-brand-gray-muted">No se encontraron jugadores de la liga con los filtros seleccionados.</p>
             </div>

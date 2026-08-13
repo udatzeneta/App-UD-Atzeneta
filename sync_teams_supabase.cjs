@@ -14,10 +14,9 @@ const CLASSIF_URL = 'https://ffcv.es/competiciones/';
 
 // Lista de competiciones a sincronizar con su configuración de filtrado de grupos
 const TARGET_COMPETITIONS = [
-  { id: '29509166', name: 'Primera FFCV', onlyGroups: ['I', 'II', '1', '2'] },
-  { id: '29509377', name: 'Lliga Comunitat', onlyGroups: ['I', 'II', '1', '2'] },
-  { id: '29509171', name: 'Segona FFCV', onlyGroups: ['I', 'II', '1', '2'] },
-  { id: '29509180', name: 'Tercera FFCV', onlyGroups: ['I', 'II', '1', '2'] }
+  { id: '905431604', name: 'Tercera Federación', onlyGroups: ['VI', '6'] },
+  { id: '905431821', name: 'Lliga Comunitat', onlyGroups: ['Nord', 'Norte'] },
+  { id: '905431606', name: 'Primera FFCV', onlyGroups: ['1', 'I'] }
 ];
 
 function loadEnv() {

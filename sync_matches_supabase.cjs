@@ -170,75 +170,34 @@ async function handleCookies(page) {
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  // Capturar las URLs de API que lanza la propia web al cambiar de competición
-  const apiCallsByGrupo = {};
-  page.on('request', req => {
-    const url = req.url();
-    if (url.includes('partidos_equipo_temporada')) {
-      const match = url.match(/cod_grupo=(\d+)/);
-      if (match) apiCallsByGrupo[match[1]] = url.split('&force_rebuild')[0];
-    }
-  });
-
   try {
-    // ── 1. Navegar hasta la pestaña Partidos del equipo ──────────────────────
-    console.log('🌐 Navegando a FFCV...');
+    console.log('🌐 Navegando a FFCV para establecer sesión...');
     await page.goto('https://ffcv.es/competiciones/#partidos', { waitUntil: 'load', timeout: 60000 });
     await handleCookies(page);
-
-    await page.waitForSelector('#club-search', { timeout: 15000 });
-    await page.fill('#club-search', 'Atzeneta');
-    await page.waitForSelector('text=U.D. Atzeneta de Castellón', { timeout: 15000 });
-    await page.locator('text=U.D. Atzeneta de Castellón').first().click();
-
-    await page.waitForSelector('text=Equipos', { timeout: 30000 });
-    await handleCookies(page);
-    await page.waitForTimeout(1000);
-    await page.locator('text=Equipos').first().click();
-
-    const teamLink = page.locator('text="U.D. Atzeneta de Castellón \'A\'"').first();
-    await teamLink.waitFor({ state: 'visible', timeout: 20000 });
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'load', timeout: 30000 }),
-      teamLink.click(),
-    ]);
-    await page.waitForTimeout(2000);
-    await handleCookies(page);
-
-    const partidosTab = page.locator('a.submenu-link:has-text("Partidos")').first();
-    await partidosTab.click();
-    await page.waitForSelector('#team-partidos-competicion', { timeout: 20000 });
     await page.waitForTimeout(2000);
 
-    // ── 2. Seleccionar Temporada y Grupo (si existen en la página) ───────────
-    try {
-      const selectTemporada = page.locator('#sel-temporada');
-      if (await selectTemporada.count() > 0) {
-        console.log('🔄 Seleccionando temporada 2026-2027...');
-        await selectTemporada.selectOption('22');
-        await page.waitForTimeout(2000);
+    console.log('📡 Obteniendo lista de competiciones de la API...');
+    const competitionsData = await page.evaluate(async (codEquipo) => {
+      try {
+        const response = await fetch(`https://ffcv.es/competiciones/api/equipos/vis_competiciones_equipo.php?codequipo=${encodeURIComponent(codEquipo)}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        return { error: err.message };
       }
-    } catch (e) {
-      console.log('⚠️ No se encontró #sel-temporada');
+    }, COD_EQUIPO);
+
+    if (!competitionsData || !Array.isArray(competitionsData.competiciones)) {
+      throw new Error(`No se pudo obtener las competiciones de la API. Respuesta: ${JSON.stringify(competitionsData)}`);
     }
 
-    try {
-      const selectGrupo = page.locator('#sel-grupo');
-      if (await selectGrupo.count() > 0) {
-        console.log('🔄 Seleccionando Grup - 1...');
-        await selectGrupo.selectOption({ label: 'Grup - 1' });
-        await page.waitForTimeout(2000);
-      }
-    } catch (e) {
-      console.log('⚠️ No se encontró #sel-grupo');
-    }
-
-    // ── 3. Leer todas las opciones del selector de competiciones ─────────────
-    let competiciones = await page.evaluate(() => {
-      const sel = document.getElementById('team-partidos-competicion');
-      if (!sel) return [];
-      return Array.from(sel.options).map(o => ({ codGrupo: o.value, nombre: o.text.trim() }));
-    });
+    // Mapear al formato de competiciones esperado
+    let competiciones = competitionsData.competiciones.map(comp => {
+      const codGrupo = comp.cogido_grupo || comp.cod_grupo || comp.codgrupo;
+      const codTemporada = comp.codigo_temporada || comp.cod_temporada || '22';
+      const nombre = comp.competicion || comp.nombre_competicion || comp.nombre || '';
+      return { codGrupo, codTemporada, nombre };
+    }).filter(c => c.codGrupo);
 
     // Filtrar para mantener solo Liga, Copa y Promoción (descartar Amistosos u otras)
     competiciones = competiciones.filter(c => {
@@ -248,30 +207,14 @@ async function handleCookies(page) {
 
     console.log(`📋 Competiciones a sincronizar: ${competiciones.map(c => c.nombre).join(', ')}`);
 
-    // Seleccionar cada competición para que la web lance la llamada API correspondiente
-    for (const comp of competiciones) {
-      await page.selectOption('#team-partidos-competicion', comp.codGrupo);
-      await page.waitForTimeout(2500);
-    }
-
     // ── 4. Fetchear partidos de cada competición ─────────────────────────────
     let totalInserted = 0;
     let totalUpdated = 0;
     let totalErrors = 0;
 
     for (const comp of competiciones) {
-      let apiUrl = apiCallsByGrupo[comp.codGrupo];
       const competicion = mapCompeticion(comp.nombre);
-
-      // FORZAR TEMPORADA 2026/2027 (cod_temporada=22) en la URL
-      if (apiUrl && apiUrl.includes('cod_temporada=')) {
-        apiUrl = apiUrl.replace(/cod_temporada=\d+/, 'cod_temporada=22');
-      }
-
-      if (!apiUrl) {
-        console.log(`\n⚠️  ${comp.nombre}: no se capturó URL de API, se omite.`);
-        continue;
-      }
+      const apiUrl = `https://ffcv.es/competiciones/api/equipos/partidos_equipo_temporada.php?cod_equipo=${encodeURIComponent(COD_EQUIPO)}&cod_temporada=${encodeURIComponent(comp.codTemporada)}&cod_grupo=${encodeURIComponent(comp.codGrupo)}`;
 
       console.log(`\n📡 ${comp.nombre} (${competicion}): ${apiUrl}`);
 
@@ -294,10 +237,14 @@ async function handleCookies(page) {
       let partidos = Array.isArray(apiData?.partidos) ? apiData.partidos : [];
       console.log(`   ✅ ${partidos.length} partidos via API.`);
 
-      // Si la API devuelve vacío, parsear las tarjetas del DOM (ocurre en Copa)
+      // Si la API devuelve vacío (ej. Copa), intentamos parsear del DOM
       if (partidos.length === 0) {
-        await page.selectOption('#team-partidos-competicion', comp.codGrupo);
-        await page.waitForTimeout(3000); // Esperar a que el DOM se actualice con esta competición
+        try {
+          await page.selectOption('#team-partidos-competicion', comp.codGrupo, { timeout: 1000 });
+          await page.waitForTimeout(1000); // Esperar a que el DOM se actualice con esta competición
+        } catch (e) {
+          console.log('   ⚠️ No se pudo cambiar el selector de competición en el DOM:', e.message);
+        }
         partidos = await page.evaluate(async (codGrupo) => {
           const sel = document.getElementById('team-partidos-competicion');
           if (sel) sel.value = codGrupo; // asegurar selección
@@ -440,9 +387,14 @@ async function handleCookies(page) {
            continue;
         }
 
-        for (const match of mappedMatchesFiltered) {
-          const { data: existing, error: searchError } = await supabase
-            .from('matches').select('id, status').eq('date', match.date).eq('competition', match.competition).ilike('rival', match.rival).maybeSingle();
+          for (const match of mappedMatchesFiltered) {
+          let query = supabase.from('matches').select('id, status').eq('competition', match.competition).ilike('rival', match.rival);
+          if (match.matchday) {
+            query = query.eq('matchday', match.matchday);
+          } else {
+            query = query.eq('date', match.date);
+          }
+          const { data: existing, error: searchError } = await query.maybeSingle();
           if (searchError) { console.error(`   ❌ ${match.date} vs ${match.rival}: ${searchError.message}`); totalErrors++; continue; }
           if (existing) {
             if (existing.status === 'Jugado') {
@@ -472,13 +424,19 @@ async function handleCookies(page) {
       }
 
       for (const match of mappedMatchesFiltered) {
-        const { data: existing, error: searchError } = await supabase
+        let query = supabase
           .from('matches')
           .select('id, status')
-          .eq('date', match.date)
           .eq('competition', match.competition)
-          .ilike('rival', match.rival)
-          .maybeSingle();
+          .ilike('rival', match.rival);
+
+        if (match.matchday) {
+          query = query.eq('matchday', match.matchday);
+        } else {
+          query = query.eq('date', match.date);
+        }
+
+        const { data: existing, error: searchError } = await query.maybeSingle();
 
         if (searchError) {
           console.error(`   ❌ Error buscando ${match.date} vs ${match.rival}: ${searchError.message}`);
