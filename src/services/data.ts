@@ -1098,6 +1098,26 @@ export const dataService = {
     }
   },
 
+  async createPointsBulk(items: Omit<PointLog, 'id'>[]): Promise<PointLog[]> {
+    if (items.length === 0) return [];
+    if (isMockMode) {
+      await delay(300);
+      const list = MockDatabase.getPoints();
+      const profiles = MockDatabase.getProfiles();
+      const newItems: PointLog[] = items.map((item, idx) => ({ ...item, id: `p-${Date.now()}-${idx}` }));
+      list.push(...newItems);
+      MockDatabase.setPoints(list);
+      return newItems.map(newItem => ({ ...newItem, profiles: profiles.find(p => p.id === newItem.user_id) }));
+    } else {
+      const { data, error } = await supabase
+        .from('points')
+        .insert(items)
+        .select();
+      if (error) throw error;
+      return (data || []) as PointLog[];
+    }
+  },
+
   async updatePoint(id: string, item: Partial<PointLog>): Promise<PointLog> {
     if (isMockMode) {
       await delay(300);

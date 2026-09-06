@@ -11,7 +11,7 @@ import { PointLog, Profile } from '../types';
 import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 import {
   Award, Search, Download, FileText, Plus, Trash2, Edit2,
-  TrendingUp, TrendingDown, Calendar, User, Trophy
+  TrendingUp, TrendingDown, Calendar, User, Trophy, Users, Check
 } from 'lucide-react';
 
 // Valores de puntuación predefinidos
@@ -46,6 +46,8 @@ export const Points: React.FC = () => {
 
   // Campos formulario
   const [targetUserId, setTargetUserId] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [modalPlayerSearch, setModalPlayerSearch] = useState('');
   const [date, setDate] = useState('');
   const [reason, setReason] = useState('');
   const [pointsAmount, setPointsAmount] = useState('2');
@@ -82,12 +84,39 @@ export const Points: React.FC = () => {
     enabled: canCreate || canEdit
   });
 
+  // Perfiles filtrados para la selección en el modal
+  const modalProfiles = profiles.filter(p => {
+    const pTeam = p.team_category || 'Primer Equipo';
+    const matchesTeam = pTeam === filterTeam;
+    const name = p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name;
+    const searchMatch = !modalPlayerSearch.trim() || 
+      name.toLowerCase().includes(modalPlayerSearch.toLowerCase()) || 
+      (p.dorsal && String(p.dorsal).includes(modalPlayerSearch));
+    return matchesTeam && searchMatch;
+  });
+
   // Mutaciones
   const createMutation = useMutation({
     mutationFn: (item: Omit<PointLog, 'id'>) => dataService.createPoint(item),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['points'] });
       showToast('success', 'Puntos asignados', 'Se han registrado los puntos al jugador.');
+      handleCloseModal();
+    },
+    onError: (err) => showToast('error', 'Error', err.message)
+  });
+
+  const createBulkMutation = useMutation({
+    mutationFn: (items: Omit<PointLog, 'id'>[]) => dataService.createPointsBulk(items),
+    onSuccess: (_, items) => {
+      queryClient.invalidateQueries({ queryKey: ['points'] });
+      showToast(
+        'success',
+        'Puntos asignados',
+        items.length === 1
+          ? 'Se han registrado los puntos al jugador.'
+          : `Se han registrado los puntos a ${items.length} jugadores.`
+      );
       handleCloseModal();
     },
     onError: (err) => showToast('error', 'Error', err.message)
@@ -114,16 +143,19 @@ export const Points: React.FC = () => {
 
   const handleOpenCreateModal = () => {
     setEditingPoint(null);
-    setTargetUserId(profiles.length > 0 ? profiles[0].id : '');
+    setSelectedUserIds([]);
+    setTargetUserId('');
     setDate(new Date().toISOString().split('T')[0]);
     setReason('');
     setPointsAmount('2');
+    setModalPlayerSearch('');
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (p: PointLog) => {
     setEditingPoint(p);
     setTargetUserId(p.user_id);
+    setSelectedUserIds([p.user_id]);
     setDate(p.date);
     setReason(p.reason);
     setPointsAmount(String(p.points));
@@ -135,9 +167,30 @@ export const Points: React.FC = () => {
     setEditingPoint(null);
   };
 
+  const toggleSelectPlayer = (id: string) => {
+    setSelectedUserIds(prev => 
+      prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllModal = () => {
+    const visibleIds = modalProfiles.map(p => p.id);
+    const newSelected = Array.from(new Set([...selectedUserIds, ...visibleIds]));
+    setSelectedUserIds(newSelected);
+  };
+
+  const handleDeselectAllModal = () => {
+    const visibleIds = new Set(modalProfiles.map(p => p.id));
+    setSelectedUserIds(prev => prev.filter(id => !visibleIds.has(id)));
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetUserId) {
+    if (!editingPoint && selectedUserIds.length === 0) {
+      showToast('error', 'Validación', 'Por favor selecciona al menos un jugador.');
+      return;
+    }
+    if (editingPoint && !targetUserId) {
       showToast('error', 'Validación', 'Por favor selecciona un jugador.');
       return;
     }
@@ -150,17 +203,22 @@ export const Points: React.FC = () => {
       return;
     }
 
-    const payload = {
-      user_id: targetUserId,
-      date,
-      reason: reason.trim(),
-      points: Number(pointsAmount)
-    };
-
     if (editingPoint) {
+      const payload = {
+        user_id: targetUserId,
+        date,
+        reason: reason.trim(),
+        points: Number(pointsAmount)
+      };
       updateMutation.mutate({ id: editingPoint.id, item: payload });
     } else {
-      createMutation.mutate(payload);
+      const items = selectedUserIds.map(userId => ({
+        user_id: userId,
+        date,
+        reason: reason.trim(),
+        points: Number(pointsAmount)
+      }));
+      createBulkMutation.mutate(items);
     }
   };
 
@@ -534,24 +592,111 @@ export const Points: React.FC = () => {
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        title={editingPoint ? 'Modificar Registro de Puntos' : 'Asignar Puntos a Jugador'}
+        title={editingPoint ? 'Modificar Registro de Puntos' : 'Asignar Puntos a Jugadores'}
       >
         <form onSubmit={handleSave} className="space-y-4">
-          <div>
-            <label className="form-label">Jugador Destinatario</label>
-            <select
-              value={targetUserId}
-              onChange={(e) => setTargetUserId(e.target.value)}
-              className="form-input bg-brand-black-bg"
-            >
-              <option value="">-- Seleccionar Jugador --</option>
-              {profiles.map(p => (
-                <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
-                  {p.dorsal ? `#${p.dorsal} ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {editingPoint ? (
+            <div>
+              <label className="form-label">Jugador Destinatario</label>
+              <select
+                value={targetUserId}
+                onChange={(e) => setTargetUserId(e.target.value)}
+                className="form-input bg-brand-black-bg"
+              >
+                <option value="">-- Seleccionar Jugador --</option>
+                {profiles.map(p => (
+                  <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
+                    {p.dorsal ? `#${p.dorsal} ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="form-label flex items-center gap-1.5 mb-0">
+                  <Users className="w-4 h-4 text-brand-red-600" />
+                  Jugadores Destinatarios
+                  <span className="text-xs font-normal text-brand-gray-muted ml-1">
+                    ({selectedUserIds.length} seleccionados)
+                  </span>
+                </label>
+                <div className="flex gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllModal}
+                    className="text-brand-red-500 hover:text-brand-red-400 font-semibold"
+                  >
+                    Seleccionar Todos
+                  </button>
+                  <span className="text-brand-gray-dark">|</span>
+                  <button
+                    type="button"
+                    onClick={handleDeselectAllModal}
+                    className="text-brand-gray-muted hover:text-brand-gray-light"
+                  >
+                    Desmarcar
+                  </button>
+                </div>
+              </div>
+
+              {/* Buscador dentro del modal */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-brand-gray-dark" />
+                <input
+                  type="text"
+                  className="form-input pl-8 py-1.5 text-xs w-full bg-brand-black-bg"
+                  placeholder="Buscar por nombre o dorsal..."
+                  value={modalPlayerSearch}
+                  onChange={(e) => setModalPlayerSearch(e.target.value)}
+                />
+              </div>
+
+              {/* Lista de selección de jugadores */}
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-brand-black-border rounded-lg p-2 bg-brand-black-bg/50">
+                {modalProfiles.length === 0 ? (
+                  <p className="text-xs text-brand-gray-muted text-center py-4">
+                    No se encontraron jugadores para esta búsqueda.
+                  </p>
+                ) : (
+                  modalProfiles.map((p) => {
+                    const isSelected = selectedUserIds.includes(p.id);
+                    const playerName = p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => toggleSelectPlayer(p.id)}
+                        className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-all border ${
+                          isSelected
+                            ? 'bg-brand-red-600/15 border-brand-red-600/40 text-brand-gray-light'
+                            : 'bg-brand-black-hover/30 border-transparent hover:bg-brand-black-hover text-brand-gray-muted hover:text-brand-gray-light'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="form-checkbox rounded text-brand-red-600 focus:ring-brand-red-600 bg-brand-black-bg border-brand-black-border cursor-pointer"
+                          />
+                          <img
+                            src={p.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
+                            alt={playerName}
+                            className="w-6 h-6 rounded-full object-cover border border-brand-black-border shrink-0"
+                          />
+                          <span className="text-xs font-medium truncate">
+                            {p.dorsal ? <strong className="text-brand-red-500 mr-1.5">#{p.dorsal}</strong> : null}
+                            {playerName}
+                          </span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-brand-red-500 shrink-0" />}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -619,8 +764,14 @@ export const Points: React.FC = () => {
             <button type="button" onClick={handleCloseModal} className="btn-secondary py-2 text-xs">
               Cancelar
             </button>
-            <button type="submit" className="btn-primary py-2 text-xs font-semibold">
-              Registrar Puntos
+            <button
+              type="submit"
+              disabled={createBulkMutation.isPending || createMutation.isPending}
+              className="btn-primary py-2 text-xs font-semibold disabled:opacity-50"
+            >
+              {!editingPoint && selectedUserIds.length > 1
+                ? `Registrar Puntos (${selectedUserIds.length} jugadores)`
+                : 'Registrar Puntos'}
             </button>
           </div>
         </form>
