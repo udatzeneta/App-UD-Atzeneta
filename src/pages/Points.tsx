@@ -59,13 +59,13 @@ export const Points: React.FC = () => {
   });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ['profiles'],
+    queryKey: ['profiles', filterTeam],
     queryFn: async () => {
       // 1. Obtener entrenadores (rol 2) de la tabla profiles
       const staffProfiles = await dataService.getProfilesByRoles([2]);
       
-      // 2. Obtener la lista oficial de jugadores de la plantilla a través de dataService.getPlayers()
-      const players = await dataService.getPlayers();
+      // 2. Obtener la lista oficial de jugadores de la plantilla a través de dataService.getPlayers(filterTeam)
+      const players = await dataService.getPlayers(filterTeam);
       
       // 3. Crear estructuras de perfil unificadas basadas únicamente en la plantilla de jugadores activos
       const playerProfiles = players.map(player => ({
@@ -77,7 +77,7 @@ export const Points: React.FC = () => {
         nickname: player.nickname || player.full_name,
         dorsal: player.dorsal,
         avatar_url: player.photo_url,
-        team_category: player.team_category,
+        team_category: player.team_category || filterTeam,
         email: player.email || ''
       }));
       

@@ -143,14 +143,18 @@ export const Players: React.FC = () => {
 
   // Rankings y Métricas Completa
   const rankings = React.useMemo(() => {
-    const validMatches = allMatches.filter((m: any) => filterCompetition === 'Todas' || m.competition === filterCompetition);
+    const validMatches = allMatches.filter((m: any) => {
+      if (filterCompetition === 'Todas') return true;
+      if (!m.competition) return filterCompetition === 'Liga';
+      return m.competition.toLowerCase().trim() === filterCompetition.toLowerCase().trim();
+    });
     const validMatchIds = new Set(validMatches.map((m: any) => m.id));
     const validStats = allPlayerStats.filter((s: any) => validMatchIds.has(s.match_id));
 
     const playerTotals: Record<string, { minutes: number, called: number, starter: number, goals: number, assists: number, conceded: number, yellow: number, red: number }> = {};
-    
+
     players.forEach((p: any) => {
-      playerTotals[p.id] = {
+      const initialStats = {
         minutes: p.minutes_played || 0,
         called: p.matches_played || 0,
         starter: 0,
@@ -160,17 +164,28 @@ export const Players: React.FC = () => {
         yellow: p.yellow_cards || 0,
         red: p.red_cards || 0
       };
+      playerTotals[p.id] = initialStats;
+      if (p.profile_id) {
+        playerTotals[p.profile_id] = initialStats;
+      }
     });
 
     if (validStats.length > 0) {
-      const hasStatsMap: Record<string, boolean> = {};
+      const resetTargets = new Set<any>();
       validStats.forEach((s: any) => {
-        if (!playerTotals[s.player_id]) return;
-        if (!hasStatsMap[s.player_id]) {
-          playerTotals[s.player_id] = { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 };
-          hasStatsMap[s.player_id] = true;
-        }
         const t = playerTotals[s.player_id];
+        if (!t) return;
+        if (!resetTargets.has(t)) {
+          t.minutes = 0;
+          t.called = 0;
+          t.starter = 0;
+          t.goals = 0;
+          t.assists = 0;
+          t.conceded = 0;
+          t.yellow = 0;
+          t.red = 0;
+          resetTargets.add(t);
+        }
         if (s.is_called_up) t.called += 1;
         if (s.is_starter) t.starter += 1;
         t.minutes += (s.minutes_played || 0);
@@ -321,9 +336,14 @@ export const Players: React.FC = () => {
 
   const topPlayers = (key: keyof typeof rankings[0]['stats'], ascending = false) => {
     return [...rankings]
-      .filter((p: any) => ascending ? true : (key === 'conceded' || p.stats[key] > 0))
-      .filter((p: any) => key === 'conceded' ? p.stats.minutes > 0 : true)
-      .sort((a: any, b: any) => ascending ? a.stats[key] - b.stats[key] : b.stats[key] - a.stats[key])
+      .filter((p: any) => {
+        if (key === 'conceded') {
+          return (p.position === 'Portero' || p.position?.toLowerCase().includes('portero')) && p.stats?.minutes > 0;
+        }
+        if (ascending) return true;
+        return (p.stats?.[key] || 0) > 0;
+      })
+      .sort((a: any, b: any) => ascending ? (a.stats?.[key] || 0) - (b.stats?.[key] || 0) : (b.stats?.[key] || 0) - (a.stats?.[key] || 0))
       .slice(0, 5);
   };
 
@@ -1429,7 +1449,7 @@ export const Players: React.FC = () => {
                         </td>
                         {(canEdit || canDelete) && (
                           <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex justify-end gap-1.5 transition-opacity">
                               {canEdit && (
                                 <button
                                   onClick={(e) => {
@@ -1481,9 +1501,9 @@ export const Players: React.FC = () => {
                   { title: 'Convocatorias', key: 'called', icon: ListIcon, asc: false },
                   { title: 'Goles Marcados', key: 'goals', icon: Target, asc: false },
                   { title: 'Asistencias', key: 'assists', icon: Navigation, asc: false },
-                  { title: 'Goles Encajados', key: 'conceded', icon: ShieldAlert, asc: true },
-                  { title: 'Tarjetas Amarillas', key: 'yellow', icon: AlertTriangle, asc: true },
-                  { title: 'Tarjetas Rojas', key: 'red', icon: ShieldAlert, asc: true },
+                  { title: 'Goles Encajados (Porteros)', key: 'conceded', icon: ShieldAlert, asc: true },
+                  { title: 'Tarjetas Amarillas', key: 'yellow', icon: AlertTriangle, asc: false },
+                  { title: 'Tarjetas Rojas', key: 'red', icon: ShieldAlert, asc: false },
                 ].map(category => (
                   <div key={category.key}>
                     <h4 className="text-xs font-bold text-brand-gray-muted uppercase mb-2 flex items-center gap-1.5 border-b border-brand-black-border pb-1">

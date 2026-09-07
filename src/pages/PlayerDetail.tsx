@@ -16,6 +16,7 @@ import { Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, TrainingAttenda
 import { exportToCSV } from '../utils/export';
 import html2pdf from 'html2pdf.js';
 import { PlayerFullPrintView } from '../components/players/PlayerFullPrintView';
+import { PhotoCropUpload } from '../components/PhotoCropUpload';
 
 const TransparentImage: React.FC<{ src: string, alt?: string, className?: string }> = ({ src, alt, className }) => {
   const [dataUrl, setDataUrl] = useState<string>(src);
@@ -92,6 +93,21 @@ export const PlayerDetail: React.FC = () => {
   const [physioNotes, setPhysioNotes] = useState('');
   const [physioTreatment, setPhysioTreatment] = useState('');
   const [physioDate, setPhysioDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Modal Editar Jugador
+  const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [teamCategory, setTeamCategory] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
+  const [dorsal, setDorsal] = useState('');
+  const [position, setPosition] = useState('Defensa Central');
+  const [dominantFoot, setDominantFoot] = useState<'Derecho' | 'Izquierdo' | 'Ambidiestro'>('Derecho');
+  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
 
   // ---- Queries ----
   const { data: players = [], isLoading: isLoadingPlayers } = useQuery({
@@ -304,6 +320,57 @@ export const PlayerDetail: React.FC = () => {
     },
     onError: (err: any) => showToast('error', 'Error', err.message)
   });
+
+  const updatePlayerMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Player> }) => dataService.updatePlayer(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      showToast('success', 'Jugador Actualizado', 'Los datos del jugador han sido guardados.');
+      setIsPlayerModalOpen(false);
+    },
+    onError: (err: any) => {
+      showToast('error', 'Error al actualizar', err.message || 'No se pudo guardar los cambios.');
+    }
+  });
+
+  const handleOpenEditPlayerModal = () => {
+    if (!player) return;
+    setFullName(player.full_name || '');
+    setNickname(player.nickname || '');
+    setPhotoUrl(player.photo_url || '');
+    setTeamCategory((player.team_category as any) || 'Primer Equipo');
+    setDorsal(player.dorsal?.toString() || '');
+    setPosition(player.position || 'Defensa Central');
+    setDominantFoot(player.dominant_foot || 'Derecho');
+    setHeight(player.height?.toString() || '');
+    setWeight(player.weight?.toString() || '');
+    setBirthDate(player.birth_date || '');
+    setPhone(player.phone || '');
+    setEmail(player.email || '');
+    setIsPlayerModalOpen(true);
+  };
+
+  const handleSavePlayer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim() || !playerId) return;
+
+    const payload: Partial<Player> = {
+      full_name: fullName.trim(),
+      nickname: nickname.trim() || undefined,
+      photo_url: photoUrl || undefined,
+      team_category: teamCategory,
+      dorsal: dorsal ? Number(dorsal) : undefined,
+      position,
+      dominant_foot: dominantFoot,
+      height: height ? Number(height) : undefined,
+      weight: weight ? Number(weight) : undefined,
+      birth_date: birthDate || undefined,
+      phone: phone.trim() || undefined,
+      email: email.trim() || undefined
+    };
+
+    updatePlayerMutation.mutate({ id: playerId, data: payload });
+  };
 
   // ---- Handlers ----
   const handleZoneClick = (zone: string, side: 'frontal' | 'posterior') => {
@@ -796,6 +863,14 @@ export const PlayerDetail: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> Volver a Plantilla
         </button>
         <div className="flex items-center gap-2">
+          {canEdit && (
+            <button
+              onClick={handleOpenEditPlayerModal}
+              className="px-3 py-2 bg-brand-black-card hover:bg-brand-black-hover text-brand-gray-light hover:text-white border border-brand-black-border rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold"
+            >
+              <Edit2 className="w-3.5 h-3.5" /> Editar Jugador
+            </button>
+          )}
           <button
             onClick={handleExportPlayerReport}
             className="px-3 py-2 bg-brand-red-600/10 hover:bg-brand-red-600 text-brand-gray-light hover:text-white border border-brand-red-600/25 hover:border-brand-red-600 rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold"
@@ -1651,6 +1726,176 @@ export const PlayerDetail: React.FC = () => {
           <div className="flex gap-2 justify-end pt-4 border-t border-brand-black-border">
             <button type="button" onClick={() => setIsPhysioModalOpen(false)} className="btn-secondary py-2 text-xs">Cancelar</button>
             <button type="submit" className="btn-primary py-2 text-xs font-semibold">Guardar Parte</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Editar Ficha de Jugador */}
+      <Modal
+        isOpen={isPlayerModalOpen}
+        onClose={() => setIsPlayerModalOpen(false)}
+        title="Editar Datos del Jugador"
+      >
+        <form onSubmit={handleSavePlayer} className="space-y-4 text-left">
+          {/* FOTO DE PERFIL (subida + recorte circular) */}
+          <PhotoCropUpload value={photoUrl} onChange={setPhotoUrl} />
+          <p className="text-[11px] text-brand-gray-muted -mt-2 px-1">
+            Sube una imagen y ajusta el recorte circular. También puedes pegar una URL directa manualmente si lo prefieres.
+          </p>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="O pega una URL de imagen directa..."
+            value={photoUrl.startsWith('data:') ? '' : photoUrl}
+            onChange={(e) => setPhotoUrl(e.target.value)}
+          />
+
+          {/* Nombre y Apellidos y Alias */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="form-label">Nombre y Apellidos</label>
+              <input
+                type="text"
+                required
+                className="form-input"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Nombre Futbolístico / Alias</label>
+              <input
+                type="text"
+                className="form-input"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Equipo actual</label>
+              <select
+                className="form-input bg-brand-black"
+                value={teamCategory}
+                onChange={(e) => setTeamCategory(e.target.value as any)}
+              >
+                <option value="Primer Equipo">Primer Equipo</option>
+                <option value="Juvenil">Filial (Juvenil)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Dorsal y Demarcación */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="form-label">Dorsal</label>
+              <input
+                type="number"
+                min="1"
+                max="99"
+                className="form-input"
+                value={dorsal}
+                onChange={(e) => setDorsal(e.target.value)}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="form-label">Posición / Demarcación Detallada</label>
+              <select
+                className="form-input bg-brand-black"
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+              >
+                <option value="Portero">Portero</option>
+                <option value="Lateral Derecho">Lateral Derecho</option>
+                <option value="Lateral Izquierdo">Lateral Izquierdo</option>
+                <option value="Defensa Central">Defensa Central</option>
+                <option value="Pivote Defensivo">Pivote Defensivo</option>
+                <option value="Mediocentro">Mediocentro</option>
+                <option value="Interior">Interior</option>
+                <option value="Extremo Derecho">Extremo Derecho</option>
+                <option value="Extremo Izquierdo">Extremo Izquierdo</option>
+                <option value="Mediapunta">Mediapunta</option>
+                <option value="Delantero Centro">Delantero Centro</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Pie Dominante, Estatura, Peso */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="form-label">Pie Dominante</label>
+              <select
+                className="form-input bg-brand-black"
+                value={dominantFoot}
+                onChange={(e) => setDominantFoot(e.target.value as any)}
+              >
+                <option value="Derecho">Derecho</option>
+                <option value="Izquierdo">Izquierdo</option>
+                <option value="Ambidiestro">Ambidiestro</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Estatura (cm)</label>
+              <input
+                type="number"
+                min="100"
+                max="220"
+                className="form-input"
+                value={height}
+                onChange={(e) => setHeight(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Peso Actual (kg)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="30"
+                max="150"
+                className="form-input"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Fecha de Nacimiento, Teléfono y Email */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="form-label">Fecha de Nacimiento</label>
+              <input
+                type="date"
+                className="form-input"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Teléfono</label>
+              <input
+                type="tel"
+                className="form-input"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Email de contacto</label>
+              <input
+                type="email"
+                className="form-input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 justify-end pt-4 border-t border-brand-black-border">
+            <button type="button" onClick={() => setIsPlayerModalOpen(false)} className="btn-secondary py-2 text-xs">
+              Cancelar
+            </button>
+            <button type="submit" className="btn-primary py-2 text-xs font-semibold" disabled={updatePlayerMutation.isPending}>
+              {updatePlayerMutation.isPending ? 'Guardando...' : 'Guardar Cambios'}
+            </button>
           </div>
         </form>
       </Modal>
