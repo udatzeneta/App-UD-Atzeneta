@@ -237,6 +237,15 @@ export interface ScoutingPlayer {
   comment?: string;
   phone?: string;
   scouting_player_history?: ScoutingPlayerHistory[];
+
+  // Campos alternativos usados como fallback cuando se mezcla con datos de plantilla rival editados a mano
+  matches_played?: number;
+  starter_count?: number;
+  minutes_played?: number;
+  goals?: number;
+  assists?: number;
+  yellow_cards?: number;
+  red_cards?: number;
 }
 
 export interface ScoutingPlayerHistory {

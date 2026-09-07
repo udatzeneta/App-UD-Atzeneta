@@ -30,7 +30,8 @@ export const OpponentRosterManager: React.FC<Props> = ({ players, onChange, oppo
       .map(p => p.season)
       .filter((s): s is string => Boolean(s));
     if (seasons.length === 0) return null;
-    return seasons.sort().at(-1)!;
+    const sorted = seasons.sort();
+    return sorted[sorted.length - 1];
   };
 
   // Construye la plantilla "actual": jugadores de la temporada más reciente, reforzando

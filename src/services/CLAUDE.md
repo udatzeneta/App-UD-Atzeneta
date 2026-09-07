@@ -7,11 +7,6 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3005 | 5:58 PM | 🔵 | Permission System and Data Services Already Implemented | ~440 |
-
-### Jul 29, 2026
-
-| ID | Time | T | Title | Read |
-|----|------|---|-------|------|
-| #3730 | 5:34 PM | 🔵 | Permissions system architecture investigation | ~406 |
+| #3076 | 7:34 PM | 🔴 | Mock Permission Cache Invalidation for Schema Changes | ~342 |
+| #3054 | 6:35 PM | 🟣 | Complete Mock Data System and Full-Featured CRUD Pages Implemented | ~840 |
 </claude-mem-context>
