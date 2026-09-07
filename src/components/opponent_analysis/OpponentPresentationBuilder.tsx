@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type {
   OpponentAnalysis, OpponentPresentation, PresentationSlide, PresentationBlock,
-  OpponentLibraryVideo,
+  OpponentLibraryVideo, OpponentRosterPlayer,
 } from '../../types';
 import {
   Plus, Play, Trash2, Edit2, ChevronUp, ChevronDown, ArrowLeft, LayoutGrid,
@@ -11,6 +12,8 @@ import {
 import { PresentationPlayer, BLOCK_LABELS } from './PresentationPlayer';
 import { OPPONENT_TAXONOMY, ABP_SIDES, catKey } from '../../constants/opponentTaxonomy';
 import { allLibraryClips } from '../../utils/opponentVideo';
+import { dataService } from '../../services/data';
+import { isSameTeam } from '../../utils/teamUtils';
 
 interface Props {
   analysis: OpponentAnalysis;
@@ -39,6 +42,54 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
 
   const editing = presentations.find(p => p.id === editingId) || null;
   const playing = presentations.find(p => p.id === playingId) || null;
+
+  const { data: scoutingPlayers = [] } = useQuery({
+    queryKey: ['scouting'],
+    queryFn: () => dataService.getScouting()
+  });
+
+  const teamScoutingPlayers = useMemo(() => {
+    if (!analysis?.opponent) return [];
+    return scoutingPlayers.filter(sp => isSameTeam(sp.team, analysis.opponent));
+  }, [scoutingPlayers, analysis?.opponent]);
+
+  const effectiveRoster = useMemo<OpponentRosterPlayer[]>(() => {
+    if (analysis?.roster_comments && analysis.roster_comments.length > 0) {
+      return analysis.roster_comments.map(p => {
+        const matchingSp = teamScoutingPlayers.find(sp => sp.player_name.toLowerCase() === p.name.toLowerCase() || (sp.dorsal && sp.dorsal === p.number));
+        if (!matchingSp) return p;
+        return {
+          ...p,
+          matches_played: (p.matches_played !== undefined && p.matches_played > 0) ? p.matches_played : (matchingSp.jugados ?? matchingSp.convocados ?? matchingSp.matches_played ?? 0),
+          starter_count: (p.starter_count !== undefined && p.starter_count > 0) ? p.starter_count : (matchingSp.titular ?? matchingSp.starter_count ?? 0),
+          minutes_played: (p.minutes_played !== undefined && p.minutes_played > 0) ? p.minutes_played : (matchingSp.minutes_played ?? 0),
+          goals: (p.goals !== undefined && p.goals > 0) ? p.goals : (matchingSp.goles ?? matchingSp.goals ?? 0),
+          assists: (p.assists !== undefined && p.assists > 0) ? p.assists : (matchingSp.assists ?? 0),
+          yellow_cards: (p.yellow_cards !== undefined && p.yellow_cards > 0) ? p.yellow_cards : (matchingSp.amarillas ?? matchingSp.yellow_cards ?? 0),
+          red_cards: (p.red_cards !== undefined && p.red_cards > 0) ? p.red_cards : (matchingSp.rojas ?? matchingSp.red_cards ?? 0),
+          photo_url: p.photo_url || matchingSp.photo_url,
+          position: p.position || matchingSp.position || 'DF'
+        };
+      });
+    }
+    return teamScoutingPlayers.map(sp => ({
+      id: `sp-${sp.id}`,
+      name: sp.player_name,
+      number: sp.dorsal || undefined,
+      position: sp.position || 'DF',
+      comments: sp.notes || '',
+      photo_url: sp.photo_url,
+      matches_played: sp.jugados ?? sp.convocados ?? sp.matches_played ?? 0,
+      starter_count: sp.titular ?? sp.starter_count ?? (sp.jugados ?? sp.convocados ?? sp.matches_played ?? 0),
+      minutes_played: sp.minutes_played ?? 0,
+      goals: sp.goles ?? sp.goals ?? 0,
+      assists: sp.assists ?? 0,
+      yellow_cards: sp.amarillas ?? sp.yellow_cards ?? 0,
+      red_cards: sp.rojas ?? sp.red_cards ?? 0,
+      rating: sp.rating,
+      is_featured: false
+    }));
+  }, [analysis?.roster_comments, teamScoutingPlayers]);
 
   // ----- Catálogo de contenido disponible (derivado del análisis) -----
   const catalog = useMemo<Record<PresentationBlock, CatalogItem[]>>(() => {
@@ -74,6 +125,45 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
             observations: analysis.observations,
           }
         })
+      });
+    }
+
+    // Jugadores / Plantilla (Bloque Jugadores)
+    if (effectiveRoster.length > 0) {
+      cat.jugadores.push({
+        key: 'roster-summary',
+        block: 'jugadores',
+        label: `Resumen de Plantilla y Jugadores Destacados (${effectiveRoster.length} jug.)`,
+        make: () => ({
+          id: uid(),
+          sourceKey: 'roster-summary',
+          type: 'general_summary',
+          block: 'jugadores',
+          title: 'Jugadores Destacados y Plantilla Rival',
+          summaryData: {
+            rosterComments: effectiveRoster,
+          }
+        })
+      });
+
+      effectiveRoster.forEach(p => {
+        cat.jugadores.push({
+          key: `player-${p.id}`,
+          block: 'jugadores',
+          label: `Ficha: ${p.name} ${p.number ? `(#${p.number})` : ''} ${p.is_featured ? '⭐' : ''}`,
+          make: () => ({
+            id: uid(),
+            sourceKey: `player-${p.id}`,
+            type: 'text',
+            block: 'jugadores',
+            title: `Jugador Rival: ${p.name} ${p.number ? `(#${p.number})` : ''}`,
+            text: `Posición: ${p.position || 'Sin posición'}\n` +
+                  `Partidos: ${p.matches_played ?? 0} | Titular: ${p.starter_count ?? 0}\n` +
+                  `Minutos: ${p.minutes_played ? p.minutes_played + "'" : '0'}\n` +
+                  `Estadísticas: ${p.goals ?? 0} Goles | 🟨 ${p.yellow_cards ?? 0} Amarillas | 🟥 ${p.red_cards ?? 0} Rojas\n` +
+                  (p.comments ? `\nObservaciones Tácticas:\n${p.comments}` : '')
+          })
+        });
       });
     }
 

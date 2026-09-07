@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactPlayer from 'react-player';
 import type { OpponentLibraryVideo, OpponentVideoClip } from '../../types';
 import {
-  X, Scissors, Clock, Play, Trash2, Wand2, Zap, Plus, AlertTriangle, Film, ExternalLink,
+  X, Scissors, Clock, Play, Trash2, Wand2, Zap, Plus, AlertTriangle, Film, ExternalLink, Search, Filter,
 } from 'lucide-react';
 import { ClipAnnotationEditor } from './ClipAnnotationEditor';
 import { FastClipperModal } from './FastClipperModal';
@@ -27,6 +27,26 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
   const [draftClip, setDraftClip] = useState<OpponentVideoClip | null>(null);
   const [isFastClipping, setIsFastClipping] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const filteredClips = video.clips.filter(clip => {
+    const matchesSearch = !searchQuery.trim() ||
+      (clip.title || '').toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+      (clip.description || '').toLowerCase().includes(searchQuery.toLowerCase().trim());
+    if (!matchesSearch) return false;
+
+    if (selectedCategory === 'all') return true;
+    if (selectedCategory === 'uncategorized') return !clip.category?.phase;
+    if (selectedCategory === 'con_balon') return clip.category?.phase === 'con_balon';
+    if (selectedCategory === 'sin_balon') return clip.category?.phase === 'sin_balon';
+    if (selectedCategory === 'abp') return clip.category?.phase === 'abp';
+    if (selectedCategory.includes(':')) {
+      const [p, s] = selectedCategory.split(':');
+      return clip.category?.phase === p && clip.category?.sub === s;
+    }
+    return true;
+  });
 
   // Overlay state
   const [dims, setDims] = useState({ cw: 0, ch: 0 });
@@ -52,7 +72,19 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
   const setClips = (clips: OpponentVideoClip[]) => onChange({ ...video, clips });
 
   const addClip = async () => {
+    setPlaying(false);
     const player = playerRef.current;
+    if (player) {
+      try {
+        if (typeof player.pause === 'function') {
+          player.pause();
+        } else if (typeof player.getInternalPlayer === 'function') {
+          player.getInternalPlayer()?.pause?.();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
     let t = 0;
     if (player) {
       if (typeof player.getCurrentTime === 'function') {
@@ -237,21 +269,83 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
         {/* Columna Clips */}
         {video.clippable && (
           <div className="w-full lg:w-[420px] shrink-0 border-t lg:border-t-0 lg:border-l border-brand-black-border bg-brand-black flex flex-col min-h-0">
-            <div className="px-4 py-3 border-b border-brand-black-border flex items-center justify-between shrink-0">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wider">
-                <Scissors className="w-4 h-4 text-brand-red-600" /> Cortes ({video.clips.length})
-              </h3>
+            {/* Cabecera y Filtros de Cortes */}
+            <div className="px-4 py-3 border-b border-brand-black-border flex flex-col gap-2.5 shrink-0 bg-brand-black">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wider">
+                  <Scissors className="w-4 h-4 text-brand-red-600" /> Cortes ({filteredClips.length}{filteredClips.length !== video.clips.length ? ` / ${video.clips.length}` : ''})
+                </h3>
+                {(searchQuery || selectedCategory !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setSelectedCategory('all'); }}
+                    className="text-[10px] text-brand-red-500 hover:text-white font-semibold underline transition-colors"
+                  >
+                    Limpiar filtro
+                  </button>
+                )}
+              </div>
+
+              {/* Buscador por Nombre */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-brand-gray-dark absolute left-2.5 top-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por nombre o comentario..."
+                  className="w-full bg-black border border-brand-black-border text-xs text-brand-gray-light placeholder:text-brand-gray-dark rounded-lg pl-8 pr-7 py-1.5 outline-none focus:border-brand-red-600 transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-2 text-brand-gray-dark hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Selector / Filtro por Tipo de Jugada */}
+              <div className="flex items-center gap-1.5 bg-black border border-brand-black-border rounded-lg px-2.5 py-1">
+                <Filter className="w-3.5 h-3.5 text-brand-red-500 shrink-0" />
+                <select
+                  value={selectedCategory}
+                  onChange={e => setSelectedCategory(e.target.value)}
+                  className="bg-transparent text-xs text-brand-gray-light font-semibold outline-none w-full cursor-pointer"
+                >
+                  <option value="all" className="bg-brand-black text-white">Todas las jugadas</option>
+                  <option value="con_balon" className="bg-brand-black text-white">⚽ Con Balón (Todas)</option>
+                  <option value="con_balon:salida_balon" className="bg-brand-black text-white">↳ Salida de balón</option>
+                  <option value="con_balon:canalizacion" className="bg-brand-black text-white">↳ Canalización</option>
+                  <option value="con_balon:finalizacion" className="bg-brand-black text-white">↳ Finalización</option>
+                  <option value="sin_balon" className="bg-brand-black text-white">🛡️ Sin Balón (Todas)</option>
+                  <option value="sin_balon:presion_alta" className="bg-brand-black text-white">↳ Presión alta</option>
+                  <option value="sin_balon:repliegue_medio" className="bg-brand-black text-white">↳ Repliegue medio</option>
+                  <option value="sin_balon:repliegue_bajo" className="bg-brand-black text-white">↳ Repliegue bajo</option>
+                  <option value="abp" className="bg-brand-black text-white">🎯 ABP (Todas)</option>
+                  <option value="abp:corners" className="bg-brand-black text-white">↳ Córners</option>
+                  <option value="abp:faltas" className="bg-brand-black text-white">↳ Faltas</option>
+                  <option value="abp:saques_banda" className="bg-brand-black text-white">↳ Saques de banda</option>
+                  <option value="uncategorized" className="bg-brand-black text-white">Sin catalogar</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
-              {video.clips.length === 0 ? (
+              {filteredClips.length === 0 ? (
                 <div className="text-center py-10 text-brand-gray-muted text-sm border border-dashed border-brand-black-border rounded-xl">
                   <Scissors className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                  Aún no hay cortes.<br />Crea uno con "Nuevo Corte".
+                  {video.clips.length === 0 ? (
+                    <>Aún no hay cortes.<br />Crea uno con "Nuevo Corte".</>
+                  ) : (
+                    <>No hay cortes que coincidan con la búsqueda.<br />Prueba a cambiar el filtro.</>
+                  )}
                 </div>
               ) : (
                 (() => {
-                  const groupedClips = video.clips.reduce((acc, clip) => {
+                  const groupedClips = filteredClips.reduce((acc, clip) => {
                     const label = catLabel(clip.category);
                     if (!acc[label]) acc[label] = [];
                     acc[label].push(clip);

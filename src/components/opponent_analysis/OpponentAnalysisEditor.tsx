@@ -4,6 +4,7 @@ import { Save, X, LayoutDashboard, Users, MoveRight, MoveLeft, Target } from 'lu
 import { OpponentVideoClipper } from './OpponentVideoClipper';
 import { TaskBoardEditor } from '../TaskBoardEditor';
 import { OpponentRosterManager } from './OpponentRosterManager';
+import { isSameTeam } from '../../utils/teamUtils';
 
 interface Props {
   initialData?: OpponentAnalysis | null;
@@ -38,9 +39,11 @@ export const OpponentAnalysisEditor: React.FC<Props> = ({
 
   useEffect(() => {
     if (initialData) {
-      const isKnown = ffcvTeams.includes(initialData.opponent) || scoutingTeams.includes(initialData.opponent);
-      if (isKnown) {
-        setOpponentSelect(initialData.opponent);
+      const matchFFCV = ffcvTeams.find(t => isSameTeam(t, initialData.opponent));
+      const matchScouting = scoutingTeams.find(t => isSameTeam(t, initialData.opponent));
+      const matchedName = matchFFCV || matchScouting;
+      if (matchedName) {
+        setOpponentSelect(matchedName);
         setIsManualOpponent(false);
       } else {
         setOpponentSelect('manual');

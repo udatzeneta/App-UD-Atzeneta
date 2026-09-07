@@ -13,6 +13,7 @@ import {
 import { FormationPitch } from './FormationPitch';
 import { TaskBoardEditor } from '../TaskBoardEditor';
 import { ClipAnnotationRenderer } from './ClipAnnotationRenderer';
+import { isSameTeam } from '../../utils/teamUtils';
 import { YouTubePlayer } from './YouTubePlayer';
 import { detectVideoProvider } from '../../utils/opponentVideo';
 import { getValidUrl, formatTime } from '../../utils/opponentVideo';
@@ -324,7 +325,7 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
   // Escudo: primero el del rival (equipo FFCV por nombre), si no el del club.
   const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: () => dataService.getTeams() });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => dataService.getSettings() });
-  const opponentShield = teams.find(t => t.name?.toLowerCase() === opponentName.toLowerCase())?.shield_url || null;
+  const opponentShield = teams.find(t => isSameTeam(t.name, opponentName))?.shield_url || null;
   const clubLogo = settings?.logo_url || null;
   const shield = opponentShield || clubLogo;
   const initials = opponentName.trim().slice(0, 3).toUpperCase();
@@ -569,29 +570,46 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                   {summaryData.rosterComments && summaryData.rosterComments.length > 0 && (
                     <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-5 shadow-premium border-l-4 border-l-amber-500">
                       <h3 className="text-sm font-black text-amber-500 uppercase mb-4 tracking-wide">Jugadores Destacados</h3>
-                      <div className="flex flex-col gap-4">
-                        {summaryData.rosterComments.map((p, i) => (
-                          <div key={i} className="flex gap-3 items-start bg-black border border-brand-black-border rounded-lg p-2.5">
-                            <div className="w-12 h-12 shrink-0 bg-brand-black-border rounded overflow-hidden border border-brand-black-border">
-                              {p.photo_url ? (
-                                <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center bg-brand-black text-brand-gray-muted">
-                                  <span className="text-[10px] font-bold uppercase">{p.number ? `Nº${p.number}` : 'No'}</span>
+                      <div className="flex flex-col gap-3">
+                        {summaryData.rosterComments.map((p, i) => {
+                          const yellow = p.yellow_cards || 0;
+                          const isSanction = yellow > 0 && yellow % 5 === 0;
+                          const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
+                          return (
+                            <div key={i} className="flex flex-col gap-2 bg-black border border-brand-black-border rounded-lg p-3">
+                              <div className="flex gap-3 items-center">
+                                <div className="w-10 h-10 shrink-0 bg-brand-black-border rounded overflow-hidden border border-brand-black-border flex items-center justify-center">
+                                  {p.photo_url ? (
+                                    <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-[10px] font-bold uppercase">{p.number ? `#${p.number}` : '-'}</span>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-bold text-white text-sm truncate">{p.name} {p.number ? `(#${p.number})` : ''}</span>
+                                    {p.position && <span className="text-[10px] text-brand-gray-muted uppercase shrink-0 font-mono bg-brand-black px-1.5 py-0.5 rounded">{p.position}</span>}
+                                  </div>
+                                  {isSanction && <span className="text-[9px] font-black text-red-400 block mt-0.5">🟨 Sancionado (5ª Amarilla)</span>}
+                                  {isWarning && <span className="text-[9px] font-bold text-amber-400 block mt-0.5">⚠️ Apercibido (4ª Amarilla)</span>}
+                                </div>
+                              </div>
+                              
+                              {(p.matches_played !== undefined || p.starter_count !== undefined || p.goals !== undefined || p.yellow_cards !== undefined) && (
+                                <div className="flex flex-wrap gap-3 text-[10px] bg-brand-black p-1.5 rounded border border-brand-black-border/50 text-brand-gray-light font-mono">
+                                  <span>PJ: <strong className="text-white">{p.matches_played ?? '-'}</strong></span>
+                                  <span>Titular: <strong className="text-sky-400">{p.starter_count ?? '-'}</strong></span>
+                                  <span>Goles: <strong className="text-emerald-400">{p.goals ?? 0}</strong></span>
+                                  <span>🟨: <strong className="text-yellow-400">{p.yellow_cards ?? 0}</strong></span>
                                 </div>
                               )}
-                            </div>
-                            <div className="flex flex-col flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2 mb-0.5">
-                                <span className="font-bold text-white text-sm truncate">{p.name} {p.number ? `(Nº${p.number})` : ''}</span>
-                                {p.position && <span className="text-[10px] text-brand-gray-muted uppercase shrink-0">{p.position}</span>}
-                              </div>
-                              <p className="text-xs text-brand-gray-light leading-snug whitespace-pre-wrap line-clamp-3">
-                                {p.comments || 'Sin descripción'}
+
+                              <p className="text-xs text-brand-gray-light leading-snug whitespace-pre-wrap">
+                                {p.comments || 'Sin descripción táctica'}
                               </p>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}

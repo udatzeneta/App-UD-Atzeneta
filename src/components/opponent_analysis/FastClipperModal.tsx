@@ -79,8 +79,8 @@ export const FastClipperModal: React.FC<Props> = ({ videoUrl, onAddClip, onClose
       </div>
 
       {/* Reproductor Central */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-0 relative">
-        <div className="w-full max-w-6xl aspect-video bg-black rounded-lg overflow-hidden border border-brand-black-border shadow-2xl relative">
+      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-h-0 relative overflow-y-auto no-scrollbar">
+        <div className="w-full max-w-[1600px] aspect-video max-h-[calc(100vh-220px)] bg-black rounded-lg overflow-hidden border border-brand-black-border shadow-2xl relative flex items-center justify-center">
           <ReactPlayer
             ref={playerRef}
             src={videoUrl}

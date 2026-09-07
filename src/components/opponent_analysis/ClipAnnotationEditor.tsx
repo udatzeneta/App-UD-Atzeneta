@@ -7,7 +7,7 @@ import { ClipAnnotationRenderer } from './ClipAnnotationRenderer';
 import {
   X, Save, Trash2, MousePointer2, Sun, UserCircle2,
   ArrowUpRight, Lasso, Waypoints, Search as MagnifierIcon, Type,
-  Play, Pause, Snowflake, Eraser, Check
+  Play, Pause, Snowflake, Eraser, Check, SkipBack, SkipForward, Clock, Timer
 } from 'lucide-react';
 
 const COLORS = ['#ef4444', '#eab308', '#22c55e', '#3b82f6', '#ffffff', '#f97316'];
@@ -58,10 +58,54 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
   const [dims, setDims] = useState({ cw: 0, ch: 0 });
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState<number>(clip.freezeTime ?? clip.start ?? 0);
-  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelineZoom, setTimelineZoom] = useState(30);
   const [showCategoryPrompt, setShowCategoryPrompt] = useState(false);
   const [tempCategory, setTempCategory] = useState<ClipCategory | undefined>(clip.category);
   const [tempTitle, setTempTitle] = useState<string>(clip.title === 'Nuevo Clip' || !clip.title ? '' : clip.title);
+
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const [startStr, setStartStr] = useState<string>(fmt(clip.start ?? 0));
+  const [endStr, setEndStr] = useState<string>(fmt(clip.end ?? (clip.start ?? 0) + 10));
+
+  useEffect(() => {
+    setStartStr(fmt(start));
+  }, [start]);
+
+  useEffect(() => {
+    setEndStr(fmt(end));
+  }, [end]);
+
+  const parseTimeToSeconds = (str: string): number | null => {
+    if (!str || !str.trim()) return null;
+    const trimmed = str.trim();
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':').map(p => parseInt(p, 10));
+      if (parts.some(isNaN)) return null;
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    const sec = parseFloat(trimmed);
+    return isNaN(sec) ? null : Math.floor(sec);
+  };
+
+  const handleStartSubmit = (val: string) => {
+    const parsed = parseTimeToSeconds(val);
+    if (parsed !== null && parsed >= 0 && parsed < end) {
+      setStart(parsed);
+      seekTo(parsed, false);
+    } else {
+      setStartStr(fmt(start));
+    }
+  };
+
+  const handleEndSubmit = (val: string) => {
+    const parsed = parseTimeToSeconds(val);
+    if (parsed !== null && parsed > start && (duration ? parsed <= duration : true)) {
+      setEnd(parsed);
+    } else {
+      setEndStr(fmt(end));
+    }
+  };
 
   const playerRef = useRef<any>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -267,23 +311,58 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
     setSelectedId(null);
   };
 
+  const togglePlayPause = () => {
+    if (autoPauseTimerRef.current) {
+      clearTimeout(autoPauseTimerRef.current);
+      autoPauseTimerRef.current = null;
+    }
+    if (playing) {
+      const t = playerRef.current?.currentTime ?? currentTime;
+      setFreezeTime(t);
+      setCurrentTime(t);
+      setPlaying(false);
+    } else {
+      if (currentTime >= end || currentTime < start) {
+        seekTo(start, false);
+      } else if (playerRef.current) {
+        try { playerRef.current.currentTime = currentTime; } catch { /* noop */ }
+      }
+      setPlaying(true);
+    }
+  };
+
+  const jumpToStart = () => {
+    seekTo(start, frozen);
+  };
+
+  const jumpToEnd = () => {
+    seekTo(end, frozen);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (readOnly) return;
       const el = document.activeElement;
       const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+      if (typing) return;
+
+      if (e.key === ' ' || e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        togglePlayPause();
+        return;
+      }
       if ((e.key === 'Enter' || e.key === 'Escape') && drawingLineId) {
         finishLine();
         setTool('select');
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && !typing) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         deleteSelected();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, readOnly, drawingLineId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId, readOnly, drawingLineId, playing, currentTime, end, start]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = () => {
     if (!tempCategory?.phase || !tempTitle.trim()) {
@@ -352,8 +431,6 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
     window.addEventListener('pointerup', onUp);
   };
 
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-
   const spotlights = annotations.filter(a => a.type === 'spotlight');
 
   const content = (
@@ -413,9 +490,9 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
         )}
 
         {/* Lienzo del vídeo */}
-        <div className="flex-1 flex items-center justify-center p-4 min-h-0">
-          <div className="w-full max-w-5xl">
-            <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden border border-brand-black-border">
+        <div className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0 overflow-y-auto no-scrollbar">
+          <div className="w-full max-w-[1600px] flex flex-col items-center justify-center my-auto">
+            <div className="relative w-full aspect-video max-h-[calc(100vh-210px)] bg-black rounded-lg overflow-hidden border border-brand-black-border flex items-center justify-center shadow-2xl">
               {(() => {
                 const Player: any = ReactPlayer;
                 return (
@@ -595,37 +672,71 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                     </div>
                   </>
                 )}
-                  </div>
-                </div>
               </div>
+            </div>
+          </div>
               {duration > 0 && (
-                <div className="flex justify-between mt-1 text-[10px] text-brand-gray-light font-medium font-mono">
-                  <span>{fmt(frozen ? freezeTime : currentTime)}</span>
-                  <span>Corte: {fmt(start)} – {fmt(end)} ({fmt(Math.max(0, end - start))})</span>
-                  <span>{fmt(duration)}</span>
+                <div className="flex items-center justify-between mt-2 px-1 text-[11px] font-mono text-brand-gray-light">
+                  <div className="flex items-center gap-1.5 bg-[#18181b] border border-white/10 rounded-md px-2.5 py-1">
+                    <span className="text-[10px] text-brand-gray-muted uppercase font-semibold">Posición:</span>
+                    <span className="text-white font-bold">{fmt(frozen ? freezeTime : currentTime)}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-[#18181b] border border-brand-red-600/30 rounded-md px-3 py-1 shadow-sm">
+                    <span className="text-[10px] text-brand-red-500 uppercase font-bold tracking-wider">Corte:</span>
+                    <span className="text-white font-bold">{fmt(start)} – {fmt(end)}</span>
+                    <span className="text-brand-gray-dark text-[10px]">•</span>
+                    <span className="text-[10px] text-brand-gray-muted uppercase font-semibold">Duración:</span>
+                    <span className="text-amber-400 font-extrabold">{fmt(Math.max(0, end - start))}</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 bg-[#18181b] border border-white/10 rounded-md px-2.5 py-1">
+                    <span className="text-[10px] text-brand-gray-muted uppercase font-semibold">Vídeo:</span>
+                    <span className="text-brand-gray-light font-bold">{fmt(duration)}</span>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Controles inferiores */}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (autoPauseTimerRef.current) {
-                    clearTimeout(autoPauseTimerRef.current);
-                    autoPauseTimerRef.current = null;
-                  }
-                  if (!playing && currentTime >= end) {
-                    seekTo(start, false);
-                  }
-                  setPlaying(p => !p);
-                }}
-                className="flex items-center gap-1.5 bg-black border border-brand-black-border rounded-lg px-3 py-2 text-xs text-brand-gray-light hover:text-white"
-              >
-                {playing ? <><Pause className="w-4 h-4" /> Pausar</> : <><Play className="w-4 h-4" /> Reproducir</>}
-              </button>
+            {/* Controles inferiores ultra-modernos */}
+            <div className="mt-3 flex flex-wrap items-center gap-2.5 bg-black/70 border border-white/10 p-2.5 rounded-xl backdrop-blur-md shadow-2xl">
+              {/* Grupo 1: Reproducción y Saltos (Inicio/Fin) */}
+              <div className="flex items-center gap-1 bg-[#18181b] border border-white/10 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={jumpToStart}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-black/40 text-brand-gray-light hover:text-white hover:bg-brand-red-600/20 hover:border-brand-red-600/40 border border-transparent transition-all font-semibold text-xs"
+                  title="Ir al inicio del corte"
+                >
+                  <SkipBack className="w-3.5 h-3.5 text-brand-red-500" />
+                  <span className="hidden sm:inline text-[11px]">Inicio</span>
+                </button>
 
+                <button
+                  type="button"
+                  onClick={togglePlayPause}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-brand-red-600 hover:bg-brand-red-500 text-white font-bold text-xs transition-all shadow-md active:scale-95"
+                  title={playing ? 'Pausar vídeo' : 'Reproducir vídeo'}
+                >
+                  {playing ? (
+                    <><Pause className="w-3.5 h-3.5 fill-current text-white" /> Pausar</>
+                  ) : (
+                    <><Play className="w-3.5 h-3.5 fill-current text-white" /> Reproducir</>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={jumpToEnd}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-black/40 text-brand-gray-light hover:text-white hover:bg-brand-red-600/20 hover:border-brand-red-600/40 border border-transparent transition-all font-semibold text-xs"
+                  title="Ir al final del corte"
+                >
+                  <span className="hidden sm:inline text-[11px]">Fin</span>
+                  <SkipForward className="w-3.5 h-3.5 text-brand-red-500" />
+                </button>
+              </div>
+
+              {/* Grupo 2: Congelar Fotograma */}
               {!readOnly && (
                 <button
                   type="button"
@@ -634,45 +745,93 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                     setFreezeTime(Math.max(0, t));
                     setPlaying(false);
                   }}
-                  className="flex items-center gap-1.5 bg-black border border-brand-black-border rounded-lg px-3 py-2 text-xs text-brand-gray-light hover:text-white"
-                  title="Congelar el fotograma actual para anotar"
+                  className="flex items-center gap-1.5 bg-[#18181b] hover:bg-brand-black-card border border-white/10 hover:border-brand-red-600/50 rounded-lg px-3 py-2 text-xs text-brand-gray-light hover:text-white transition-all shadow-sm"
+                  title="Congelar el fotograma actual para dibujar y anotar"
                 >
-                  <Snowflake className="w-4 h-4 text-brand-red-500" /> Congelar aquí
+                  <Snowflake className="w-3.5 h-3.5 text-brand-red-500" />
+                  <span>Congelar aquí</span>
+                  <span className="text-[10px] text-brand-gray-muted font-mono bg-black px-1.5 py-0.5 rounded border border-white/5 ml-1">
+                    {fmt(freezeTime)}
+                  </span>
                 </button>
               )}
 
-              <span className="text-xs text-brand-gray-muted font-mono bg-black border border-brand-black-border rounded-lg px-3 py-2">
-                Frame: {fmt(freezeTime)}
-              </span>
-
+              {/* Grupo 3: Edición manual de minutajes y Duración */}
               {!readOnly && (
-                <div className="flex items-center gap-2 bg-black border border-brand-black-border rounded-lg pl-3 pr-2 py-1.5">
+                <div className="flex items-center gap-2 bg-[#18181b] border border-white/10 rounded-lg px-3 py-1.5 shadow-sm">
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-brand-red-500" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider hidden md:inline">Corte:</span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-brand-gray-muted">Inicio:</span>
+                    <input
+                      type="text"
+                      value={startStr}
+                      onChange={(e) => setStartStr(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleStartSubmit(startStr); }}
+                      onBlur={() => handleStartSubmit(startStr)}
+                      className="w-16 bg-black border border-brand-black-border text-brand-red-400 text-xs rounded px-1.5 py-0.5 text-center font-mono outline-none focus:border-brand-red-600 font-bold transition-colors"
+                      title="Minutaje de inicio (ej. 27:15). Presiona Enter para aplicar."
+                    />
+                  </div>
+
+                  <span className="text-brand-gray-dark text-xs font-bold">–</span>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-brand-gray-muted">Fin:</span>
+                    <input
+                      type="text"
+                      value={endStr}
+                      onChange={(e) => setEndStr(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleEndSubmit(endStr); }}
+                      onBlur={() => handleEndSubmit(endStr)}
+                      className="w-16 bg-black border border-brand-black-border text-brand-red-400 text-xs rounded px-1.5 py-0.5 text-center font-mono outline-none focus:border-brand-red-600 font-bold transition-colors"
+                      title="Minutaje de fin (ej. 27:35). Presiona Enter para aplicar."
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1 pl-2 border-l border-white/10 ml-1">
+                    <Timer className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[11px] text-brand-gray-muted hidden lg:inline">Duración:</span>
+                    <span className="text-xs font-mono font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                      {fmt(Math.max(0, end - start))}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Grupo 4: Ajustes de Pausa y Zoom */}
+              {!readOnly && (
+                <div className="flex items-center gap-2 bg-[#18181b] border border-white/10 rounded-lg px-3 py-1.5">
                   <span className="text-xs text-brand-gray-muted whitespace-nowrap">Pausa (seg):</span>
                   <input
                     type="number"
                     min={1} max={10}
                     value={pauseDuration}
                     onChange={(e) => setPauseDuration(Number(e.target.value) || 3)}
-                    className="w-12 bg-transparent text-white text-xs border border-brand-black-border rounded px-1 py-0.5 text-center outline-none focus:border-brand-red-600"
-                    title="Segundos que se detendrá el vídeo para ver el dibujo"
+                    className="w-12 bg-black text-white text-xs border border-brand-black-border rounded px-1 py-0.5 text-center outline-none focus:border-brand-red-600 font-mono font-bold"
+                    title="Segundos que se detendrá el vídeo para ver la anotación"
                   />
                 </div>
               )}
 
-              {/* Slider de Zoom del timeline */}
-              <div className="flex items-center gap-2 bg-black border border-brand-black-border rounded-lg px-3 py-1.5 ml-2">
-                <span className="text-xs text-brand-gray-muted whitespace-nowrap" title="Ampliar dimensiones de la línea de tiempo">Zoom:</span>
+              {/* Slider de Zoom de Timeline */}
+              <div className="flex items-center gap-2 bg-[#18181b] border border-white/10 rounded-lg px-3 py-1.5">
+                <span className="text-xs text-brand-gray-muted font-medium whitespace-nowrap" title="Ampliar dimensiones de la línea de tiempo">Zoom:</span>
                 <input
                   type="range"
-                  min="1" max="20" step="0.5"
+                  min="1" max="100" step="1"
                   value={timelineZoom}
                   onChange={(e) => setTimelineZoom(Number(e.target.value))}
-                  className="w-24 accent-brand-red-600"
+                  className="w-24 accent-brand-red-600 cursor-pointer"
                   title="Zoom en la línea de tiempo"
                 />
-                <span className="text-xs text-brand-gray-muted font-mono w-6 text-right">{timelineZoom}x</span>
+                <span className="text-xs text-brand-red-500 font-mono font-bold w-7 text-right">{timelineZoom}x</span>
               </div>
 
+              {/* Grupo 5: Acciones de Selección y Limpieza */}
               {!readOnly && selected && (
                 <button
                   type="button"

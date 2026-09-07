@@ -6,6 +6,8 @@ import { dataService } from '../../services/data';
 import { FormationPlayerPicker } from './FormationPlayerPicker';
 import { RefreshCw, User, DownloadCloud, Star } from 'lucide-react';
 
+import { isSameTeam } from '../../utils/teamUtils';
+
 interface Props {
   value?: OpponentFormation;
   onChange: (data: OpponentFormation) => void;
@@ -45,7 +47,7 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
     enabled: !readOnly,
   });
   const teamScouting = opponentName
-    ? scoutingPlayers.filter(p => p.team?.toLowerCase() === opponentName.toLowerCase())
+    ? scoutingPlayers.filter(p => isSameTeam(p.team, opponentName))
     : [];
 
   const commit = (players: FormationPlayer[], system = data.system) => onChange({ system, players });

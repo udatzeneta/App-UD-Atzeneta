@@ -866,7 +866,7 @@ export const PlayerDetail: React.FC = () => {
                   </span>
                 </div>
               )}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
                 <h2 className="text-xl sm:text-2xl font-extrabold text-white leading-tight">
                   {player.nickname || player.full_name}
                 </h2>
@@ -874,6 +874,16 @@ export const PlayerDetail: React.FC = () => {
                   <span className="px-2 py-0.5 bg-brand-red-600 text-white text-[10px] font-black uppercase rounded animate-pulse">Baja</span>
                 ) : (
                   <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-black uppercase rounded">Disponible</span>
+                )}
+                {(dynYellows || player.yellow_cards || 0) > 0 && (dynYellows || player.yellow_cards || 0) % 5 === 0 && (
+                  <span className="px-2 py-0.5 bg-red-950/60 text-red-400 border border-red-800 text-[10px] font-black uppercase rounded animate-pulse flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-red-500" /> Sancionado (5ª Amarilla)
+                  </span>
+                )}
+                {(dynYellows || player.yellow_cards || 0) > 0 && ((dynYellows || player.yellow_cards || 0) + 1) % 5 === 0 && (
+                  <span className="px-2 py-0.5 bg-amber-950/60 text-amber-400 border border-amber-800 text-[10px] font-black uppercase rounded flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-amber-500" /> Apercibido (4ª Amarilla)
+                  </span>
                 )}
               </div>
             </div>

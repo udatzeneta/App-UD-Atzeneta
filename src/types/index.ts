@@ -360,6 +360,15 @@ export interface OpponentRosterPlayer {
   position?: string;
   comments: string;
   photo_url?: string;
+  matches_played?: number;
+  starter_count?: number;
+  minutes_played?: number;
+  goals?: number;
+  assists?: number;
+  yellow_cards?: number;
+  red_cards?: number;
+  rating?: number;
+  is_featured?: boolean;
 }
 
 export interface OpponentAnalysisBlock {

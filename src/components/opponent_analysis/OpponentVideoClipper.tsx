@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactPlayer from 'react-player';
 import { OpponentVideo, OpponentVideoClip } from '../../types';
-import { Plus, Trash2, Link, Play, Scissors, Clock, Wand2, X, Zap } from 'lucide-react';
+import { Plus, Trash2, Link, Play, Scissors, Clock, Wand2, X, Zap, Search, Filter } from 'lucide-react';
 import { ClipAnnotationEditor } from './ClipAnnotationEditor';
 import { FastClipperModal } from './FastClipperModal';
 import { TaskBoardEditor } from '../TaskBoardEditor';
@@ -21,10 +21,30 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [isFastClipping, setIsFastClipping] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const playerRef = useRef<any>(null);
 
   const activeVideo = videos.find(v => v.id === activeVideoId);
   const editingClip = activeVideo?.clips.find(c => c.id === editingClipId) || null;
+
+  const filteredActiveClips = (activeVideo?.clips || []).filter(clip => {
+    const matchesSearch = !searchQuery.trim() ||
+      (clip.title || '').toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+      (clip.description || '').toLowerCase().includes(searchQuery.toLowerCase().trim());
+    if (!matchesSearch) return false;
+
+    if (selectedCategory === 'all') return true;
+    if (selectedCategory === 'uncategorized') return !clip.category?.phase;
+    if (selectedCategory === 'con_balon') return clip.category?.phase === 'con_balon';
+    if (selectedCategory === 'sin_balon') return clip.category?.phase === 'sin_balon';
+    if (selectedCategory === 'abp') return clip.category?.phase === 'abp';
+    if (selectedCategory.includes(':')) {
+      const [p, s] = selectedCategory.split(':');
+      return clip.category?.phase === p && clip.category?.sub === s;
+    }
+    return true;
+  });
 
   const getValidUrl = (url: string) => {
     if (!url) return '';
@@ -57,6 +77,17 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
 
   const addClip = () => {
     if (!activeVideoId) return;
+    if (playerRef.current) {
+      try {
+        if (typeof playerRef.current.pause === 'function') {
+          playerRef.current.pause();
+        } else if (typeof playerRef.current.getInternalPlayer === 'function') {
+          playerRef.current.getInternalPlayer()?.pause?.();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
     const currentTime = playerRef.current?.currentTime || playerRef.current?.getCurrentTime?.() || 0;
     const newClip: OpponentVideoClip = {
       id: `clip-${Date.now()}`,
@@ -275,12 +306,21 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
 
           {/* Gestor de Clips */}
           <div className="space-y-3">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
               <h4 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider">
                 <Scissors className="w-3.5 h-3.5 text-brand-red-600" />
-                Cortes de Vídeo
+                Cortes de Vídeo ({filteredActiveClips.length}{filteredActiveClips.length !== activeVideo.clips.length ? ` / ${activeVideo.clips.length}` : ''})
               </h4>
               <div className="flex items-center gap-2">
+                {(searchQuery || selectedCategory !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setSelectedCategory('all'); }}
+                    className="text-[10px] text-brand-red-500 hover:text-white font-semibold underline transition-colors"
+                  >
+                    Limpiar filtro
+                  </button>
+                )}
                 <button type="button" onClick={() => setIsFastClipping(true)} className="flex items-center gap-1 bg-brand-red-600/10 text-xs font-semibold text-brand-red-500 hover:bg-brand-red-600 hover:text-white px-2 py-1 rounded transition-colors">
                   <Zap className="w-3 h-3" /> Extracción Rápida
                 </button>
@@ -290,12 +330,65 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
               </div>
             </div>
 
-            {activeVideo.clips.length === 0 ? (
-              <p className="text-xs text-brand-gray-dark italic">No hay cortes definidos.</p>
+            {/* Buscador y Filtro por Tipo de Jugada */}
+            {activeVideo.clips.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Buscador por Nombre */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-brand-gray-dark absolute left-2.5 top-2.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Buscar corte por nombre..."
+                    className="w-full bg-black border border-brand-black-border text-xs text-brand-gray-light placeholder:text-brand-gray-dark rounded-lg pl-8 pr-7 py-1.5 outline-none focus:border-brand-red-600 transition-colors"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-2 text-brand-gray-dark hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Selector por Tipo de Jugada */}
+                <div className="flex items-center gap-1.5 bg-black border border-brand-black-border rounded-lg px-2.5 py-1">
+                  <Filter className="w-3.5 h-3.5 text-brand-red-500 shrink-0" />
+                  <select
+                    value={selectedCategory}
+                    onChange={e => setSelectedCategory(e.target.value)}
+                    className="bg-transparent text-xs text-brand-gray-light font-semibold outline-none w-full cursor-pointer"
+                  >
+                    <option value="all" className="bg-brand-black text-white">Todas las jugadas</option>
+                    <option value="con_balon" className="bg-brand-black text-white">⚽ Con Balón (Todas)</option>
+                    <option value="con_balon:salida_balon" className="bg-brand-black text-white">↳ Salida de balón</option>
+                    <option value="con_balon:canalizacion" className="bg-brand-black text-white">↳ Canalización</option>
+                    <option value="con_balon:finalizacion" className="bg-brand-black text-white">↳ Finalización</option>
+                    <option value="sin_balon" className="bg-brand-black text-white">🛡️ Sin Balón (Todas)</option>
+                    <option value="sin_balon:presion_alta" className="bg-brand-black text-white">↳ Presión alta</option>
+                    <option value="sin_balon:repliegue_medio" className="bg-brand-black text-white">↳ Repliegue medio</option>
+                    <option value="sin_balon:repliegue_bajo" className="bg-brand-black text-white">↳ Repliegue bajo</option>
+                    <option value="abp" className="bg-brand-black text-white">🎯 ABP (Todas)</option>
+                    <option value="abp:corners" className="bg-brand-black text-white">↳ Córners</option>
+                    <option value="abp:faltas" className="bg-brand-black text-white">↳ Faltas</option>
+                    <option value="abp:saques_banda" className="bg-brand-black text-white">↳ Saques de banda</option>
+                    <option value="uncategorized" className="bg-brand-black text-white">Sin catalogar</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {filteredActiveClips.length === 0 ? (
+              <p className="text-xs text-brand-gray-dark italic">
+                {activeVideo.clips.length === 0 ? 'No hay cortes definidos.' : 'No hay cortes que coincidan con el filtro.'}
+              </p>
             ) : (
               <div className="space-y-3 pr-2 overflow-y-auto max-h-48 no-scrollbar">
                 {(() => {
-                  const groupedClips = activeVideo.clips.reduce((acc, clip) => {
+                  const groupedClips = filteredActiveClips.reduce((acc, clip) => {
                     const label = catLabel(clip.category);
                     if (!acc[label]) acc[label] = [];
                     acc[label].push(clip);

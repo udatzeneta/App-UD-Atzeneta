@@ -118,7 +118,30 @@ export const Players: React.FC = () => {
     queryFn: () => dataService.getAllPlayerMatchStats()
   });
 
-  // Rankings
+  const getSanctionInfo = (yellowCards: number) => {
+    if (!yellowCards || yellowCards <= 0) return null;
+    if (yellowCards % 5 === 0) {
+      return {
+        type: 'sanction' as const,
+        count: yellowCards,
+        label: `Sanción (${yellowCards}ª Amarilla)`,
+        shortLabel: `${yellowCards}ª Amarilla`,
+        badgeClass: 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
+      };
+    }
+    if ((yellowCards + 1) % 5 === 0) {
+      return {
+        type: 'warning' as const,
+        count: yellowCards,
+        label: `Apercibido (${yellowCards}ª Amarilla)`,
+        shortLabel: `${yellowCards}ª Amarilla (Apercibido)`,
+        badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold'
+      };
+    }
+    return null;
+  };
+
+  // Rankings y Métricas Completa
   const rankings = React.useMemo(() => {
     const validMatches = allMatches.filter((m: any) => filterCompetition === 'Todas' || m.competition === filterCompetition);
     const validMatchIds = new Set(validMatches.map((m: any) => m.id));
@@ -127,35 +150,49 @@ export const Players: React.FC = () => {
     const playerTotals: Record<string, { minutes: number, called: number, starter: number, goals: number, assists: number, conceded: number, yellow: number, red: number }> = {};
     
     players.forEach((p: any) => {
-      playerTotals[p.id] = { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 };
+      playerTotals[p.id] = {
+        minutes: p.minutes_played || 0,
+        called: p.matches_played || 0,
+        starter: 0,
+        goals: p.goals || 0,
+        assists: p.assists || 0,
+        conceded: 0,
+        yellow: p.yellow_cards || 0,
+        red: p.red_cards || 0
+      };
     });
 
-    validStats.forEach((s: any) => {
-      if (!playerTotals[s.player_id]) return;
-      const t = playerTotals[s.player_id];
-      if (s.is_called_up) t.called += 1;
-      if (s.is_starter) t.starter += 1;
-      t.minutes += (s.minutes_played || 0);
-      t.goals += (s.goals || 0);
-      t.assists += (s.assists || 0);
-      t.conceded += (s.conceded_goals || 0);
-      t.yellow += (s.yellow_cards || 0);
-      if (s.red_card) t.red += 1;
-    });
+    if (validStats.length > 0) {
+      const hasStatsMap: Record<string, boolean> = {};
+      validStats.forEach((s: any) => {
+        if (!playerTotals[s.player_id]) return;
+        if (!hasStatsMap[s.player_id]) {
+          playerTotals[s.player_id] = { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 };
+          hasStatsMap[s.player_id] = true;
+        }
+        const t = playerTotals[s.player_id];
+        if (s.is_called_up) t.called += 1;
+        if (s.is_starter) t.starter += 1;
+        t.minutes += (s.minutes_played || 0);
+        t.goals += (s.goals || 0);
+        t.assists += (s.assists || 0);
+        t.conceded += (s.conceded_goals || 0);
+        t.yellow += (s.yellow_cards || 0);
+        if (s.red_card) t.red += 1;
+      });
+    }
 
-    return players.map((p: any) => ({
-      ...p,
-      stats: playerTotals[p.id] || { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 }
-    }));
+    return players.map((p: any) => {
+      const stats = playerTotals[p.id] || { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 };
+      const sanction = getSanctionInfo(stats.yellow);
+      return {
+        ...p,
+        stats,
+        sanction
+      };
+    });
   }, [players, allMatches, allPlayerStats, filterCompetition]);
 
-  const topPlayers = (key: keyof typeof rankings[0]['stats'], ascending = false) => {
-    return [...rankings]
-      .filter((p: any) => ascending ? true : (key === 'conceded' || p.stats[key] > 0))
-      .filter((p: any) => key === 'conceded' ? p.stats.minutes > 0 : true)
-      .sort((a: any, b: any) => ascending ? a.stats[key] - b.stats[key] : b.stats[key] - a.stats[key])
-      .slice(0, 5);
-  };
 
   // React Query - Cargar Jugadores de Scouting para Importar
   const { data: scoutingPlayers = [] } = useQuery({
@@ -269,6 +306,26 @@ export const Players: React.FC = () => {
       return matchesSearch && matchesPosition && matchesStatus && matchesTeam;
     });
   }, [rankings, searchTerm, filterPosition, filterStatus, filterTeam]);
+
+  // 11 Más Utilizados (XI Titular Habitual)
+  const mostUsed11 = React.useMemo(() => {
+    return [...filteredPlayers]
+      .sort((a: any, b: any) => {
+        if (b.stats.starter !== a.stats.starter) {
+          return b.stats.starter - a.stats.starter;
+        }
+        return b.stats.minutes - a.stats.minutes;
+      })
+      .slice(0, 11);
+  }, [filteredPlayers]);
+
+  const topPlayers = (key: keyof typeof rankings[0]['stats'], ascending = false) => {
+    return [...rankings]
+      .filter((p: any) => ascending ? true : (key === 'conceded' || p.stats[key] > 0))
+      .filter((p: any) => key === 'conceded' ? p.stats.minutes > 0 : true)
+      .sort((a: any, b: any) => ascending ? a.stats[key] - b.stats[key] : b.stats[key] - a.stats[key])
+      .slice(0, 5);
+  };
 
   // Reset del formulario de jugador
   const handleOpenCreateModal = () => {
@@ -893,6 +950,139 @@ export const Players: React.FC = () => {
             </div>
           ) : viewMode === 'stats' ? (
             <div className="space-y-6">
+              {/* 11 Más Utilizados (XI Titular Habitual) */}
+              <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 shadow-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-brand-black-border">
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Trophy className="w-5 h-5 text-yellow-500" /> 11 Más Utilizados (XI Titular Habitual)
+                    </h3>
+                    <p className="text-xs text-brand-gray-muted mt-0.5">
+                      Los 11 jugadores que acumulan más partidos como titulares y minutos en la temporada.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-brand-red-600/10 text-brand-red-400 border border-brand-red-600/30 shrink-0 w-fit">
+                    11 Titulares
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {mostUsed11.map((p: any, idx: number) => (
+                    <div
+                      key={p.id}
+                      onClick={() => navigate(`/players/${p.id}`)}
+                      className="bg-brand-black-card border border-brand-black-border hover:border-brand-red-600/50 p-3 rounded-lg flex items-center gap-3 cursor-pointer transition-all group relative overflow-hidden"
+                    >
+                      <div className="absolute top-1 right-2 text-[10px] font-mono font-bold text-brand-gray-dark">
+                        #{idx + 1}
+                      </div>
+                      <div className="w-10 h-10 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                        {p.photo_url ? (
+                          <img src={p.photo_url} alt={p.full_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Users className="w-5 h-5 text-brand-gray-dark" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          {p.dorsal && (
+                            <span className="text-[10px] font-black text-brand-red-500 bg-brand-red-600/10 px-1 py-0.2 rounded shrink-0">
+                              {p.dorsal}
+                            </span>
+                          )}
+                          <span className="text-xs font-bold text-white truncate group-hover:text-brand-red-400 transition-colors">
+                            {p.nickname || p.full_name}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-brand-gray-muted block truncate mt-0.5">
+                          {p.position || 'Sin Posición'}
+                        </span>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-900/40">
+                            {p.stats.starter} Titular{p.stats.starter !== 1 ? 'es' : ''}
+                          </span>
+                          <span className="text-[10px] text-brand-gray-muted font-mono font-bold">
+                            {p.stats.minutes}' min
+                          </span>
+                        </div>
+                        {p.sanction && (
+                          <div className="mt-1.5">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${p.sanction.badgeClass} flex items-center gap-1 w-fit`}>
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {p.sanction.shortLabel}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Control de Tarjetas y Sanciones por Ciclo de 5 Amarillas */}
+              <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 shadow-lg">
+                <div className="flex items-center justify-between mb-3 pb-2 border-b border-brand-black-border">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-500" /> Control de Tarjetas y Sanciones (Ciclos de 5 Amarillas)
+                    </h3>
+                    <p className="text-xs text-brand-gray-muted mt-0.5">
+                      Monitoreo automático de sanciones por acumulación de 5 amarillas o apercibidos.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Cumplen Sanción (5, 10, 15... amarillas) */}
+                  <div className="bg-brand-black-card border border-red-900/30 p-3.5 rounded-lg space-y-2">
+                    <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-red-500" /> Cumplen Sanción (5 / 10 / 15 Amarillas)
+                    </h4>
+                    {filteredPlayers.filter((p: any) => p.sanction?.type === 'sanction').length === 0 ? (
+                      <p className="text-xs text-brand-gray-muted italic py-1">Sin jugadores sancionados por ciclo de 5 amarillas.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {filteredPlayers.filter((p: any) => p.sanction?.type === 'sanction').map((p: any) => (
+                          <div key={p.id} onClick={() => navigate(`/players/${p.id}`)} className="flex items-center justify-between bg-brand-black p-2 rounded border border-red-800/40 cursor-pointer hover:border-red-600 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white">{p.nickname || p.full_name}</span>
+                              <span className="text-[10px] text-brand-gray-muted">({p.position || 'Sin demarcación'})</span>
+                            </div>
+                            <span className="text-xs font-black text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800 animate-pulse">
+                              🟨 {p.stats.yellow} Amarillas (Sanción)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Apercibidos (4, 9, 14... amarillas) */}
+                  <div className="bg-brand-black-card border border-amber-900/30 p-3.5 rounded-lg space-y-2">
+                    <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-500" /> Apercibidos (4 / 9 / 14 Amarillas)
+                    </h4>
+                    {filteredPlayers.filter((p: any) => p.sanction?.type === 'warning').length === 0 ? (
+                      <p className="text-xs text-brand-gray-muted italic py-1">Sin jugadores apercibidos a 1 tarjeta del ciclo.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {filteredPlayers.filter((p: any) => p.sanction?.type === 'warning').map((p: any) => (
+                          <div key={p.id} onClick={() => navigate(`/players/${p.id}`)} className="flex items-center justify-between bg-brand-black p-2 rounded border border-amber-800/40 cursor-pointer hover:border-amber-500 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white">{p.nickname || p.full_name}</span>
+                              <span className="text-[10px] text-brand-gray-muted">({p.position || 'Sin demarcación'})</span>
+                            </div>
+                            <span className="text-xs font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800">
+                              ⚠️ {p.stats.yellow} Amarillas (Apercibido)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Gráfica de Dispersión */}
               <div className="bg-brand-black border border-brand-black-border rounded-xl p-6">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -1089,13 +1279,20 @@ export const Players: React.FC = () => {
 
                     <div className="flex items-center justify-between mt-4 border-t border-brand-black-border/40 pt-3">
                       {/* Estado */}
-                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
-                        {player.physical_status || 'Disponible'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
+                          {player.physical_status || 'Disponible'}
+                        </span>
+                        {player.sanction && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full border ${player.sanction.badgeClass}`} title={player.sanction.label}>
+                            {player.sanction.shortLabel}
+                          </span>
+                        )}
+                      </div>
 
                       {/* Métricas breves */}
                       <span className="text-[10px] text-brand-gray-muted">
-                        <span className="font-bold text-brand-gray-light">{player.stats?.goals || 0}</span> G / <span className="font-bold text-brand-gray-light">{player.stats?.assists || 0}</span> A
+                        <span className="font-bold text-emerald-400">{player.stats?.goals || 0}</span> G / <span className="font-bold text-brand-gray-light">{player.stats?.starter || 0}</span> Tit / <span className="font-bold text-brand-gray-light">{player.stats?.minutes || 0}'</span>
                       </span>
                     </div>
 
@@ -1137,11 +1334,17 @@ export const Players: React.FC = () => {
               <table className="w-full text-left text-sm text-brand-gray-light min-w-[800px]">
                 <thead className="bg-brand-black-bg border-b border-brand-black-border text-xs uppercase text-brand-gray-muted">
                   <tr>
-                    <th className="px-4 py-3 font-semibold">Jugador</th>
-                    <th className="px-4 py-3 font-semibold">Posición</th>
-                    <th className="px-4 py-3 font-semibold text-center">Goles / Asist.</th>
-                    <th className="px-4 py-3 font-semibold text-center">Estado</th>
-                    {(canEdit || canDelete) && <th className="px-4 py-3 font-semibold text-right">Acciones</th>}
+                    <th className="px-3 py-3 font-semibold">Jugador</th>
+                    <th className="px-3 py-3 font-semibold">Posición</th>
+                    <th className="px-3 py-3 font-semibold text-center">PJ</th>
+                    <th className="px-3 py-3 font-semibold text-center">Titular</th>
+                    <th className="px-3 py-3 font-semibold text-center">Minutos</th>
+                    <th className="px-3 py-3 font-semibold text-center">Goles</th>
+                    <th className="px-3 py-3 font-semibold text-center">Asist.</th>
+                    <th className="px-3 py-3 font-semibold text-center">🟨 Amarillas</th>
+                    <th className="px-3 py-3 font-semibold text-center">🟥 Rojas</th>
+                    <th className="px-3 py-3 font-semibold text-center">Estado</th>
+                    {(canEdit || canDelete) && <th className="px-3 py-3 font-semibold text-right">Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1156,10 +1359,10 @@ export const Players: React.FC = () => {
                       <tr 
                         key={player.id}
                         onClick={() => navigate(`/players/${player.id}`)}
-                        className="border-b border-brand-black-border/50 hover:bg-brand-black-hover transition-colors cursor-pointer group"
+                        className="border-b border-brand-black-border/50 hover:bg-brand-black-hover transition-colors cursor-pointer group text-xs"
                       >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
                               {player.photo_url ? (
                                 <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
@@ -1186,15 +1389,40 @@ export const Players: React.FC = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-xs">
+                        <td className="px-3 py-2.5 text-xs">
                           <span className="text-brand-gray-muted uppercase font-semibold text-[10px]">
                             {player.position || 'Sin Demarcación'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs text-center">
-                          <span className="font-bold text-brand-gray-light">{player.stats?.goals || 0}</span> G / <span className="font-bold text-brand-gray-light">{player.stats?.assists || 0}</span> A
+                        <td className="px-3 py-2.5 text-xs text-center font-bold text-white">
+                          {player.stats?.called || player.matches_played || 0}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-2.5 text-xs text-center font-bold text-emerald-400">
+                          {player.stats?.starter || 0}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-center font-mono font-bold text-brand-gray-light">
+                          {player.stats?.minutes || 0}'
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-center font-bold text-emerald-400">
+                          {player.stats?.goals || 0}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-center font-bold text-brand-gray-light">
+                          {player.stats?.assists || 0}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="font-semibold text-yellow-400">{player.stats?.yellow || 0}</span>
+                            {player.sanction && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded border ${player.sanction.badgeClass}`} title={player.sanction.label}>
+                                {player.sanction.shortLabel}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-center font-bold text-red-500">
+                          {player.stats?.red || 0}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
                           <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
                             {player.physical_status || 'Disponible'}
                           </span>

@@ -5,7 +5,7 @@ import { dataService } from '../services/data';
 import { OpponentAnalysis, OpponentLibraryVideo, OpponentSubSection, OpponentFormation, OpponentPresentation } from '../types';
 import {
   ArrowLeft, ShieldAlert, Award, FileText, Settings as TacticalIcon,
-  Edit2, Save, X, Users, Film, Swords, Shield, Flag, Presentation, Plus, Trash2,
+  Edit2, Save, X, Users, Film, Swords, Shield, Flag, Presentation, Plus, Trash2, Star,
 } from 'lucide-react';
 import { OpponentRosterManager } from '../components/opponent_analysis/OpponentRosterManager';
 import { OpponentVideoLibrary } from '../components/opponent_analysis/OpponentVideoLibrary';
@@ -15,6 +15,7 @@ import { OpponentPresentationBuilder } from '../components/opponent_analysis/Opp
 import { detectVideoProvider } from '../utils/opponentVideo';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
+import { isSameTeam, isSamePlayer, normalizePlayerName } from '../utils/teamUtils';
 
 // Navegación por anclas del mural.
 const NAV = [
@@ -35,12 +36,146 @@ export const OpponentAnalysisMural: React.FC = () => {
   const { showToast } = useToast();
   const canEdit = hasPermission('opponent_analysis', 'editar');
 
+  const [selectedSeason, setSelectedSeason] = useState<'2026-2027' | '2025-2026'>('2026-2027');
+
   const { data: analysisList = [], isLoading } = useQuery({
     queryKey: ['opponent_analysis'],
     queryFn: () => dataService.getOpponentAnalysis(),
   });
 
   const analysis = analysisList.find(a => a.id === id);
+
+  const { data: scoutingPlayers = [] } = useQuery({
+    queryKey: ['scouting'],
+    queryFn: () => dataService.getScouting(),
+  });
+
+  const getPlayerScore = (sp: typeof scoutingPlayers[0], seasonFilter: '2026-2027' | '2025-2026') => {
+    const isTargetSeason = seasonFilter === '2026-2027'
+      ? (sp.season === '2026-2027' || sp.season === '2026/2027')
+      : (sp.season === '2025-2026' || sp.season === '2025/2026');
+
+    const hasStats = (Number(sp.titular) || 0) + (Number(sp.jugados) || 0) + (Number(sp.convocados) || 0) + (Number(sp.goles) || 0) + (Number(sp.amarillas) || 0);
+
+    if (isTargetSeason && hasStats > 0) return 10000 + hasStats;
+    if (hasStats > 0) return 5000 + hasStats;
+    if (isTargetSeason) return 100;
+    return 0;
+  };
+
+  const allTeamScoutingPlayers = useMemo(() => {
+    if (!analysis?.opponent) return [];
+    return scoutingPlayers.filter(sp => isSameTeam(sp.team, analysis.opponent));
+  }, [scoutingPlayers, analysis?.opponent]);
+
+  const teamScoutingPlayers = useMemo(() => {
+    const bestByPlayer = new Map<string, typeof scoutingPlayers[0]>();
+    allTeamScoutingPlayers.forEach(sp => {
+      const normKey = normalizePlayerName(sp.player_name) || `dorsal-${sp.dorsal}`;
+      const existing = bestByPlayer.get(normKey);
+      const spScore = getPlayerScore(sp, selectedSeason);
+
+      if (!existing) {
+        bestByPlayer.set(normKey, sp);
+      } else {
+        const existingScore = getPlayerScore(existing, selectedSeason);
+        if (spScore > existingScore) {
+          bestByPlayer.set(normKey, sp);
+        }
+      }
+    });
+
+    return Array.from(bestByPlayer.values());
+  }, [allTeamScoutingPlayers, selectedSeason]);
+
+  const displayRoster = useMemo(() => {
+    const parseNum = (val: any) => {
+      if (val === undefined || val === null || val === '') return 0;
+      const n = Number(val);
+      return isNaN(n) ? 0 : n;
+    };
+
+    if (analysis?.roster_comments && analysis.roster_comments.length > 0) {
+      return analysis.roster_comments.map(p => {
+        const candidates = allTeamScoutingPlayers.filter(sp => isSamePlayer(sp.player_name, p.name, sp.dorsal, p.number));
+
+        // Preferir el registro scrapeado de la temporada seleccionada tal cual (aunque sea 0, p.ej. si esta
+        // temporada solo se ha jugado 1 partido y el jugador no lo disputó). Solo si no hay ningún registro
+        // scrapeado de esa temporada en concreto (equipo aún no sincronizado) se recurre al mejor disponible
+        // de otra temporada; la línea de "otra temporada" ya muestra ese dato aparte, sin mezclarlo aquí.
+        const isTargetSeasonRow = (sp: typeof candidates[0]) =>
+          selectedSeason === '2026-2027'
+            ? (sp.season === '2026-2027' || sp.season === '2026/2027')
+            : (sp.season === '2025-2026' || sp.season === '2025/2026');
+        const seasonSp = candidates.find(isTargetSeasonRow);
+        const matchingSp = seasonSp || candidates.sort((a, b) => getPlayerScore(b, selectedSeason) - getPlayerScore(a, selectedSeason))[0];
+
+        const spMatches = matchingSp ? (parseNum(matchingSp.jugados) || parseNum(matchingSp.convocados) || parseNum(matchingSp.matches_played)) : 0;
+        const spStarter = matchingSp ? (parseNum(matchingSp.titular) || parseNum(matchingSp.starter_count) || spMatches) : 0;
+        const spGoals = matchingSp ? (parseNum(matchingSp.goles) || parseNum(matchingSp.goals)) : 0;
+        const spYellow = matchingSp ? (parseNum(matchingSp.amarillas) || parseNum(matchingSp.yellow_cards)) : 0;
+        const spRed = matchingSp ? (parseNum(matchingSp.rojas) || parseNum(matchingSp.red_cards)) : 0;
+
+        const pMatches = parseNum(p.matches_played);
+        const pStarter = parseNum(p.starter_count);
+        const pGoals = parseNum(p.goals);
+        const pYellow = parseNum(p.yellow_cards);
+        const pRed = parseNum(p.red_cards);
+
+        // Si hay un registro scrapeado de la temporada seleccionada, manda siempre (aunque sea 0 partidos).
+        // Si no hay ninguno, se cae al mejor disponible (spMatches) y, en su defecto, a lo guardado a mano.
+        const matches = seasonSp ? spMatches : (spMatches > 0 ? spMatches : pMatches);
+        const starter = seasonSp ? spStarter : (spMatches > 0 ? spStarter : pStarter);
+        const goals = seasonSp ? spGoals : (spMatches > 0 ? spGoals : pGoals);
+        const yellow_cards = seasonSp ? spYellow : (spMatches > 0 ? spYellow : pYellow);
+        const red_cards = seasonSp ? spRed : (spMatches > 0 ? spRed : pRed);
+
+        return {
+          ...p,
+          matches_played: matches,
+          starter_count: starter,
+          minutes_played: parseNum(p.minutes_played) || parseNum(matchingSp?.minutes_played),
+          goals,
+          assists: parseNum(p.assists) || parseNum(matchingSp?.assists),
+          yellow_cards,
+          red_cards,
+          photo_url: p.photo_url || matchingSp?.photo_url,
+          position: p.position || matchingSp?.position || 'DF'
+        };
+      });
+    }
+
+    return teamScoutingPlayers.map(sp => {
+      const matches = parseNum(sp.jugados) || parseNum(sp.convocados) || parseNum(sp.matches_played);
+      const starter = parseNum(sp.titular) || parseNum(sp.starter_count) || matches;
+      return {
+        id: `sp-${sp.id}`,
+        name: sp.player_name,
+        number: sp.dorsal || undefined,
+        position: sp.position || 'DF',
+        comments: sp.notes || '',
+        photo_url: sp.photo_url,
+        matches_played: matches,
+        starter_count: starter,
+        minutes_played: parseNum(sp.minutes_played),
+        goals: parseNum(sp.goles) || parseNum(sp.goals),
+        assists: parseNum(sp.assists),
+        yellow_cards: parseNum(sp.amarillas) || parseNum(sp.yellow_cards),
+        red_cards: parseNum(sp.rojas) || parseNum(sp.red_cards),
+        rating: sp.rating,
+        is_featured: false
+      };
+    });
+  }, [analysis?.roster_comments, teamScoutingPlayers]);
+
+  // Rankings del equipo rival derivados del scraping
+  const rivalRankings = useMemo(() => {
+    const list = [...displayRoster];
+    const topScorers = [...list].filter(p => (p.goals || 0) > 0).sort((a, b) => (b.goals || 0) - (a.goals || 0)).slice(0, 11);
+    const topStarters = [...list].filter(p => (p.starter_count || 0) > 0).sort((a, b) => (b.starter_count || 0) - (a.starter_count || 0)).slice(0, 11);
+    const topCards = [...list].filter(p => (p.yellow_cards || 0) > 0 || (p.red_cards || 0) > 0).sort((a, b) => (b.yellow_cards || 0) - (a.yellow_cards || 0)).slice(0, 11);
+    return { topScorers, topStarters, topCards };
+  }, [displayRoster]);
 
   // --- Estado local para la videoteca (guardado con debounce) ---
   const [libraryVideos, setLibraryVideos] = useState<OpponentLibraryVideo[]>([]);
@@ -72,6 +207,17 @@ export const OpponentAnalysisMural: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['opponent_analysis'] }),
     onError: (err: any) => showToast('error', 'Error', err.message),
   });
+
+  // --- Filter estado para Jugadores Destacados vs Todos ---
+  const [rosterFilter, setRosterFilter] = useState<'all' | 'featured'>('all');
+
+  const filteredRoster = useMemo(() => {
+    if (rosterFilter === 'featured') {
+      const featured = displayRoster.filter(p => p.is_featured);
+      return featured.length > 0 ? featured : displayRoster;
+    }
+    return displayRoster;
+  }, [displayRoster, rosterFilter]);
 
   // Sincroniza el estado local de la videoteca con el servidor y migra
   // vídeos legacy (dentro de los bloques antiguos) a la videoteca una vez.
@@ -440,42 +586,274 @@ export const OpponentAnalysisMural: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => { setEditData(analysis); setEditingRoster(true); }} className="flex items-center gap-1.5 text-xs font-semibold text-brand-gray-muted bg-brand-black-card border border-brand-black-border px-3 py-1.5 rounded-lg hover:text-white hover:border-brand-red-600 transition-colors">
+                  <button
+                    onClick={() => {
+                      setEditData({
+                        ...analysis,
+                        roster_comments: (analysis?.roster_comments && analysis.roster_comments.length > 0) ? analysis.roster_comments : displayRoster
+                      });
+                      setEditingRoster(true);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-brand-gray-muted bg-brand-black-card border border-brand-black-border px-3 py-1.5 rounded-lg hover:text-white hover:border-brand-red-600 transition-colors"
+                  >
                     <Edit2 className="w-3 h-3" /> Editar
                   </button>
                 )
               )}
             />
 
+            {!editingRoster && displayRoster.length > 0 && (
+              <div className="mb-6 space-y-4">
+                {/* Selector de Temporada (Actual vs Pasada) */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-brand-black-card border border-brand-black-border p-3.5 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-brand-gray-muted uppercase tracking-wider">Temporada Análisis:</span>
+                    <div className="flex items-center gap-1.5 bg-black p-1 rounded-lg border border-brand-black-border">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSeason('2026-2027')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                          selectedSeason === '2026-2027'
+                            ? 'bg-brand-red-600 text-white shadow-sm'
+                            : 'text-brand-gray-muted hover:text-white'
+                        }`}
+                      >
+                        🗓️ Temporada 2026/2027 (Actual)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSeason('2025-2026')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                          selectedSeason === '2025-2026'
+                            ? 'bg-amber-600 text-white shadow-sm'
+                            : 'text-brand-gray-muted hover:text-white'
+                        }`}
+                      >
+                        📜 Temporada 2025/2026 (Pasada)
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-brand-gray-dark font-medium italic">
+                    Mostrando rankings y datos de: <span className="text-white font-bold">{selectedSeason === '2026-2027' ? '2026/2027 (Actual)' : '2025/2026 (Pasada)'}</span>
+                  </div>
+                </div>
+
+                {/* Widgets de Rankings Rival (Scraping) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Top Goleadores */}
+                  <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-3.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between border-b border-brand-black-border pb-2">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        ⚽ Goleadores Rival ({selectedSeason === '2026-2027' ? '26/27' : '25/26'})
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded">Scraping</span>
+                    </div>
+                    {rivalRankings.topScorers.length === 0 ? (
+                      <span className="text-xs text-brand-gray-dark italic">Sin goles registrados en esta temporada</span>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[360px] overflow-y-auto no-scrollbar pr-1">
+                        {rivalRankings.topScorers.map((p, idx) => (
+                          <div key={p.id} className="flex items-center justify-between text-xs">
+                            <span className="text-brand-gray-light font-medium truncate flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-brand-gray-muted">{idx + 1}.</span> {p.name} {p.number ? `(#${p.number})` : ''}
+                            </span>
+                            <span className="font-bold text-emerald-400 shrink-0">{p.goals} ⚽</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Top Titulares / Habituales */}
+                  <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-3.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between border-b border-brand-black-border pb-2">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        👕 Más Titulares ({selectedSeason === '2026-2027' ? '26/27' : '25/26'})
+                      </span>
+                      <span className="text-[10px] text-sky-400 font-bold bg-sky-950/60 px-1.5 py-0.5 rounded">Scraping</span>
+                    </div>
+                    {rivalRankings.topStarters.length === 0 ? (
+                      <span className="text-xs text-brand-gray-dark italic">Sin titularidades en esta temporada</span>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[360px] overflow-y-auto no-scrollbar pr-1">
+                        {rivalRankings.topStarters.map((p, idx) => (
+                          <div key={p.id} className="flex items-center justify-between text-xs">
+                            <span className="text-brand-gray-light font-medium truncate flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-brand-gray-muted">{idx + 1}.</span> {p.name}
+                            </span>
+                            <span className="font-bold text-sky-400 shrink-0">{p.starter_count} Tit ({p.matches_played} PJ)</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Disciplina / Tarjetas */}
+                  <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-3.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between border-b border-brand-black-border pb-2">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        🟨 Tarjetas & Sanciones ({selectedSeason === '2026-2027' ? '26/27' : '25/26'})
+                      </span>
+                      <span className="text-[10px] text-amber-400 font-bold bg-amber-950/60 px-1.5 py-0.5 rounded">Scraping</span>
+                    </div>
+                    {rivalRankings.topCards.length === 0 ? (
+                      <span className="text-xs text-brand-gray-dark italic">Sin tarjetas en esta temporada</span>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[360px] overflow-y-auto no-scrollbar pr-1">
+                        {rivalRankings.topCards.map((p, idx) => {
+                          const yellow = p.yellow_cards || 0;
+                          const isSanction = yellow > 0 && yellow % 5 === 0;
+                          return (
+                            <div key={p.id} className="flex items-center justify-between text-xs">
+                              <span className="text-brand-gray-light font-medium truncate flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-brand-gray-muted">{idx + 1}.</span> {p.name}
+                              </span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {isSanction && <span className="text-[9px] font-black text-red-400 bg-red-950 px-1 rounded">Sanción</span>}
+                                <span className="font-bold text-amber-400">{yellow} 🟨</span>
+                                {p.red_cards ? <span className="font-bold text-red-500">{p.red_cards} 🟥</span> : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filtros Toda la Plantilla vs Destacados */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setRosterFilter('all')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${rosterFilter === 'all' ? 'bg-brand-red-600 text-white' : 'bg-brand-black-card text-brand-gray-muted hover:text-white border border-brand-black-border'}`}
+                  >
+                    Toda la Plantilla ({displayRoster.length})
+                  </button>
+                  <button
+                    onClick={() => setRosterFilter('featured')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${rosterFilter === 'featured' ? 'bg-yellow-500 text-black font-black' : 'bg-brand-black-card text-brand-gray-muted hover:text-yellow-400 border border-brand-black-border'}`}
+                  >
+                    <Star className={`w-3 h-3 ${rosterFilter === 'featured' ? 'fill-black text-black' : 'fill-yellow-400 text-yellow-400'}`} />
+                    Destacados ⭐ ({displayRoster.filter(p => p.is_featured).length})
+                  </button>
+                </div>
+              </div>
+            )}
+
             {editingRoster ? (
               <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-6 shadow-premium h-[600px]">
                 <OpponentRosterManager players={editData.roster_comments || []} onChange={players => setEditData({ ...editData, roster_comments: players })} opponentName={analysis.opponent} />
               </div>
-            ) : (!analysis.roster_comments || analysis.roster_comments.length === 0) ? (
-              <div className="text-center py-12 text-brand-gray-muted text-sm border border-dashed border-brand-black-border rounded-xl">No hay jugadores destacados.</div>
+            ) : filteredRoster.length === 0 ? (
+              <div className="text-center py-12 text-brand-gray-muted text-sm border border-dashed border-brand-black-border rounded-xl flex flex-col items-center gap-2">
+                <Users className="w-8 h-8 text-brand-gray-dark mb-1" />
+                <p>No hay jugadores registrados ni datos de scouting para {analysis.opponent}.</p>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {analysis.roster_comments.map(player => (
-                  <div key={player.id} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 flex flex-col gap-2">
-                    <div className="flex items-center gap-3 border-b border-brand-black-border pb-2">
-                      <div className="shrink-0 w-10 h-10 rounded-full bg-brand-black-card border border-brand-black-border flex items-center justify-center overflow-hidden">
-                        {player.photo_url ? <img src={player.photo_url} alt={player.name} className="w-full h-full object-cover" /> : (
-                          <div className="w-full h-full bg-brand-red-600/10 text-brand-red-500 font-bold flex items-center justify-center text-xs">{player.number || '-'}</div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h5 className="text-sm font-bold text-white">{player.name}</h5>
-                        <div className="flex gap-2 items-center mt-1">
-                          {player.photo_url && player.number && <span className="text-[10px] text-brand-red-500 font-bold bg-brand-red-600/10 px-1.5 py-0.5 rounded">Nº {player.number}</span>}
-                          <span className="text-[10px] text-brand-gray-muted font-mono uppercase bg-black px-1.5 py-0.5 rounded">{player.position || 'N/A'}</span>
+                {filteredRoster.map(player => {
+                  const yellow = player.yellow_cards || 0;
+                  const isSanction = yellow > 0 && yellow % 5 === 0;
+                  const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
+
+                  // Buscar datos de la OTRA temporada en scouting para mostrar badge comparativo
+                  const otherSeasonTag = selectedSeason === '2026-2027' ? '2025-2026' : '2026-2027';
+                  const otherSeasonSp = scoutingPlayers.find(sp =>
+                    isSameTeam(sp.team, analysis.opponent) &&
+                    isSamePlayer(sp.player_name, player.name, sp.dorsal, player.number) &&
+                    (sp.season === otherSeasonTag || (otherSeasonTag === '2025-2026' ? sp.season === '2025/2026' : sp.season === '2026/2027'))
+                  );
+
+                  const otherPJ = otherSeasonSp ? (Number(otherSeasonSp.jugados) || Number(otherSeasonSp.convocados) || Number(otherSeasonSp.matches_played) || 0) : 0;
+                  const otherTit = otherSeasonSp ? (Number(otherSeasonSp.titular) || Number(otherSeasonSp.starter_count) || otherPJ) : 0;
+                  const otherGoles = otherSeasonSp ? (Number(otherSeasonSp.goles) || Number(otherSeasonSp.goals) || 0) : 0;
+                  const otherAmarillas = otherSeasonSp ? (Number(otherSeasonSp.amarillas) || Number(otherSeasonSp.yellow_cards) || 0) : 0;
+
+                  return (
+                    <div key={player.id} className={`bg-brand-black-card border rounded-xl p-4 flex flex-col justify-between gap-3 shadow-lg transition-all ${player.is_featured ? 'border-yellow-500/50 shadow-yellow-500/5' : 'border-brand-black-border'}`}>
+                      <div className="flex items-center gap-3 border-b border-brand-black-border pb-3">
+                        <div className="shrink-0 w-12 h-12 rounded-full bg-brand-black border border-brand-black-border flex items-center justify-center overflow-hidden relative">
+                          {player.photo_url ? (
+                            <img src={player.photo_url} alt={player.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-brand-red-600/10 text-brand-red-500 font-bold flex items-center justify-center text-xs">
+                              {player.number ? `#${player.number}` : '-'}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <h5 className="text-sm font-bold text-white truncate">{player.name}</h5>
+                            {player.number && (
+                              <span className="text-[10px] text-brand-red-500 font-bold bg-brand-red-600/10 px-1.5 py-0.5 rounded shrink-0">
+                                Nº {player.number}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 items-center mt-1">
+                            <span className="text-[10px] text-brand-gray-muted font-mono uppercase bg-black px-1.5 py-0.5 rounded">
+                              {player.position || 'Sin Posición'}
+                            </span>
+                            {player.is_featured && (
+                              <span className="text-[9px] font-black text-yellow-400 bg-yellow-950/60 px-1.5 py-0.5 rounded border border-yellow-800 flex items-center gap-1">
+                                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 shrink-0" /> Destacado
+                              </span>
+                            )}
+                            {isSanction && (
+                              <span className="text-[9px] font-black text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800 animate-pulse">
+                                🟨 {yellow} Amarillas (Sanción)
+                              </span>
+                            )}
+                            {isWarning && (
+                              <span className="text-[9px] font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800">
+                                ⚠️ {yellow} Amarillas (Apercibido)
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
+
+                      {/* Barra de Estadísticas del Scraping / Manuales para la Temporada Seleccionada */}
+                      {(player.matches_played !== undefined || player.starter_count !== undefined || player.goals !== undefined || player.yellow_cards !== undefined) && (
+                        <div className="space-y-1.5">
+                          <div className="grid grid-cols-4 gap-1.5 bg-black/50 p-2 rounded-lg text-center border border-brand-black-border/60 text-[11px]">
+                            <div>
+                              <span className="text-[9px] text-brand-gray-muted block uppercase">Partidos</span>
+                              <span className="font-bold text-white">{player.matches_played ?? '-'} PJ</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-brand-gray-muted block uppercase">Titular</span>
+                              <span className="font-bold text-sky-400">{player.starter_count !== undefined ? `${player.starter_count} Tit` : '-'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-brand-gray-muted block uppercase">Goles</span>
+                              <span className="font-bold text-emerald-400">{player.goals ?? 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-brand-gray-muted block uppercase">Tarjetas</span>
+                              <span className="font-bold text-yellow-400">🟨 {player.yellow_cards ?? 0}</span>
+                              {player.red_cards ? <span className="font-bold text-red-500 ml-1">🟥 {player.red_cards}</span> : null}
+                            </div>
+                          </div>
+
+                          {/* Resumen de la Otra Temporada (Ej: Pasada 25/26 si la actual es 26/27) */}
+                          {otherPJ > 0 && (
+                            <div className="px-2.5 py-1 bg-amber-950/20 border border-amber-500/20 rounded-md text-[10px] flex items-center justify-between text-amber-300 font-medium">
+                              <span className="flex items-center gap-1 font-bold text-amber-400">
+                                📜 Temp {otherSeasonTag === '2025-2026' ? '25/26 (Pasada)' : '26/27 (Actual)'}:
+                              </span>
+                              <span>{otherPJ} PJ ({otherTit} Tit) • {otherGoles} ⚽ • {otherAmarillas} 🟨</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <p className="text-xs text-brand-gray-light whitespace-pre-wrap leading-relaxed flex-1 pt-1">
+                        {player.comments || <span className="italic text-brand-gray-dark">Sin comentarios tácticos adicionales.</span>}
+                      </p>
                     </div>
-                    <p className="text-xs text-brand-gray-light whitespace-pre-wrap leading-relaxed flex-1 pt-1">
-                      {player.comments || <span className="italic text-brand-gray-dark">Sin comentarios adicionales.</span>}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

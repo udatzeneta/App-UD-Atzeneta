@@ -61,33 +61,38 @@ export const Points: React.FC = () => {
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
-      // 1. Obtener solo entrenadores (rol 2) de la tabla profiles
+      // 1. Obtener entrenadores (rol 2) de la tabla profiles
       const staffProfiles = await dataService.getProfilesByRoles([2]);
       
-      // 2. Obtener todos los jugadores directamente de la tabla players
-      const { data: players } = await supabase.from('players').select('*');
+      // 2. Obtener la lista oficial de jugadores de la plantilla a través de dataService.getPlayers()
+      const players = await dataService.getPlayers();
       
-      // 3. Crear perfiles "ficticios" para los jugadores basándonos en sus datos reales de la plantilla
-      const playerProfiles = (players || []).map(player => ({
-        id: player.profile_id || player.id, // Usar profile_id si lo tiene, sino el ID del jugador
+      // 3. Crear estructuras de perfil unificadas basadas únicamente en la plantilla de jugadores activos
+      const playerProfiles = players.map(player => ({
+        id: player.profile_id || player.id,
+        player_id: player.id,
+        profile_id: player.profile_id,
         role_id: 3,
         full_name: player.full_name,
-        nickname: player.nickname,
+        nickname: player.nickname || player.full_name,
         dorsal: player.dorsal,
         avatar_url: player.photo_url,
         team_category: player.team_category,
-        email: ''
+        email: player.email || ''
       }));
       
-      return [...staffProfiles, ...playerProfiles];
-    },
-    enabled: canCreate || canEdit
+      // Ordenar: Jugadores primero (ordenados por dorsal ascendente) y luego entrenadores/staff
+      const sortedPlayerProfiles = playerProfiles.sort((a, b) => (a.dorsal || 999) - (b.dorsal || 999));
+      return [...sortedPlayerProfiles, ...staffProfiles];
+    }
   });
+
+  const [modalTeamFilter, setModalTeamFilter] = useState<'Primer Equipo' | 'Juvenil' | 'Todos'>('Primer Equipo');
 
   // Perfiles filtrados para la selección en el modal
   const modalProfiles = profiles.filter(p => {
     const pTeam = p.team_category || 'Primer Equipo';
-    const matchesTeam = pTeam === filterTeam;
+    const matchesTeam = modalTeamFilter === 'Todos' || pTeam === modalTeamFilter;
     const name = p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name;
     const searchMatch = !modalPlayerSearch.trim() || 
       name.toLowerCase().includes(modalPlayerSearch.toLowerCase()) || 
@@ -149,6 +154,7 @@ export const Points: React.FC = () => {
     setReason('');
     setPointsAmount('2');
     setModalPlayerSearch('');
+    setModalTeamFilter(filterTeam as any || 'Primer Equipo');
     setIsModalOpen(true);
   };
 
@@ -606,7 +612,7 @@ export const Points: React.FC = () => {
                 <option value="">-- Seleccionar Jugador --</option>
                 {profiles.map(p => (
                   <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
-                    {p.dorsal ? `#${p.dorsal} ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
+                    {p.dorsal ? `${p.dorsal}. ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
                   </option>
                 ))}
               </select>
@@ -640,6 +646,43 @@ export const Points: React.FC = () => {
                 </div>
               </div>
 
+              {/* Selector rápido de equipo dentro del modal */}
+              <div className="flex bg-brand-black p-1 rounded-lg border border-brand-black-border gap-1">
+                <button
+                  type="button"
+                  onClick={() => setModalTeamFilter('Primer Equipo')}
+                  className={`flex-1 py-1 text-xs font-semibold rounded-md transition-colors ${
+                    modalTeamFilter === 'Primer Equipo'
+                      ? 'bg-brand-red-600 text-white shadow'
+                      : 'text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  Primer Equipo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalTeamFilter('Juvenil')}
+                  className={`flex-1 py-1 text-xs font-semibold rounded-md transition-colors ${
+                    modalTeamFilter === 'Juvenil'
+                      ? 'bg-brand-red-600 text-white shadow'
+                      : 'text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  Juvenil
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalTeamFilter('Todos')}
+                  className={`flex-1 py-1 text-xs font-semibold rounded-md transition-colors ${
+                    modalTeamFilter === 'Todos'
+                      ? 'bg-brand-red-600 text-white shadow'
+                      : 'text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  Todos
+                </button>
+              </div>
+
               {/* Buscador dentro del modal */}
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-brand-gray-dark" />
@@ -653,7 +696,7 @@ export const Points: React.FC = () => {
               </div>
 
               {/* Lista de selección de jugadores */}
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-brand-black-border rounded-lg p-2 bg-brand-black-bg/50">
+              <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 border border-brand-black-border rounded-lg p-2 bg-brand-black-bg/50">
                 {modalProfiles.length === 0 ? (
                   <p className="text-xs text-brand-gray-muted text-center py-4">
                     No se encontraron jugadores para esta búsqueda.
@@ -679,13 +722,17 @@ export const Points: React.FC = () => {
                             onChange={() => {}}
                             className="form-checkbox rounded text-brand-red-600 focus:ring-brand-red-600 bg-brand-black-bg border-brand-black-border cursor-pointer"
                           />
+                          {p.dorsal ? (
+                            <span className="w-6 h-6 rounded-full bg-brand-red-600/20 border border-brand-red-600/40 text-brand-red-500 font-extrabold text-[11px] flex items-center justify-center shrink-0 shadow-sm">
+                              {p.dorsal}
+                            </span>
+                          ) : null}
                           <img
                             src={p.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
                             alt={playerName}
                             className="w-6 h-6 rounded-full object-cover border border-brand-black-border shrink-0"
                           />
                           <span className="text-xs font-medium truncate">
-                            {p.dorsal ? <strong className="text-brand-red-500 mr-1.5">#{p.dorsal}</strong> : null}
                             {playerName}
                           </span>
                         </div>

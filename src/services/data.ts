@@ -1159,21 +1159,42 @@ export const dataService = {
   // =====================================================================
   // SCOUTING
   // =====================================================================
-  async getScouting(): Promise<ScoutingPlayer[]> {
+  async getScouting(includeAll: boolean = true): Promise<ScoutingPlayer[]> {
     let teamCategory = currentUserContext?.team_category || 'Primer Equipo';
     if (isMockMode) {
       await delay(300);
       return MockDatabase.getScouting().filter((s: any) => s.team_category === teamCategory || !s.team_category);
     } else {
-      const { data, error } = await supabase
-        .from('scouting')
-        .select('*, scouting_player_history(*)')
-        .eq('team_category', teamCategory)
-        .eq('in_wallet', true)
-        .order('created_at', { ascending: false });
+      // Supabase/PostgREST limita cada respuesta a un máximo de filas (db.max_rows, normalmente 1000)
+      // sin importar el .limit() pedido, así que hay que paginar con .range() para traer todo.
+      const pageSize = 1000;
+      let allData: ScoutingPlayer[] = [];
+      let page = 0;
 
-      if (error) throw error;
-      return data as ScoutingPlayer[];
+      while (true) {
+        let query = supabase
+          .from('scouting')
+          .select('*, scouting_player_history(*)')
+          .eq('team_category', teamCategory);
+
+        if (!includeAll) {
+          query = query.eq('in_wallet', true);
+        }
+
+        const start = page * pageSize;
+        const { data, error } = await query
+          .order('created_at', { ascending: false })
+          .range(start, start + pageSize - 1);
+
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        allData = allData.concat(data as ScoutingPlayer[]);
+        if (data.length < pageSize) break;
+        page++;
+      }
+
+      return allData;
     }
   },
 

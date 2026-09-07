@@ -73,7 +73,11 @@ const FinesList: React.FC<{
                         className="w-6 h-6 rounded-full border border-brand-black-border object-cover"
                       />
                       <div className="flex items-center gap-2">
-                        {fine.profiles?.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{fine.profiles.dorsal}</span>}
+                        {fine.profiles?.dorsal && (
+                          <span className="w-5 h-5 rounded-full bg-brand-red-600/20 border border-brand-red-600/40 text-brand-red-500 font-extrabold text-[10px] flex items-center justify-center shrink-0">
+                            {fine.profiles.dorsal}
+                          </span>
+                        )}
                         <span className={isPending ? 'text-brand-red-400' : ''}>
                           {fine.profiles ? (fine.profiles.role_id === 3 ? (fine.profiles.nickname || fine.profiles.full_name) : fine.profiles.full_name) : 'Desconocido'}
                         </span>
@@ -164,7 +168,7 @@ const FinesList: React.FC<{
                     {isAbono ? <><Check className="w-4 h-4" /> Abono de Deuda</> : fine.reason}
                   </h4>
                   <span className={`text-[11px] ${isPending ? 'text-brand-red-400/80' : 'text-brand-gray-muted'} flex items-center gap-1 mt-1`}>
-                    <Calendar className="w-3.5 h-3.5" /> {fine.date} | <User className="w-3.5 h-3.5" /> {fine.profiles?.dorsal && `#${fine.profiles.dorsal} `}{fine.profiles ? (fine.profiles.role_id === 3 ? (fine.profiles.nickname || fine.profiles.full_name) : fine.profiles.full_name) : 'Desconocido'}
+                    <Calendar className="w-3.5 h-3.5" /> {fine.date} | <User className="w-3.5 h-3.5" /> {fine.profiles?.dorsal && `(${fine.profiles.dorsal}) `}{fine.profiles ? (fine.profiles.role_id === 3 ? (fine.profiles.nickname || fine.profiles.full_name) : fine.profiles.full_name) : 'Desconocido'}
                   </span>
                 </div>
                 <span className={`text-sm font-bold px-2 py-0.5 rounded border ${isAbono ? 'text-emerald-500 bg-emerald-500/5 border-emerald-500/10' : 'text-brand-red-600 bg-brand-red-600/5 border-brand-red-600/10'}`}>
@@ -275,27 +279,30 @@ export const Fines: React.FC = () => {
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
-      // 1. Obtener solo entrenadores y directivos (roles 2 y 4) de la tabla profiles
+      // 1. Obtener entrenadores y directivos (roles 2 y 4) de la tabla profiles
       const staffProfiles = await dataService.getProfilesByRoles([2, 4]);
       
-      // 2. Obtener todos los jugadores directamente de la tabla players
-      const { data: players } = await supabase.from('players').select('*');
+      // 2. Obtener la lista oficial de jugadores de la plantilla a través de dataService.getPlayers()
+      const players = await dataService.getPlayers();
       
-      // 3. Crear perfiles "ficticios" para los jugadores basándonos en sus datos reales de la plantilla
-      const playerProfiles = (players || []).map(player => ({
-        id: player.profile_id || player.id, // Usar profile_id si lo tiene, sino el ID del jugador
+      // 3. Crear estructuras de perfil unificadas basadas únicamente en la plantilla de jugadores activos
+      const playerProfiles = players.map(player => ({
+        id: player.profile_id || player.id,
+        player_id: player.id,
+        profile_id: player.profile_id,
         role_id: 3,
         full_name: player.full_name,
-        nickname: player.nickname,
+        nickname: player.nickname || player.full_name,
         dorsal: player.dorsal,
         avatar_url: player.photo_url,
         team_category: player.team_category,
-        email: '' // Los jugadores sin cuenta no tendrán email
+        email: player.email || ''
       }));
       
-      return [...staffProfiles, ...playerProfiles];
-    },
-    enabled: canCreate || canEdit
+      // Ordenar: Jugadores primero (ordenados por dorsal ascendente) y luego entrenadores/staff
+      const sortedPlayerProfiles = playerProfiles.sort((a, b) => (a.dorsal || 999) - (b.dorsal || 999));
+      return [...sortedPlayerProfiles, ...staffProfiles];
+    }
   });
 
   // Mutaciones
@@ -534,7 +541,7 @@ export const Fines: React.FC = () => {
   const isLoading = loadingFines || (loadingProfiles && (canCreate || canEdit));
 
   // Estadísticas por jugador
-  const playerStats = profiles.map(profile => {
+  const playerStats = profiles.filter(p => (p.team_category || 'Primer Equipo') === filterTeam).map(profile => {
     const playerFines = userFines.filter(f => f.user_id === profile.id);
     
     const playerRealFines = playerFines.filter(f => !isAbono(f));
@@ -779,7 +786,11 @@ export const Fines: React.FC = () => {
                           className="w-6 h-6 rounded-full border border-brand-black-border object-cover"
                         />
                         <div className="flex items-center gap-2">
-                          {stat.profile.dorsal && <span className="text-xs font-bold text-brand-red-600 bg-brand-black-border px-2 py-0.5 rounded">#{stat.profile.dorsal}</span>}
+                          {stat.profile.dorsal && (
+                            <span className="w-5 h-5 rounded-full bg-brand-red-600/20 border border-brand-red-600/40 text-brand-red-500 font-extrabold text-[10px] flex items-center justify-center shrink-0">
+                              {stat.profile.dorsal}
+                            </span>
+                          )}
                           <span>{stat.profile.role_id === 3 ? (stat.profile.nickname || stat.profile.full_name) : stat.profile.full_name}</span>
                         </div>
                       </div>
@@ -897,7 +908,7 @@ export const Fines: React.FC = () => {
               <option value="">-- Seleccionar Jugador --</option>
               {profiles.map(p => (
                 <option key={p.id} value={p.id} className="bg-brand-black-card text-brand-gray-light">
-                  {p.dorsal ? `#${p.dorsal} ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
+                  {p.dorsal ? `${p.dorsal}. ` : ''}{p.role_id === 3 ? (p.nickname || p.full_name) : p.full_name}
                 </option>
               ))}
             </select>
@@ -1046,7 +1057,11 @@ export const Fines: React.FC = () => {
                 />
                 <div>
                   <h2 className="text-xl font-bold text-brand-gray-light flex items-center gap-2">
-                    {selectedPlayerDetail.dorsal && <span className="text-sm font-bold text-brand-red-600 bg-brand-black border border-brand-black-border px-2 py-1 rounded">#{selectedPlayerDetail.dorsal}</span>}
+                    {selectedPlayerDetail.dorsal && (
+                      <span className="w-6 h-6 rounded-full bg-brand-red-600/20 border border-brand-red-600/40 text-brand-red-500 font-extrabold text-[11px] flex items-center justify-center shrink-0">
+                        {selectedPlayerDetail.dorsal}
+                      </span>
+                    )}
                     {selectedPlayerDetail.nickname || selectedPlayerDetail.full_name}
                   </h2>
                   <p className="text-xs text-brand-gray-muted">{selectedPlayerDetail.email}</p>

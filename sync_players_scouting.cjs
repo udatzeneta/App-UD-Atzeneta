@@ -327,7 +327,7 @@ function buildRecord(player, team, stats, playerDetails = {}) {
   });
   const page = await context.newPage();
 
-  let totalInserted = 0, totalSkipped = 0, totalErrors = 0;
+  let totalInserted = 0, totalUpdated = 0, totalErrors = 0;
 
   try {
     for (const [groupKey, groupTeams] of groups) {
@@ -385,23 +385,35 @@ function buildRecord(player, team, stats, playerDetails = {}) {
               .maybeSingle();
 
             let scoutingId = existing?.id;
-            let isNewPlayer = false;
+
+            // Siempre scrapear datos frescos (nuevo o ya existente): las estadísticas de la temporada
+            // en curso cambian jornada a jornada, así que un jugador "existente" no puede saltarse esto
+            // o se queda congelado con los datos (a menudo 0) de la primera vez que se scrapeó.
+            let stats = {}, playerDetails = {}, history = [];
+            try {
+              ({ stats, playerDetails, history } = await scrapePlayerData(page, player.playerUrl, teamPageUrl));
+            } catch (e) {
+              console.error(`    ⚠️  Error datos ${player.name}: ${e.message.split('\n')[0]}`);
+            }
+
+            const record = buildRecord(player, team, stats, playerDetails);
 
             if (existing) {
-              console.log(`    ⏭️  ${player.name} — ya existe`);
-              totalSkipped++;
-              // Continuar a scraping de historial aunque exista
-            } else {
-              // Nuevo jugador — scrape stats completos
-              let stats = {}, playerDetails = {}, history = [];
-              try {
-                ({ stats, playerDetails, history } = await scrapePlayerData(page, player.playerUrl, teamPageUrl));
-              } catch (e) {
-                console.error(`    ⚠️  Error datos ${player.name}: ${e.message.split('\n')[0]}`);
+              const { error: updateError } = await supabase
+                .from('scouting')
+                .update(record)
+                .eq('id', existing.id);
+
+              if (updateError) {
+                console.error(`    ❌ Update ${player.name}: ${updateError.message}`);
+                totalErrors++;
+                await page.waitForTimeout(400);
+                continue;
               }
 
-              const record = buildRecord(player, team, stats, playerDetails);
-
+              console.log(`    🔄 ${player.name} | ${player.position} | Jugados: ${record.jugados ?? '—'} | Goles: ${record.goles ?? '—'} | Amarillas: ${record.amarillas ?? '—'}`);
+              totalUpdated++;
+            } else {
               const { data: inserted, error: insertError } = await supabase
                 .from('scouting')
                 .insert(record)
@@ -416,51 +428,32 @@ function buildRecord(player, team, stats, playerDetails = {}) {
               }
 
               scoutingId = inserted?.id;
-              isNewPlayer = true;
-
               console.log(`    ➕ ${player.name} | ${player.position} | Jugados: ${record.jugados ?? '—'} | Goles: ${record.goles ?? '—'} | Amarillas: ${record.amarillas ?? '—'}`);
               totalInserted++;
-
-              // Insertar historial del jugador nuevo
-              if (history.length > 0 && scoutingId) {
-                const historyRows = history.map(h => ({ scouting_id: scoutingId, ...h }));
-                const { error: histErr } = await supabase.from('scouting_player_history').insert(historyRows);
-                if (histErr) {
-                  console.error(`      ⚠️  Error historial: ${histErr.message}`);
-                } else {
-                  console.log(`      📋 Historial: ${history.length} temporadas`);
-                }
-              }
             }
 
-            // Si el jugador existe, intentar completar historial
-            if (existing && scoutingId) {
+            // Completar historial de clubes (nuevo o ya existente) sin duplicar temporadas ya guardadas
+            if (history.length > 0 && scoutingId) {
               try {
-                const { stats: _, playerDetails: __, history } = await scrapePlayerData(page, player.playerUrl, teamPageUrl);
+                const { data: existingHistory } = await supabase
+                  .from('scouting_player_history')
+                  .select('temporada, equipo')
+                  .eq('scouting_id', scoutingId);
 
-                if (history.length > 0) {
-                  const { data: existingHistory } = await supabase
-                    .from('scouting_player_history')
-                    .select('temporada, equipo')
-                    .eq('scouting_id', scoutingId);
+                const existingSet = new Set((existingHistory || []).map(h => `${h.temporada}|${h.equipo}`));
+                const newHistory = history.filter(h => !existingSet.has(`${h.temporada}|${h.equipo}`));
 
-                  const existingSet = new Set((existingHistory || []).map(h => `${h.temporada}|${h.equipo}`));
-                  const newHistory = history.filter(h => !existingSet.has(`${h.temporada}|${h.equipo}`));
-
-                  if (newHistory.length > 0) {
-                    const historyRows = newHistory.map(h => ({ scouting_id: scoutingId, ...h }));
-                    const { error: histErr } = await supabase.from('scouting_player_history').insert(historyRows);
-                    if (histErr) {
-                      console.error(`      ⚠️  Error historial: ${histErr.message}`);
-                    } else {
-                      console.log(`      📋 Historial: ${newHistory.length} temporadas nuevas (${existingHistory?.length ?? 0} existentes)`);
-                    }
-                  } else if (existingHistory && existingHistory.length > 0) {
-                    console.log(`      📋 Historial: ya completo (${existingHistory.length} temporadas)`);
+                if (newHistory.length > 0) {
+                  const historyRows = newHistory.map(h => ({ scouting_id: scoutingId, ...h }));
+                  const { error: histErr } = await supabase.from('scouting_player_history').insert(historyRows);
+                  if (histErr) {
+                    console.error(`      ⚠️  Error historial: ${histErr.message}`);
+                  } else {
+                    console.log(`      📋 Historial: ${newHistory.length} temporadas nuevas (${existingHistory?.length ?? 0} existentes)`);
                   }
                 }
               } catch (e) {
-                // Error al obtener historial de jugador existente
+                // Error al obtener/guardar historial
               }
             }
 
@@ -493,6 +486,6 @@ function buildRecord(player, team, stats, playerDetails = {}) {
 
   console.log('\n📊 Sincronización de jugadores completada:');
   console.log(`   ➕ ${totalInserted} jugadores insertados`);
-  console.log(`   ⏭️  ${totalSkipped} jugadores saltados (ya existían)`);
+  console.log(`   🔄 ${totalUpdated} jugadores actualizados (estadísticas refrescadas)`);
   if (totalErrors) console.log(`   ❌ ${totalErrors} errores`);
 })();

@@ -13,6 +13,7 @@ import {
   Settings as TacticalIcon, ShieldAlert, Award, FileText
 } from 'lucide-react';
 import { OpponentAnalysisEditor } from '../components/opponent_analysis/OpponentAnalysisEditor';
+import { isSameTeam } from '../utils/teamUtils';
 
 export const OpponentAnalysisPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -53,15 +54,15 @@ export const OpponentAnalysisPage: React.FC = () => {
     queryFn: () => dataService.getScouting()
   });
 
-  // Preparar opciones del selector de equipos
-  const ffcvTeams = teamsList.map(t => t.name).sort();
+  // Preparar opciones del selector de equipos (un equipo puede tener fila por cada temporada; deduplicar por nombre)
+  const ffcvTeams = Array.from(new Set(teamsList.map(t => t.name))).sort();
   
   // Equipos únicos de scouting que no estén ya en FFCV
   const scoutingTeams = Array.from(
     new Set(
       scoutingList
         .map(p => p.team)
-        .filter(t => t && !ffcvTeams.includes(t))
+        .filter((t): t is string => Boolean(t) && !ffcvTeams.some(ft => isSameTeam(ft, t)))
     )
   ).sort();
 
