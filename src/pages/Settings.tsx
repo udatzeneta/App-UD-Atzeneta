@@ -197,17 +197,20 @@ export const SettingsPage: React.FC = () => {
     const isBoard = profile.role_id === 4;
     const teamCat = profile.team_category || 'Primer Equipo';
     
-    const hasTrainerContext = profile.availableContexts?.some(c => c.role_id === 2);
-    const trainerContextCat = profile.availableContexts?.find(c => c.role_id === 2)?.team_category;
+    const contexts = (profile as any).availableContexts || (profile as any).availablecontexts || [];
+    const hasTrainerContext = contexts.some((c: any) => c.role_id === 2);
+    const hasPlayerContext = contexts.some((c: any) => c.role_id === 3);
+    const trainerContextCat = contexts.find((c: any) => c.role_id === 2)?.team_category;
 
     if (isAdmin) combined = 'admin';
     else if (isBoard) combined = 'directivo';
     else if (isTrainer) {
-      if (hasTrainerContext && trainerContextCat !== teamCat) combined = 'mister_ambos';
+      if (hasPlayerContext) combined = 'jugador_pe_entrenador_juv';
+      else if (hasTrainerContext && trainerContextCat !== teamCat) combined = 'mister_ambos';
       else if (teamCat === 'Juvenil') combined = 'mister_juv';
       else combined = 'mister_pe';
     } else if (isPlayer) {
-      if (hasTrainerContext && trainerContextCat === 'Juvenil') combined = 'jugador_pe_entrenador_juv';
+      if (hasTrainerContext) combined = 'jugador_pe_entrenador_juv';
       else if (teamCat === 'Juvenil') combined = 'jugador_juv';
       else combined = 'jugador_pe';
     }
@@ -505,25 +508,29 @@ export const SettingsPage: React.FC = () => {
                                 <option value="jugador_pe_entrenador_juv">Jugador PE + Míster Juv</option>
                               </select>
                             </div>
-                          ) : (
-                            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
-                              p.role_id === 1 ? 'bg-brand-red-950/30 text-brand-red-500' :
-                              p.role_id === 2 ? 'bg-amber-950/30 text-amber-500' :
-                              p.role_id === 4 ? 'bg-indigo-950/30 text-indigo-400' :
-                              'bg-brand-black-bg text-brand-gray-muted'
-                            }`}>
-                              {p.role_id === 1 ? 'Admin' : 
-                               p.role_id === 4 ? 'Directivo' : 
-                               p.role_id === 2 ? (
-                                 p.availableContexts && p.availableContexts.length > 1 ? 'Míster Ambos' :
-                                 p.team_category === 'Juvenil' ? 'Míster Juvenil' : 'Míster PE'
-                               ) : (
-                                 p.availableContexts && p.availableContexts.some(c => c.role_id === 2) ? 'Jug PE + Míster Juv' :
-                                 p.team_category === 'Juvenil' ? 'Jugador Juvenil' : 'Jugador PE'
-                               )
-                              }
-                            </span>
-                          )}
+                          ) : (() => {
+                            const contexts = (p as any).availableContexts || (p as any).availablecontexts || [];
+                            const hasDualTrainer = contexts.some((c: any) => c.role_id === 2 && c.team_category !== (p.team_category || 'Primer Equipo'));
+                            const hasDualPlayerTrainer = contexts.some((c: any) => (c.role_id === 2 && p.role_id === 3) || (c.role_id === 3 && p.role_id === 2));
+
+                            return (
+                              <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                p.role_id === 1 ? 'bg-brand-red-950/30 text-brand-red-500' :
+                                p.role_id === 4 ? 'bg-indigo-950/30 text-indigo-400' :
+                                hasDualPlayerTrainer ? 'bg-emerald-950/30 text-emerald-400 border border-emerald-800/30' :
+                                (hasDualTrainer || p.role_id === 2) ? 'bg-amber-950/30 text-amber-500 border border-amber-800/30' :
+                                'bg-brand-black-bg text-brand-gray-muted'
+                              }`}>
+                                {p.role_id === 1 ? 'Admin' : 
+                                 p.role_id === 4 ? 'Directivo' : 
+                                 hasDualPlayerTrainer ? 'Jug PE + Míster Juv' :
+                                 hasDualTrainer ? 'Míster Ambos' :
+                                 p.role_id === 2 ? (p.team_category === 'Juvenil' ? 'Míster Juvenil' : 'Míster PE') :
+                                 (p.team_category === 'Juvenil' ? 'Jugador Juvenil' : 'Jugador PE')
+                                }
+                              </span>
+                            );
+                          })()}
                         </td>
                         {isAdmin && (
                           <td className="table-td text-right">

@@ -200,7 +200,10 @@ export const authService = {
     } else {
       const { data, error } = await supabase.rpc('admin_get_users');
       if (error) throw error;
-      return data as Profile[];
+      return (data || []).map((u: any) => ({
+        ...u,
+        availableContexts: u.availableContexts || u.availablecontexts || []
+      })) as Profile[];
     }
   },
 

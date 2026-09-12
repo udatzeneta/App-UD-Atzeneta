@@ -180,7 +180,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               <div className="flex items-center bg-brand-black border border-brand-black-border rounded-lg px-2 sm:px-2.5 py-1 transition-colors hover:border-brand-gray-dark max-w-[130px] sm:max-w-none overflow-hidden">
                 <Users className="hidden sm:block w-3 h-3 text-brand-gray-muted mr-2 shrink-0" />
                 <select
-                  value={`${user.role_id}-${user.team_category}`}
+                  value={`${user.role_id}-${user.team_category || 'Primer Equipo'}`}
                   onChange={(e) => {
                     const [rId, tCat] = e.target.value.split('-');
                     switchContext(Number(rId), tCat);
@@ -192,9 +192,10 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                     if (ctx.role_id === 1) roleName = 'Admin';
                     if (ctx.role_id === 2) roleName = 'Entrenador';
                     if (ctx.role_id === 4) roleName = 'Directivo';
+                    const ctxCat = ctx.team_category || 'Primer Equipo';
                     return (
-                      <option key={`${ctx.role_id}-${ctx.team_category}-${i}`} value={`${ctx.role_id}-${ctx.team_category}`} className="bg-brand-black-card text-brand-gray-light uppercase">
-                        {roleName} {ctx.team_category ? `· ${ctx.team_category}` : ''}
+                      <option key={`${ctx.role_id}-${ctxCat}-${i}`} value={`${ctx.role_id}-${ctxCat}`} className="bg-brand-black-card text-brand-gray-light uppercase">
+                        {roleName} · {ctxCat}
                       </option>
                     );
                   })}

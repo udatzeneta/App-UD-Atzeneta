@@ -185,7 +185,7 @@ export const IndividualImprovement: React.FC = () => {
       </div>
 
       {/* Pestañas de Equipo (solo para staff) */}
-      {isStaff && (user?.role_id === 1 || user?.role_id === 4 || (user?.role_id === 2 && user?.team_category === 'Primer Equipo')) && (
+      {isStaff && (user?.role_id === 1 || user?.role_id === 4 || user?.role_id === 2 || (user?.availableContexts && user.availableContexts.length > 0)) && (
         <div className="flex bg-brand-black-card border-b border-brand-black-border mb-6 mt-2">
           <button 
             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}

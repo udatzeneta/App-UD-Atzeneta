@@ -128,29 +128,17 @@ export const dataService = {
   // ENTRENAMIENTOS (TRAININGS)
   // =====================================================================
   async getTrainings(teamCategory?: string): Promise<Training[]> {
-    if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
-      teamCategory = currentUserContext.team_category;
-    }
-    
     if (isMockMode) {
       await delay(300);
       let list = MockDatabase.getTrainings();
-      if (teamCategory) {
-        if (currentUserContext?.role_id === 3 && teamCategory === 'Juvenil') {
-          list = list.filter(t => t.team_category === 'Juvenil' || t.team_category === 'Primer Equipo' || !t.team_category);
-        } else {
-          list = list.filter(t => t.team_category === teamCategory || (!t.team_category && teamCategory === 'Primer Equipo'));
-        }
+      if (teamCategory && teamCategory !== 'Todos') {
+        list = list.filter(t => t.team_category === teamCategory || (!t.team_category && teamCategory === 'Primer Equipo'));
       }
       return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
       let query = supabase.from('trainings').select('*').order('date', { ascending: false });
-      if (teamCategory) {
-        if (currentUserContext?.role_id === 3 && teamCategory === 'Juvenil') {
-          query = query.in('team_category', ['Primer Equipo', 'Juvenil']);
-        } else {
-          query = query.eq('team_category', teamCategory);
-        }
+      if (teamCategory && teamCategory !== 'Todos') {
+        query = query.eq('team_category', teamCategory);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -250,20 +238,16 @@ export const dataService = {
   },
 
   async getMatches(teamCategory?: string): Promise<Match[]> {
-    if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
-      teamCategory = currentUserContext.team_category;
-    }
-    
     if (isMockMode) {
       await delay(200);
       let list = MockDatabase.getMatches();
-      if (teamCategory) {
+      if (teamCategory && teamCategory !== 'Todos') {
         list = list.filter(m => m.team_category === teamCategory || (!m.team_category && teamCategory === 'Primer Equipo'));
       }
       return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
       let query = supabase.from('matches').select('*').order('date', { ascending: false });
-      if (teamCategory) {
+      if (teamCategory && teamCategory !== 'Todos') {
         query = query.eq('team_category', teamCategory);
       }
       const { data, error } = await query;
@@ -702,13 +686,13 @@ export const dataService = {
     if (isMockMode) {
       await delay(200);
       let list = MockDatabase.getProfiles().filter((p: any) => roleIds.includes(p.role_id));
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      if (currentUserContext && currentUserContext.role_id === 3) {
         list = list.filter((p: any) => p.team_category === currentUserContext?.team_category || (!p.team_category && currentUserContext?.team_category === 'Primer Equipo'));
       }
       return list;
     } else {
       let query = supabase.from('profiles').select('*').in('role_id', roleIds);
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      if (currentUserContext && currentUserContext.role_id === 3) {
         query = query.eq('team_category', currentUserContext.team_category);
       }
       const { data, error } = await query;
@@ -853,7 +837,7 @@ export const dataService = {
       let profiles = MockDatabase.getProfiles();
       const players = MockDatabase.getPlayers();
       
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      if (currentUserContext && currentUserContext.role_id === 3) {
         profiles = profiles.filter(p => p.team_category === currentUserContext?.team_category || (!p.team_category && currentUserContext?.team_category === 'Primer Equipo'));
       }
 
@@ -882,7 +866,7 @@ export const dataService = {
 
       // Query 2: Obtener perfiles
       let profilesQuery = supabase.from('profiles').select('*');
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      if (currentUserContext && currentUserContext.role_id === 3) {
         profilesQuery = profilesQuery.eq('team_category', currentUserContext.team_category);
       }
       const { data: profilesData, error: profilesError } = await profilesQuery;
@@ -1004,7 +988,7 @@ export const dataService = {
       const points = MockDatabase.getPoints();
       let profiles = MockDatabase.getProfiles();
 
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      if (currentUserContext && currentUserContext.role_id === 3) {
         profiles = profiles.filter(p => p.team_category === currentUserContext?.team_category || (!p.team_category && currentUserContext?.team_category === 'Primer Equipo'));
       }
 
@@ -1025,7 +1009,7 @@ export const dataService = {
 
       // Query 2: Obtener perfiles
       let profilesQuery = supabase.from('profiles').select('*');
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
+      if (currentUserContext && currentUserContext.role_id === 3) {
         profilesQuery = profilesQuery.eq('team_category', currentUserContext.team_category);
       }
       const { data: profilesData, error: profilesError } = await profilesQuery;
@@ -1489,8 +1473,8 @@ export const dataService = {
         .gte('date', start)
         .lte('date', end);
         
-      if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
-        if (currentUserContext.role_id === 3 && currentUserContext.team_category === 'Juvenil') {
+      if (currentUserContext && currentUserContext.role_id === 3) {
+        if (currentUserContext.team_category === 'Juvenil') {
           tQuery = tQuery.in('team_category', ['Primer Equipo', 'Juvenil']);
         } else {
           tQuery = tQuery.eq('team_category', currentUserContext.team_category);
@@ -1688,16 +1672,12 @@ export const dataService = {
   // JUGADORES (PLAYERS)
   // =====================================================================
   async getPlayers(teamCategory?: string): Promise<Player[]> {
-    if (currentUserContext && (currentUserContext.role_id === 2 || currentUserContext.role_id === 3)) {
-      teamCategory = currentUserContext.team_category;
-    }
-    
     if (isMockMode) {
       await delay(300);
       let list = MockDatabase.getPlayers();
-      if (teamCategory) {
+      if (teamCategory && teamCategory !== 'Todos') {
         if (teamCategory === 'Primer Equipo') {
-          list = list.filter(p => p.team_category === 'Primer Equipo' || p.team_category === 'Juvenil' || !p.team_category);
+          list = list.filter(p => p.team_category === 'Primer Equipo' || !p.team_category);
         } else {
           list = list.filter(p => p.team_category === teamCategory);
         }
@@ -1705,9 +1685,9 @@ export const dataService = {
       return list;
     } else {
       let query = supabase.from('players').select('*').order('dorsal', { ascending: true });
-      if (teamCategory) {
+      if (teamCategory && teamCategory !== 'Todos') {
         if (teamCategory === 'Primer Equipo') {
-          query = query.in('team_category', ['Primer Equipo', 'Juvenil']);
+          query = query.or('team_category.eq.Primer Equipo,team_category.is.null');
         } else {
           query = query.eq('team_category', teamCategory);
         }
