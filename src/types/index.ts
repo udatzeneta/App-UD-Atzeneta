@@ -108,10 +108,17 @@ export interface Match {
   tactical_without_ball?: string | null;
   tactical_set_pieces?: string | null;
   tactical_general?: string | null;
+  stoppage_first_half?: number | null;
+  stoppage_second_half?: number | null;
+  duration?: number | null;
   opponent_events?: {
     goals: { minute: string; dorsal?: string; isOwnGoal?: boolean }[];
     yellow_cards: { minute: string; dorsal?: string }[];
     own_goals?: { minute: string }[];
+    stoppage_first_half?: number;
+    stoppage_second_half?: number;
+    base_duration?: number;
+    match_duration?: number;
   } | null;
   team_positive_aspects?: string | null;
   team_improve_aspects?: string | null;

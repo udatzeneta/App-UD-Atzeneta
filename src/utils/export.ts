@@ -1137,28 +1137,45 @@ export const exportMatchReportToPDF = async (
     timelineY += 4;
   };
 
-  // Separat events into halves
+  // Separate events into halves
+  const oppEvts = (match.opponent_events || {}) as any;
+  const s1 = match.stoppage_first_half ?? oppEvts.stoppage_first_half;
+  const s2 = match.stoppage_second_half ?? oppEvts.stoppage_second_half;
+  const dur = match.duration ?? oppEvts.base_duration ?? 90;
+  const half1 = Math.floor(dur / 2);
+
   const getMinVal = (m: string | number) => {
-    if (!m) return 90;
+    if (!m) return dur;
     const str = String(m).trim();
     const parts = str.split(' ');
     if (parts.length > 1) {
       const period = parts[0].toUpperCase();
       const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
       if (period === '1T') return min;
-      if (period === '2T') return min + 45;
-      if (period === '1P' || period === 'PR1') return min + 90;
-      if (period === '2P' || period === 'PR2') return min + 105;
+      if (period === '2T') return min + half1;
+      if (period === '1P' || period === 'PR1') return min + dur;
+      if (period === '2P' || period === 'PR2') return min + dur + 15;
       return min;
     }
-    return parseInt(str.split('+')[0].replace(/\D/g, '')) || 90;
+    return parseInt(str.split('+')[0].replace(/\D/g, '')) || dur;
+  };
+
+  const is1H = (m: string | number) => {
+    if (!m) return true;
+    const str = String(m).trim().toUpperCase();
+    if (str.startsWith('1T')) return true;
+    if (str.startsWith('2T') || str.startsWith('PR1') || str.startsWith('PR2')) return false;
+    return getMinVal(m) <= half1;
   };
   
-  const firstHalf = matchEvents.filter(e => getMinVal(e.minute) <= 45).sort((a, b) => getMinVal(a.minute) - getMinVal(b.minute));
-  const secondHalf = matchEvents.filter(e => getMinVal(e.minute) > 45).sort((a, b) => getMinVal(a.minute) - getMinVal(b.minute));
+  const firstHalf = matchEvents.filter(e => is1H(e.minute)).sort((a, b) => getMinVal(a.minute) - getMinVal(b.minute));
+  const secondHalf = matchEvents.filter(e => !is1H(e.minute)).sort((a, b) => getMinVal(a.minute) - getMinVal(b.minute));
 
-  printEvents(firstHalf, '1ª PARTE');
-  printEvents(secondHalf, '2ª PARTE');
+  const title1H = s1 ? `1ª PARTE (+${s1}')` : '1ª PARTE';
+  const title2H = s2 ? `2ª PARTE (+${s2}')` : '2ª PARTE';
+
+  printEvents(firstHalf, title1H);
+  printEvents(secondHalf, title2H);
 
   // ── Página 2: Análisis Táctico y Valoraciones ──────────────────────────────────────
   if (

@@ -24,11 +24,23 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
     { id: '1', playerId: '', gpsRecordId: '' },
     { id: '2', playerId: '', gpsRecordId: '' }
   ]);
-  const [plantilla, setPlantilla] = useState<'Primer Equipo' | 'Juvenil'>('Primer Equipo');
+  const [plantilla, setPlantilla] = useState<'Todas' | 'Primer Equipo' | 'Juvenil'>('Todas');
   
-  const filteredJugadores = useMemo(() => 
-    jugadores.filter(j => (j.team_category || 'Primer Equipo') === plantilla),
-  [jugadores, plantilla]);
+  const primerEquipoJugadores = useMemo(() => 
+    jugadores.filter(j => (j.team_category || 'Primer Equipo') === 'Primer Equipo')
+      .sort((a, b) => (a.dorsal || 999) - (b.dorsal || 999)),
+  [jugadores]);
+
+  const juvenilJugadores = useMemo(() => 
+    jugadores.filter(j => j.team_category === 'Juvenil')
+      .sort((a, b) => (a.dorsal || 999) - (b.dorsal || 999)),
+  [jugadores]);
+
+  const filteredJugadores = useMemo(() => {
+    if (plantilla === 'Primer Equipo') return primerEquipoJugadores;
+    if (plantilla === 'Juvenil') return juvenilJugadores;
+    return jugadores;
+  }, [jugadores, plantilla, primerEquipoJugadores, juvenilJugadores]);
 
   const activeItems = useMemo(() => 
     selectedItems.filter(item => item.playerId !== ''),
@@ -39,12 +51,13 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
     if (!player) return 'Jugador';
     const playerNick = player.nickname || player.full_name;
     const dorsalStr = player.dorsal ? `${player.dorsal}. ` : '';
+    const teamTag = player.team_category === 'Juvenil' ? ' [Juv]' : ' [1er Eq]';
     
     if (item.gpsRecordId === '') {
-      return `${dorsalStr}${playerNick} (Media)`;
+      return `${dorsalStr}${playerNick}${teamTag} (Media)`;
     } else {
       const record = gpsRecords.find(r => r.id === item.gpsRecordId);
-      if (!record) return `${dorsalStr}${playerNick}`;
+      if (!record) return `${dorsalStr}${playerNick}${teamTag}`;
       
       const session = record.session_type === 'entrenamiento'
         ? entrenamientos.find(e => e.id === record.session_id)
@@ -58,7 +71,7 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
         
       const typeStr = record.session_type === 'entrenamiento' ? 'Entr.' : 'Part.';
       const rivalStr = record.session_type === 'partido' && session?.rival ? ` vs ${session.rival}` : '';
-      return `${dorsalStr}${playerNick} (${typeStr} ${formattedDate}${rivalStr})`;
+      return `${dorsalStr}${playerNick}${teamTag} (${typeStr} ${formattedDate}${rivalStr})`;
     }
   };
 
@@ -163,16 +176,17 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-brand-black-border pb-3 gap-4">
           <div>
             <h3 className="text-sm font-bold text-white">Configuración del Comparador GPS</h3>
-            <p className="text-[11px] text-brand-gray-muted mt-0.5 font-medium">Añade hasta 5 jugadores y selecciona una sesión específica o su media global</p>
+            <p className="text-[11px] text-brand-gray-muted mt-0.5 font-medium">Compara hasta 5 jugadores del Primer Equipo y Juvenil por sesión o media global</p>
           </div>
           <div className="flex items-center gap-3">
             <select
-              className="bg-brand-black border border-brand-black-border text-brand-gray-light text-xs rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2 outline-none"
+              className="bg-brand-black border border-brand-black-border text-brand-gray-light text-xs rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2 outline-none font-medium"
               value={plantilla}
               onChange={(e) => setPlantilla(e.target.value as any)}
             >
-              <option value="Primer Equipo">Primer Equipo</option>
-              <option value="Juvenil">Juvenil</option>
+              <option value="Todas">Todas las plantillas (Comparación Mixta)</option>
+              <option value="Primer Equipo">Solo Primer Equipo</option>
+              <option value="Juvenil">Solo Juvenil</option>
             </select>
             {activeItems.length > 0 && (
               <button
@@ -215,11 +229,34 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                     className="bg-brand-black border border-brand-black-border text-white text-xs rounded-lg focus:ring-brand-red-600 focus:border-brand-red-600 p-2 outline-none w-full"
                   >
                     <option value="">-- Seleccionar Jugador --</option>
-                    {filteredJugadores.map(j => (
-                      <option key={j.id} value={j.id}>
-                        {j.dorsal ? `(${j.dorsal}) ` : ''}{j.nickname || j.full_name}
-                      </option>
-                    ))}
+                    {plantilla === 'Todas' ? (
+                      <>
+                        {primerEquipoJugadores.length > 0 && (
+                          <optgroup label="Primer Equipo">
+                            {primerEquipoJugadores.map(j => (
+                              <option key={j.id} value={j.id}>
+                                {j.dorsal ? `(${j.dorsal}) ` : ''}{j.nickname || j.full_name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {juvenilJugadores.length > 0 && (
+                          <optgroup label="Juvenil">
+                            {juvenilJugadores.map(j => (
+                              <option key={j.id} value={j.id}>
+                                {j.dorsal ? `(${j.dorsal}) ` : ''}{j.nickname || j.full_name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    ) : (
+                      filteredJugadores.map(j => (
+                        <option key={j.id} value={j.id}>
+                          {j.dorsal ? `(${j.dorsal}) ` : ''}{j.nickname || j.full_name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -304,7 +341,7 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                 <div key={item.id} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 flex flex-col items-center text-center relative overflow-hidden">
                   <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                   
-                  <div className="relative w-14 h-14 rounded-full overflow-hidden mb-3 border-2 mt-2" style={{ borderColor: COLORS[i % COLORS.length] }}>
+                  <div className="relative w-14 h-14 rounded-full overflow-hidden mb-2 border-2 mt-2" style={{ borderColor: COLORS[i % COLORS.length] }}>
                     {p.photo_url ? (
                       <img src={p.photo_url} alt={p.nickname || p.full_name} className="w-full h-full object-cover" />
                     ) : (
@@ -314,6 +351,13 @@ export const ComparadorGPS: React.FC<ComparadorGPSProps> = ({ jugadores, gpsReco
                     )}
                   </div>
                   <div className="text-xs font-bold text-white leading-tight">{p.dorsal ? `${p.dorsal}. ` : ''}{p.nickname || p.full_name}</div>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full mt-1.5 inline-block ${
+                    p.team_category === 'Juvenil'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'bg-brand-red-600/20 text-brand-red-400 border border-brand-red-600/30'
+                  }`}>
+                    {p.team_category === 'Juvenil' ? 'Juvenil' : 'Primer Equipo'}
+                  </span>
                   <div className="text-[10px] text-brand-gray-muted font-medium mt-1 truncate max-w-full" title={sessionLabel}>
                     {sessionLabel}
                   </div>

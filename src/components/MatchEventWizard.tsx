@@ -186,22 +186,55 @@ export const MatchEventWizard: React.FC<MatchEventWizardProps> = ({ isOpen, onCl
 
   // Helper selectors
   const renderMinuteSelector = () => (
-    <div className="flex items-center gap-3 bg-brand-black/40 p-4 rounded-xl border border-brand-black-border mb-6">
-      <div className="flex-1">
-        <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Periodo</label>
-        <select value={period} onChange={(e) => setPeriod(e.target.value)} className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border">
-          <option value="1T">1T</option>
-          <option value="2T">2T</option>
-          <option value="PR1">Prórroga 1</option>
-          <option value="PR2">Prórroga 2</option>
-        </select>
-      </div>
-      <div className="flex-1">
-        <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Minuto</label>
-        <div className="flex items-center gap-2">
-          <input type="number" min="1" max="60" value={minute} onChange={(e) => setMinute(e.target.value)} className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border text-center font-bold font-mono" />
-          <span className="text-brand-gray-muted text-sm">'</span>
+    <div className="space-y-2 mb-6">
+      <div className="flex items-center gap-3 bg-brand-black/40 p-4 rounded-xl border border-brand-black-border">
+        <div className="flex-1">
+          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Periodo</label>
+          <select value={period} onChange={(e) => setPeriod(e.target.value)} className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border">
+            <option value="1T">1T</option>
+            <option value="2T">2T</option>
+            <option value="PR1">Prórroga 1</option>
+            <option value="PR2">Prórroga 2</option>
+          </select>
         </div>
+        <div className="flex-1">
+          <label className="text-[10px] font-bold text-brand-gray-muted uppercase block mb-1">Minuto</label>
+          <div className="flex items-center gap-2">
+            <input type="number" min="0" max="60" value={minute} onChange={(e) => setMinute(e.target.value)} className="form-input bg-brand-black-bg text-sm py-2 px-3 w-full border-brand-black-border text-center font-bold font-mono" />
+            <span className="text-brand-gray-muted text-sm">'</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 px-1">
+        <span className="text-[9px] font-bold text-brand-gray-muted uppercase mr-1">Rápido:</span>
+        <button
+          type="button"
+          onClick={() => { setPeriod('1T'); setMinute('45'); }}
+          className="text-[10px] bg-brand-black-card hover:bg-brand-black-hover text-brand-gray-light px-2 py-0.5 rounded border border-brand-black-border transition-colors font-medium"
+        >
+          1T 45' (Descanso)
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPeriod('2T'); setMinute('15'); }}
+          className="text-[10px] bg-brand-black-card hover:bg-brand-black-hover text-brand-gray-light px-2 py-0.5 rounded border border-brand-black-border transition-colors font-medium"
+        >
+          2T 15' (60')
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPeriod('2T'); setMinute('30'); }}
+          className="text-[10px] bg-brand-black-card hover:bg-brand-black-hover text-brand-gray-light px-2 py-0.5 rounded border border-brand-black-border transition-colors font-medium"
+        >
+          2T 30' (75')
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPeriod('2T'); setMinute('45'); }}
+          className="text-[10px] bg-brand-black-card hover:bg-brand-black-hover text-brand-gray-light px-2 py-0.5 rounded border border-brand-black-border transition-colors font-medium"
+        >
+          2T 45' (90')
+        </button>
       </div>
     </div>
   );

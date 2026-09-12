@@ -53,12 +53,13 @@ export const ComparadorPrintView: React.FC<ComparadorPrintViewProps> = ({
     if (!player) return 'Jugador';
     const playerNick = player.nickname || player.full_name;
     const dorsalStr = player.dorsal ? `${player.dorsal}. ` : '';
+    const teamTag = player.team_category === 'Juvenil' ? ' [Juv]' : ' [1er Eq]';
     
     if (item.gpsRecordId === '') {
-      return `${dorsalStr}${playerNick} (Media)`;
+      return `${dorsalStr}${playerNick}${teamTag} (Media)`;
     } else {
       const record = gpsRecords.find(r => r.id?.toString() === item.gpsRecordId?.toString());
-      if (!record) return `${dorsalStr}${playerNick}`;
+      if (!record) return `${dorsalStr}${playerNick}${teamTag}`;
       
       const session = record.session_type === 'entrenamiento'
         ? entrenamientos.find(e => e.id?.toString() === record.session_id?.toString())
@@ -72,7 +73,7 @@ export const ComparadorPrintView: React.FC<ComparadorPrintViewProps> = ({
         
       const typeStr = record.session_type === 'entrenamiento' ? 'Entr.' : 'Part.';
       const rivalStr = record.session_type === 'partido' && session?.rival ? ` vs ${session.rival}` : '';
-      return `${dorsalStr}${playerNick} (${typeStr} ${formattedDate}${rivalStr})`;
+      return `${dorsalStr}${playerNick}${teamTag} (${typeStr} ${formattedDate}${rivalStr})`;
     }
   };
 
@@ -124,6 +125,9 @@ export const ComparadorPrintView: React.FC<ComparadorPrintViewProps> = ({
                     </div>
                     <div className="text-[10px] font-bold mt-1 text-center leading-tight w-full pb-0.5 truncate">
                       {p.dorsal ? `${p.dorsal}. ` : ''}{p.nickname || p.full_name}
+                    </div>
+                    <div className="text-[8px] font-bold uppercase tracking-wider text-gray-400">
+                      {p.team_category === 'Juvenil' ? 'Juvenil' : '1er Eq'}
                     </div>
                     <div className="text-[9px] text-gray-500 font-bold text-center w-full mt-0.5 leading-none">
                       {sessionLabel}

@@ -137,28 +137,105 @@ export const MatchReport: React.FC = () => {
 
   // Asistente de eventos
   const [isEventWizardOpen, setIsEventWizardOpen] = useState(false);
-  const [matchDuration, setMatchDuration] = useState<number>(90);
+  const [baseDuration, setBaseDuration] = useState<number>(90);
+  const [stoppageFirstHalf, setStoppageFirstHalf] = useState<number>(0);
+  const [stoppageSecondHalf, setStoppageSecondHalf] = useState<number>(0);
+  const matchDuration = baseDuration + stoppageFirstHalf + stoppageSecondHalf;
+
+  // Función para calcular los minutos reales jugados en un stint considerando los descuentos de ambas partes
+  const computeStintMinutes = (
+    stintStart: number,
+    stintEnd: number,
+    baseDur: number,
+    stoppage1: number,
+    stoppage2: number
+  ): number => {
+    const half1 = Math.floor(baseDur / 2);
+    let total = 0;
+
+    // 1ª Parte: de stintStart hasta Math.min(stintEnd, half1)
+    if (stintStart < half1) {
+      const s1 = Math.max(0, stintStart);
+      if (stintEnd <= half1) {
+        total += (stintEnd - s1);
+        // Si jugó hasta el descanso reglamentario de la 1ª parte, se le suma el descuento de la 1ª parte
+        if (stintEnd === half1) {
+          total += stoppage1;
+        }
+      } else {
+        // Jugó todo el final de la 1ª parte y siguió en la 2ª parte
+        total += (half1 - s1) + stoppage1;
+      }
+    }
+
+    // 2ª Parte: de Math.max(stintStart, half1) hasta stintEnd
+    if (stintEnd > half1) {
+      const s2 = Math.max(half1, stintStart);
+      if (stintEnd >= baseDur) {
+        // Jugó hasta el final del partido, se le suma el descuento de la 2ª parte
+        total += (baseDur - s2) + stoppage2;
+      } else {
+        // Fue sustituido o expulsado antes de finalizar el tiempo reglamentario
+        total += (stintEnd - s2);
+      }
+    }
+
+    return Math.max(0, total);
+  };
 
   const parseAbsoluteMinute = (minuteStr: any): number => {
-    if (!minuteStr) return matchDuration;
+    const totalMatchDuration = baseDuration + stoppageFirstHalf + stoppageSecondHalf;
+    if (!minuteStr) return totalMatchDuration;
     const str = String(minuteStr).trim();
-    let minuteNum = matchDuration;
+    let minuteNum = totalMatchDuration;
     const parts = str.split(' ');
+    const half1 = Math.floor(baseDuration / 2);
+
     if (parts.length > 1) {
       const period = parts[0].toUpperCase();
-      const min = parseInt(parts[1].split('+')[0].replace(/\D/g, '')) || 0;
-      if (period === '1T') minuteNum = min;
-      else if (period === '2T') minuteNum = min + Math.floor(matchDuration / 2);
-      else if (period === '1P' || period === 'PR1') minuteNum = min + matchDuration;
-      else if (period === '2P' || period === 'PR2') minuteNum = min + matchDuration + 15;
-      else minuteNum = min;
+      const timeParts = parts[1].split('+');
+      const min = parseInt(timeParts[0].replace(/\D/g, '')) || 0;
+      const extra = timeParts.length > 1 ? (parseInt(timeParts[1].replace(/\D/g, '')) || 0) : 0;
+
+      if (period === '1T') {
+        minuteNum = min + extra;
+      } else if (period === '2T') {
+        if (min > half1) {
+          minuteNum = min + extra;
+        } else {
+          minuteNum = half1 + min + extra;
+        }
+      } else if (period === '1P' || period === 'PR1') {
+        minuteNum = min + extra + baseDuration;
+      } else if (period === '2P' || period === 'PR2') {
+        minuteNum = min + extra + baseDuration + 15;
+      } else {
+        minuteNum = min + extra;
+      }
     } else {
-      minuteNum = parseInt(str.split('+')[0].replace(/\D/g, '')) || matchDuration;
+      const timeParts = str.split('+');
+      const min = parseInt(timeParts[0].replace(/\D/g, '')) || 0;
+      const extra = timeParts.length > 1 ? (parseInt(timeParts[1].replace(/\D/g, '')) || 0) : 0;
+      minuteNum = min + extra || totalMatchDuration;
     }
     return minuteNum;
   };
 
-  const recalculateAllMinutes = (stats: Record<string, LocalPlayerStats>, detectManualOverride = false) => {
+  const isFirstHalfEvent = (minuteStr: string) => {
+    if (!minuteStr) return true;
+    const str = String(minuteStr).trim().toUpperCase();
+    if (str.startsWith('1T')) return true;
+    if (str.startsWith('2T') || str.startsWith('PR1') || str.startsWith('PR2') || str.startsWith('1P') || str.startsWith('2P')) return false;
+    return parseAbsoluteMinute(minuteStr) <= Math.floor(baseDuration / 2);
+  };
+
+  const recalculateAllMinutes = (
+    stats: Record<string, LocalPlayerStats>,
+    detectManualOverride = false,
+    curBaseDuration = baseDuration,
+    curStoppage1 = stoppageFirstHalf,
+    curStoppage2 = stoppageSecondHalf
+  ) => {
     const next = { ...stats };
     
     // Build chronological substitution timeline
@@ -221,8 +298,8 @@ export const MatchReport: React.FC = () => {
     Object.values(next).forEach(p => {
       let calculatedMinutes = 0;
       const stints = playerStints[p.player_id];
-      if (stints) {
-        let finalExit = matchDuration;
+      if (stints && stints.length > 0) {
+        let finalExit = curBaseDuration;
         if (p.red_card && p.event_minutes?.red_card) {
            finalExit = parseAbsoluteMinute(p.event_minutes.red_card);
         }
@@ -234,11 +311,13 @@ export const MatchReport: React.FC = () => {
         });
         
         stints.forEach(stint => {
-           const start = Math.min(stint.start, matchDuration);
-           const end = Math.min(stint.end!, matchDuration);
-           if (end > start) {
-             calculatedMinutes += (end - start);
-           }
+          calculatedMinutes += computeStintMinutes(
+            stint.start,
+            stint.end!,
+            curBaseDuration,
+            curStoppage1,
+            curStoppage2
+          );
         });
       } else {
         calculatedMinutes = 0;
@@ -264,11 +343,32 @@ export const MatchReport: React.FC = () => {
     return next;
   };
 
+  const handleBaseDurationChange = (val: number) => {
+    const newVal = Math.max(1, val);
+    setBaseDuration(newVal);
+    setPlayerStats(prev => recalculateAllMinutes(prev, false, newVal, stoppageFirstHalf, stoppageSecondHalf));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleStoppage1Change = (val: number) => {
+    const newVal = Math.max(0, val);
+    setStoppageFirstHalf(newVal);
+    setPlayerStats(prev => recalculateAllMinutes(prev, false, baseDuration, newVal, stoppageSecondHalf));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleStoppage2Change = (val: number) => {
+    const newVal = Math.max(0, val);
+    setStoppageSecondHalf(newVal);
+    setPlayerStats(prev => recalculateAllMinutes(prev, false, baseDuration, stoppageFirstHalf, newVal));
+    setHasUnsavedChanges(true);
+  };
+
   useEffect(() => {
     if (statsInitializedRef.current && Object.keys(playerStats).length > 0) {
-      setPlayerStats(prev => recalculateAllMinutes(prev));
+      setPlayerStats(prev => recalculateAllMinutes(prev, false, baseDuration, stoppageFirstHalf, stoppageSecondHalf));
     }
-  }, [matchDuration]);
+  }, [baseDuration, stoppageFirstHalf, stoppageSecondHalf]);
 
   // Marcar que hay cambios sin guardar
   useEffect(() => {
@@ -279,7 +379,7 @@ export const MatchReport: React.FC = () => {
     if (isEditing) {
       setHasUnsavedChanges(true);
     }
-  }, [playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, teamRatings, teamPositiveAspects, teamImproveAspects, isEditing]);
+  }, [playerStats, lineup, scoreUs, scoreThem, tacticalSystem, tacticalWithBall, tacticalWithoutBall, tacticalSetPieces, tacticalGeneral, opponentEvents, teamRatings, teamPositiveAspects, teamImproveAspects, isEditing, baseDuration, stoppageFirstHalf, stoppageSecondHalf]);
 
   // Prevenir navegación si hay cambios sin guardar
   useEffect(() => {
@@ -379,6 +479,14 @@ export const MatchReport: React.FC = () => {
       setTacticalSetPieces(matchData.tactical_set_pieces || '');
       setTacticalGeneral(matchData.tactical_general || '');
       const oppEvts = (matchData.opponent_events || {}) as any;
+      const s1 = Number((matchData as any).stoppage_first_half ?? oppEvts.stoppage_first_half ?? 0);
+      const s2 = Number((matchData as any).stoppage_second_half ?? oppEvts.stoppage_second_half ?? 0);
+      const bDur = Number((matchData as any).duration ?? oppEvts.base_duration ?? (matchData as any).match_duration ?? oppEvts.match_duration ?? 90);
+
+      setStoppageFirstHalf(s1);
+      setStoppageSecondHalf(s2);
+      setBaseDuration(bDur);
+
       setOpponentEvents({
         goals: oppEvts.goals || [],
         yellow_cards: oppEvts.yellow_cards || [],
@@ -414,6 +522,12 @@ export const MatchReport: React.FC = () => {
         }
       }
       
+      const oppEvts = (matchData.opponent_events || {}) as any;
+      const s1 = Number((matchData as any).stoppage_first_half ?? oppEvts.stoppage_first_half ?? 0);
+      const s2 = Number((matchData as any).stoppage_second_half ?? oppEvts.stoppage_second_half ?? 0);
+      const bDur = Number((matchData as any).duration ?? oppEvts.base_duration ?? (matchData as any).match_duration ?? oppEvts.match_duration ?? 90);
+      const initialTotalDuration = bDur + s1 + s2;
+
       const statsMap: Record<string, LocalPlayerStats> = {};
       
       dbPlayers.forEach(p => {
@@ -423,7 +537,7 @@ export const MatchReport: React.FC = () => {
           is_called_up: init ? init.is_called_up : false,
           is_starter: init ? !!init.is_starter : false,
           position: init ? init.position || '' : '',
-          minutes_played: init ? (init.minutes_played || (init.is_starter ? matchDuration : 0)) : 0,
+          minutes_played: init ? (init.minutes_played || (init.is_starter ? initialTotalDuration : 0)) : 0,
           goals: init ? init.goals || 0 : 0,
           conceded_goals: init ? init.conceded_goals || 0 : 0,
           own_goals: init ? init.own_goals || 0 : 0,
@@ -450,7 +564,7 @@ export const MatchReport: React.FC = () => {
         };
       });
 
-      setPlayerStats(recalculateAllMinutes(statsMap, true));
+      setPlayerStats(recalculateAllMinutes(statsMap, true, bDur, s1, s2));
 
       // Reconstruir el XI Inicial (lineup) asociando los jugadores marcados como titulares
       // a sus posiciones en la formación actual
@@ -1172,6 +1286,14 @@ export const MatchReport: React.FC = () => {
       // Si se está borrando el acta, no reescribir el estado local en la BBDD.
       if (isDeletingRef.current) return;
 
+      const updatedOpponentEvents = {
+        ...(opponentEvents || {}),
+        stoppage_first_half: stoppageFirstHalf,
+        stoppage_second_half: stoppageSecondHalf,
+        base_duration: baseDuration,
+        match_duration: matchDuration
+      };
+
       // 1. Guardar metadatos del partido
       const updatedMatch = {
         score_us: matchStatus === 'Jugado' ? scoreUs : null,
@@ -1182,7 +1304,7 @@ export const MatchReport: React.FC = () => {
         tactical_without_ball: tacticalWithoutBall.trim(),
         tactical_set_pieces: tacticalSetPieces.trim(),
         tactical_general: tacticalGeneral.trim(),
-        opponent_events: opponentEvents,
+        opponent_events: updatedOpponentEvents,
         team_positive_aspects: teamPositiveAspects || null,
         team_improve_aspects: teamImproveAspects || null,
         team_ratings: teamRatings
@@ -2032,18 +2154,76 @@ export const MatchReport: React.FC = () => {
                     {Object.keys(lineup).length}/11 Titulares
                   </span>
                 </div>
-                <div className="flex items-center gap-2 bg-brand-black-card border border-brand-gray-dark/50 px-3 py-1.5 rounded-lg shadow-premium">
-                  <span className="text-xs font-bold text-white uppercase tracking-wider">⏱️ Duración Total:</span>
-                  <input 
-                    type="number"
-                    value={matchDuration}
-                    min="1"
-                    max="150"
-                    onChange={(e) => setMatchDuration(Number(e.target.value) || 90)}
-                    disabled={!isEditing}
-                    className="w-10 bg-transparent text-sm font-black text-white text-center focus:outline-none focus:ring-0 p-0 m-0 border-b border-white/30"
-                  />
-                  <span className="text-[10px] text-white/70 font-bold uppercase">min</span>
+                <div className="flex flex-wrap items-center gap-2 bg-brand-black-card border border-brand-gray-dark/50 px-3 py-1.5 rounded-xl shadow-premium">
+                  {/* Duración base */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-brand-gray-light uppercase tracking-wider flex items-center gap-1">
+                      ⏱️ Base:
+                    </span>
+                    <input 
+                      type="number"
+                      value={baseDuration}
+                      min="1"
+                      max="150"
+                      onChange={(e) => handleBaseDurationChange(Number(e.target.value) || 90)}
+                      disabled={!isEditing}
+                      title="Duración reglamentaria del partido (normalmente 90')"
+                      className="w-10 bg-brand-black/60 rounded px-1 text-xs font-black text-white text-center focus:outline-none focus:ring-1 focus:ring-brand-red-600 border border-brand-black-border"
+                    />
+                    <span className="text-[10px] text-brand-gray-muted font-bold">'</span>
+                  </div>
+
+                  <div className="h-4 w-[1px] bg-brand-black-border hidden sm:block" />
+
+                  {/* Descuento 1ª Parte */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                      Desc. 1P:
+                    </span>
+                    <span className="text-xs font-bold text-amber-400/80">+</span>
+                    <input 
+                      type="number"
+                      value={stoppageFirstHalf}
+                      min="0"
+                      max="30"
+                      onChange={(e) => handleStoppage1Change(Math.max(0, parseInt(e.target.value) || 0))}
+                      disabled={!isEditing}
+                      title="Minutos de descuento en la 1ª parte"
+                      className="w-9 bg-brand-black/60 rounded px-1 text-xs font-black text-amber-400 text-center focus:outline-none focus:ring-1 focus:ring-amber-400 border border-brand-black-border"
+                    />
+                    <span className="text-[10px] text-amber-400/70 font-bold">'</span>
+                  </div>
+
+                  <div className="h-4 w-[1px] bg-brand-black-border hidden sm:block" />
+
+                  {/* Descuento 2ª Parte */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                      Desc. 2P:
+                    </span>
+                    <span className="text-xs font-bold text-amber-400/80">+</span>
+                    <input 
+                      type="number"
+                      value={stoppageSecondHalf}
+                      min="0"
+                      max="30"
+                      onChange={(e) => handleStoppage2Change(Math.max(0, parseInt(e.target.value) || 0))}
+                      disabled={!isEditing}
+                      title="Minutos de descuento en la 2ª parte"
+                      className="w-9 bg-brand-black/60 rounded px-1 text-xs font-black text-amber-400 text-center focus:outline-none focus:ring-1 focus:ring-amber-400 border border-brand-black-border"
+                    />
+                    <span className="text-[10px] text-amber-400/70 font-bold">'</span>
+                  </div>
+
+                  <div className="h-4 w-[1px] bg-brand-black-border hidden sm:block" />
+
+                  {/* Total */}
+                  <div className="flex items-center gap-1 bg-brand-black/80 px-2 py-0.5 rounded-lg border border-brand-black-border">
+                    <span className="text-[10px] font-bold text-brand-gray-muted uppercase">Total:</span>
+                    <span className="text-xs font-extrabold text-emerald-400 font-mono">
+                      {matchDuration}'
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2350,13 +2530,20 @@ export const MatchReport: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Columna 1ª Parte */}
                   <div>
-                    <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">1ª Parte</h4>
-                    {matchEvents.filter(e => parseAbsoluteMinute(e.minute) <= 45).length === 0 ? (
+                    <div className="flex items-center justify-between border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">
+                      <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase">1ª Parte</h4>
+                      {stoppageFirstHalf > 0 && (
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
+                          +{stoppageFirstHalf}' añadido ({Math.floor(baseDuration / 2) + stoppageFirstHalf}')
+                        </span>
+                      )}
+                    </div>
+                    {matchEvents.filter(e => isFirstHalfEvent(e.minute)).length === 0 ? (
                       <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
                     ) : (
                       <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
                         {matchEvents
-                          .filter(e => parseAbsoluteMinute(e.minute) <= 45)
+                          .filter(e => isFirstHalfEvent(e.minute))
                           .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
                           .map(evt => {
                           let icon = '⚽';
@@ -2472,13 +2659,20 @@ export const MatchReport: React.FC = () => {
 
                   {/* Columna 2ª Parte */}
                   <div>
-                    <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">2ª Parte</h4>
-                    {matchEvents.filter(e => parseAbsoluteMinute(e.minute) > 45).length === 0 ? (
+                    <div className="flex items-center justify-between border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">
+                      <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase">2ª Parte</h4>
+                      {stoppageSecondHalf > 0 && (
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
+                          +{stoppageSecondHalf}' añadido ({matchDuration}')
+                        </span>
+                      )}
+                    </div>
+                    {matchEvents.filter(e => !isFirstHalfEvent(e.minute)).length === 0 ? (
                       <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
                     ) : (
                       <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
                         {matchEvents
-                          .filter(e => parseAbsoluteMinute(e.minute) > 45)
+                          .filter(e => !isFirstHalfEvent(e.minute))
                           .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
                           .map(evt => {
                           let icon = '⚽';
@@ -2925,13 +3119,20 @@ export const MatchReport: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Columna 1ª Parte */}
                       <div>
-                        <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">1ª Parte</h4>
-                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) <= 45).length === 0 ? (
+                        <div className="flex items-center justify-between border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">
+                          <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase">1ª Parte</h4>
+                          {stoppageFirstHalf > 0 && (
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
+                              +{stoppageFirstHalf}' añadido ({Math.floor(baseDuration / 2) + stoppageFirstHalf}')
+                            </span>
+                          )}
+                        </div>
+                        {matchEvents.filter(e => isFirstHalfEvent(e.minute)).length === 0 ? (
                           <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
                         ) : (
                           <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
                             {matchEvents
-                              .filter(e => parseAbsoluteMinute(e.minute) <= 45)
+                              .filter(e => isFirstHalfEvent(e.minute))
                               .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
                               .map(evt => {
                               let icon = '⚽';
@@ -3032,13 +3233,20 @@ export const MatchReport: React.FC = () => {
 
                       {/* Columna 2ª Parte */}
                       <div>
-                        <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">2ª Parte</h4>
-                        {matchEvents.filter(e => parseAbsoluteMinute(e.minute) > 45).length === 0 ? (
+                        <div className="flex items-center justify-between border-b border-brand-black-border pb-2 mb-3 sticky top-0 bg-brand-black-card z-20">
+                          <h4 className="text-[11px] font-bold text-brand-gray-muted uppercase">2ª Parte</h4>
+                          {stoppageSecondHalf > 0 && (
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
+                              +{stoppageSecondHalf}' añadido ({matchDuration}')
+                            </span>
+                          )}
+                        </div>
+                        {matchEvents.filter(e => !isFirstHalfEvent(e.minute)).length === 0 ? (
                           <p className="text-xs text-brand-gray-muted italic">Sin incidencias</p>
                         ) : (
                           <div className="relative border-l-2 border-brand-black-border ml-3 pl-4 space-y-2 py-1">
                             {matchEvents
-                              .filter(e => parseAbsoluteMinute(e.minute) > 45)
+                              .filter(e => !isFirstHalfEvent(e.minute))
                               .sort((a, b) => parseAbsoluteMinute(a.minute) - parseAbsoluteMinute(b.minute))
                               .map(evt => {
                               let icon = '⚽';
