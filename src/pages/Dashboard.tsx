@@ -498,38 +498,78 @@ export const Dashboard: React.FC = () => {
                   }
                   const canConfirm = isPlayer && evt.eventType !== 'social';
 
+                  const isConfirmingNoInline = canConfirm && confirmReason.id === evt.id;
+                  const eventPending = evt.eventType === 'training' ? saveTrainingIntentMutation.isPending : saveMatchIntentMutation.isPending;
+
                   return (
-                    <div key={i} className="flex items-center gap-4 bg-brand-black/40 border border-brand-black-border p-4 rounded-xl">
-                      <div className="w-12 h-12 flex-shrink-0 bg-brand-black border border-brand-black-border rounded-xl flex flex-col items-center justify-center text-center">
-                        <span className="text-[10px] uppercase font-bold text-brand-gray-muted tracking-wide">{formatDateSpanish(evt.date).dayName.substring(0,3)}</span>
-                        <span className="text-lg font-black text-brand-gray-light leading-none">{evt.date.split('-')[2]}</span>
+                    <div key={i} className="flex flex-col gap-3 bg-brand-black/40 border border-brand-black-border p-4 rounded-xl">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 flex-shrink-0 bg-brand-black border border-brand-black-border rounded-xl flex flex-col items-center justify-center text-center">
+                          <span className="text-[10px] uppercase font-bold text-brand-gray-muted tracking-wide">{formatDateSpanish(evt.date).dayName.substring(0,3)}</span>
+                          <span className="text-lg font-black text-brand-gray-light leading-none">{evt.date.split('-')[2]}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-bold text-brand-gray-light truncate">
+                            {evt.eventType === 'match' ? `vs ${evt.rival}` : evt.eventType === 'training' ? 'Entrenamiento' : evt.title}
+                          </h4>
+                          <p className="text-[11px] text-brand-gray-muted flex items-center flex-wrap gap-1.5 mt-1">
+                            <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {evt.time || '--:--'}</span>
+                            {evt.location && <span className="flex items-center gap-1"><span className="opacity-40">•</span> <MapPin className="w-3 h-3 flex-shrink-0" /> {evt.location}</span>}
+                          </p>
+                        </div>
+                        {canConfirm ? (
+                          <div className="flex-shrink-0 flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleConfirmEvent(evt.id, evt.eventType as 'training' | 'match', true)}
+                              disabled={eventPending}
+                              title="Voy"
+                              className={`p-2 rounded-lg border transition-all disabled:opacity-50 ${
+                                currentIntent === true
+                                  ? 'bg-emerald-500 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                                  : 'bg-brand-black border-brand-black-border text-brand-gray-muted hover:border-emerald-500/50 hover:text-emerald-400'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setConfirmReason(isConfirmingNoInline ? { id: '', reason: '' } : { id: evt.id, reason: '' })}
+                              disabled={eventPending}
+                              title="No voy"
+                              className={`p-2 rounded-lg border transition-all disabled:opacity-50 ${
+                                currentIntent === false
+                                  ? 'bg-brand-red-600 border-brand-red-600 text-white shadow-[0_0_10px_rgba(239,68,68,0.3)]'
+                                  : 'bg-brand-black border-brand-black-border text-brand-gray-muted hover:border-brand-red-500/50 hover:text-brand-red-400'
+                              }`}
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className={`p-2 rounded-lg flex-shrink-0 ${evt.eventType === 'match' ? 'bg-amber-500/10 text-amber-500' : evt.eventType === 'training' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                            {evt.eventType === 'match' ? <Trophy className="w-5 h-5" /> : evt.eventType === 'training' ? <Activity className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-bold text-brand-gray-light truncate">
-                          {evt.eventType === 'match' ? `vs ${evt.rival}` : evt.eventType === 'training' ? 'Entrenamiento' : evt.title}
-                        </h4>
-                        <p className="text-[11px] text-brand-gray-muted flex items-center flex-wrap gap-1.5 mt-1">
-                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {evt.time || '--:--'}</span>
-                          {evt.location && <span className="flex items-center gap-1"><span className="opacity-40">•</span> <MapPin className="w-3 h-3 flex-shrink-0" /> {evt.location}</span>}
-                        </p>
-                      </div>
-                      {canConfirm ? (
-                        <button
-                          onClick={() => setActiveForm('player_confirm')}
-                          title={currentIntent === true ? 'Vas - Toca para editar' : currentIntent === false ? 'No vas - Toca para editar' : 'Confirmar asistencia'}
-                          className={`flex-shrink-0 p-2 rounded-lg border transition-all ${
-                            currentIntent === true
-                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                              : currentIntent === false
-                              ? 'bg-brand-red-600 border-brand-red-600 text-white shadow-[0_0_10px_rgba(239,68,68,0.3)]'
-                              : 'bg-brand-black border-brand-black-border text-brand-gray-muted hover:border-emerald-500/50 hover:text-emerald-400'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-5 h-5" />
-                        </button>
-                      ) : (
-                        <div className={`p-2 rounded-lg flex-shrink-0 ${evt.eventType === 'match' ? 'bg-amber-500/10 text-amber-500' : evt.eventType === 'training' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                          {evt.eventType === 'match' ? <Trophy className="w-5 h-5" /> : evt.eventType === 'training' ? <Activity className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                      {isConfirmingNoInline && (
+                        <div className="bg-brand-black/50 p-3 rounded-lg border border-brand-red-500/30 animate-fade-in">
+                          <label className="text-[10px] font-bold text-brand-gray-light uppercase tracking-wider block mb-2">Motivo de la ausencia *</label>
+                          <textarea
+                            className="w-full bg-brand-black/50 border border-brand-black-border rounded-lg p-2.5 text-xs text-brand-gray-light mb-3 focus:ring-1 focus:ring-brand-red-500"
+                            rows={2}
+                            placeholder="Indica el motivo..."
+                            value={confirmReason.reason}
+                            onChange={e => setConfirmReason({ ...confirmReason, reason: e.target.value })}
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setConfirmReason({ id: '', reason: '' })} className="btn-secondary py-1.5 px-3 text-xs">Cancelar</button>
+                            <button
+                              onClick={() => handleConfirmEvent(evt.id, evt.eventType as 'training' | 'match', false, confirmReason.reason)}
+                              disabled={!confirmReason.reason.trim() || eventPending}
+                              className="btn-primary bg-brand-red-600 hover:bg-brand-red-700 py-1.5 px-3 text-xs font-bold shadow-[0_0_10px_rgba(239,68,68,0.2)] disabled:opacity-50"
+                            >
+                              {eventPending ? 'Guardando...' : 'Confirmar Ausencia'}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
