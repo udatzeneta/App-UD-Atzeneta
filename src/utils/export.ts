@@ -1139,9 +1139,9 @@ export const exportMatchReportToPDF = async (
 
   // Separate events into halves
   const oppEvts = (match.opponent_events || {}) as any;
-  const s1 = match.stoppage_first_half ?? oppEvts.stoppage_first_half;
-  const s2 = match.stoppage_second_half ?? oppEvts.stoppage_second_half;
-  const dur = match.duration ?? oppEvts.base_duration ?? 90;
+  const s1 = match.stoppage_first_half || oppEvts.stoppage_first_half || 0;
+  const s2 = match.stoppage_second_half || oppEvts.stoppage_second_half || 0;
+  const dur = match.duration || oppEvts.base_duration || 90;
   const half1 = Math.floor(dur / 2);
 
   const getMinVal = (m: string | number) => {

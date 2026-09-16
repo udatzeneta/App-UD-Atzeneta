@@ -479,9 +479,9 @@ export const MatchReport: React.FC = () => {
       setTacticalSetPieces(matchData.tactical_set_pieces || '');
       setTacticalGeneral(matchData.tactical_general || '');
       const oppEvts = (matchData.opponent_events || {}) as any;
-      const s1 = Number((matchData as any).stoppage_first_half ?? oppEvts.stoppage_first_half ?? 0);
-      const s2 = Number((matchData as any).stoppage_second_half ?? oppEvts.stoppage_second_half ?? 0);
-      const bDur = Number((matchData as any).duration ?? oppEvts.base_duration ?? (matchData as any).match_duration ?? oppEvts.match_duration ?? 90);
+      const s1 = Number((matchData as any).stoppage_first_half || oppEvts.stoppage_first_half || 0);
+      const s2 = Number((matchData as any).stoppage_second_half || oppEvts.stoppage_second_half || 0);
+      const bDur = Number((matchData as any).duration || oppEvts.base_duration || (matchData as any).match_duration || 90);
 
       setStoppageFirstHalf(s1);
       setStoppageSecondHalf(s2);
@@ -523,9 +523,9 @@ export const MatchReport: React.FC = () => {
       }
       
       const oppEvts = (matchData.opponent_events || {}) as any;
-      const s1 = Number((matchData as any).stoppage_first_half ?? oppEvts.stoppage_first_half ?? 0);
-      const s2 = Number((matchData as any).stoppage_second_half ?? oppEvts.stoppage_second_half ?? 0);
-      const bDur = Number((matchData as any).duration ?? oppEvts.base_duration ?? (matchData as any).match_duration ?? oppEvts.match_duration ?? 90);
+      const s1 = Number((matchData as any).stoppage_first_half || oppEvts.stoppage_first_half || 0);
+      const s2 = Number((matchData as any).stoppage_second_half || oppEvts.stoppage_second_half || 0);
+      const bDur = Number((matchData as any).duration || oppEvts.base_duration || (matchData as any).match_duration || 90);
       const initialTotalDuration = bDur + s1 + s2;
 
       const statsMap: Record<string, LocalPlayerStats> = {};
@@ -1304,6 +1304,9 @@ export const MatchReport: React.FC = () => {
         tactical_without_ball: tacticalWithoutBall.trim(),
         tactical_set_pieces: tacticalSetPieces.trim(),
         tactical_general: tacticalGeneral.trim(),
+        stoppage_first_half: stoppageFirstHalf,
+        stoppage_second_half: stoppageSecondHalf,
+        duration: baseDuration,
         opponent_events: updatedOpponentEvents,
         team_positive_aspects: teamPositiveAspects || null,
         team_improve_aspects: teamImproveAspects || null,

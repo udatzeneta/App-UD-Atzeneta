@@ -190,6 +190,9 @@ CREATE TABLE IF NOT EXISTS public.matches (
     location TEXT,
     objective TEXT,
     observations TEXT,
+    stoppage_first_half INT DEFAULT 0,
+    stoppage_second_half INT DEFAULT 0,
+    duration INT DEFAULT 90,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
