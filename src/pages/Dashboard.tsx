@@ -488,26 +488,53 @@ export const Dashboard: React.FC = () => {
             </div>
             <div className="flex-1 flex flex-col gap-3 relative z-10 justify-center">
               {highlights.nextTwoEvents.length > 0 ? (
-                highlights.nextTwoEvents.map((evt: { date: string, time?: string, eventType: string, title?: string, rival?: string, location?: string }, i: number) => (
-                  <div key={i} className="flex items-center gap-4 bg-brand-black/40 border border-brand-black-border p-4 rounded-xl">
-                    <div className="w-12 h-12 flex-shrink-0 bg-brand-black border border-brand-black-border rounded-xl flex flex-col items-center justify-center text-center">
-                      <span className="text-[10px] uppercase font-bold text-brand-gray-muted tracking-wide">{formatDateSpanish(evt.date).dayName.substring(0,3)}</span>
-                      <span className="text-lg font-black text-brand-gray-light leading-none">{evt.date.split('-')[2]}</span>
+                highlights.nextTwoEvents.map((evt: { id: string, date: string, time?: string, eventType: string, title?: string, rival?: string, location?: string }, i: number) => {
+                  const targetPlayerId = dbPlayers.find(p => p.profile_id === user?.id)?.id;
+                  let currentIntent: boolean | null = null;
+                  if (isPlayer && targetPlayerId && evt.eventType === 'training') {
+                    currentIntent = attendanceList.find(a => a.training_id === evt.id && a.player_id === targetPlayerId)?.player_intent ?? null;
+                  } else if (isPlayer && targetPlayerId && evt.eventType === 'match') {
+                    currentIntent = matchStats.find(s => s.match_id === evt.id && s.player_id === targetPlayerId)?.player_intent ?? null;
+                  }
+                  const canConfirm = isPlayer && evt.eventType !== 'social';
+
+                  return (
+                    <div key={i} className="flex items-center gap-4 bg-brand-black/40 border border-brand-black-border p-4 rounded-xl">
+                      <div className="w-12 h-12 flex-shrink-0 bg-brand-black border border-brand-black-border rounded-xl flex flex-col items-center justify-center text-center">
+                        <span className="text-[10px] uppercase font-bold text-brand-gray-muted tracking-wide">{formatDateSpanish(evt.date).dayName.substring(0,3)}</span>
+                        <span className="text-lg font-black text-brand-gray-light leading-none">{evt.date.split('-')[2]}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-bold text-brand-gray-light truncate">
+                          {evt.eventType === 'match' ? `vs ${evt.rival}` : evt.eventType === 'training' ? 'Entrenamiento' : evt.title}
+                        </h4>
+                        <p className="text-[11px] text-brand-gray-muted flex items-center flex-wrap gap-1.5 mt-1">
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {evt.time || '--:--'}</span>
+                          {evt.location && <span className="flex items-center gap-1"><span className="opacity-40">•</span> <MapPin className="w-3 h-3 flex-shrink-0" /> {evt.location}</span>}
+                        </p>
+                      </div>
+                      {canConfirm ? (
+                        <button
+                          onClick={() => setActiveForm('player_confirm')}
+                          title={currentIntent === true ? 'Vas - Toca para editar' : currentIntent === false ? 'No vas - Toca para editar' : 'Confirmar asistencia'}
+                          className={`flex-shrink-0 p-2 rounded-lg border transition-all ${
+                            currentIntent === true
+                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                              : currentIntent === false
+                              ? 'bg-brand-red-600 border-brand-red-600 text-white shadow-[0_0_10px_rgba(239,68,68,0.3)]'
+                              : 'bg-brand-black border-brand-black-border text-brand-gray-muted hover:border-emerald-500/50 hover:text-emerald-400'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                        </button>
+                      ) : (
+                        <div className={`p-2 rounded-lg flex-shrink-0 ${evt.eventType === 'match' ? 'bg-amber-500/10 text-amber-500' : evt.eventType === 'training' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                          {evt.eventType === 'match' ? <Trophy className="w-5 h-5" /> : evt.eventType === 'training' ? <Activity className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-bold text-brand-gray-light truncate">
-                        {evt.eventType === 'match' ? `vs ${evt.rival}` : evt.eventType === 'training' ? 'Entrenamiento' : evt.title}
-                      </h4>
-                      <p className="text-[11px] text-brand-gray-muted flex items-center gap-1.5 mt-1">
-                        <Clock className="w-3 h-3" /> {evt.time || '--:--'} 
-                        {evt.location && <><span className="mx-1 opacity-40">•</span> <MapPin className="w-3 h-3" /> <span className="truncate">{evt.location}</span></>}
-                      </p>
-                    </div>
-                    <div className={`p-2 rounded-lg ${evt.eventType === 'match' ? 'bg-amber-500/10 text-amber-500' : evt.eventType === 'training' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                      {evt.eventType === 'match' ? <Trophy className="w-5 h-5" /> : evt.eventType === 'training' ? <Activity className="w-5 h-5" /> : <Users className="w-5 h-5" />}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-center text-sm text-brand-gray-muted p-4">No hay próximos eventos programados.</p>
               )}
