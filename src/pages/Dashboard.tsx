@@ -356,7 +356,11 @@ export const Dashboard: React.FC = () => {
   const handleConfirmEvent = (eventId: string, eventType: 'training' | 'match', intent: boolean, reason?: string) => {
     if (!user) return;
     const player = dbPlayers.find(p => p.profile_id === user.id);
-    const targetPlayerId = player ? player.id : user.id;
+    if (!player) {
+      showToast('error', 'Cuenta no vinculada', 'Tu cuenta todavía no está vinculada a ninguna ficha de jugador. Contacta con el club para poder confirmar asistencia.');
+      return;
+    }
+    const targetPlayerId = player.id;
 
     if (eventType === 'training') {
       saveTrainingIntentMutation.mutate({ training_id: eventId, player_id: targetPlayerId, intent, reason: reason || '' });
@@ -1112,7 +1116,7 @@ export const Dashboard: React.FC = () => {
                 const isTraining = ev.eventType === 'training';
                 const { dayName, dateFormatted } = formatDateSpanish(ev.date);
                 
-                const targetPlayerId = dbPlayers.find(p => p.profile_id === user?.id)?.id || user?.id;
+                const targetPlayerId = dbPlayers.find(p => p.profile_id === user?.id)?.id;
                 let currentIntent: boolean | null = null;
                 
                 if (isTraining) {
