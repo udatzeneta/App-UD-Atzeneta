@@ -8,7 +8,7 @@ import type {
 } from '../../types';
 import {
   X, ChevronLeft, ChevronRight, Maximize2, AlertTriangle, Film, LayoutGrid,
-  Pencil, Eraser, Undo2, Trash2,
+  Pencil, Eraser, Undo2, Trash2, BarChart2, Trophy, Activity, Users, AlertCircle,
 } from 'lucide-react';
 import { FormationPitch } from './FormationPitch';
 import { TaskBoardEditor } from '../TaskBoardEditor';
@@ -325,6 +325,23 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
   // Escudo: primero el del rival (equipo FFCV por nombre), si no el del club.
   const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: () => dataService.getTeams() });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => dataService.getSettings() });
+
+  // Datos de FFCV y plantilla para diapositivas estadísticas y de rankings
+  const { data: teamStats } = useQuery({
+    queryKey: ['ffcv_team_stats', opponentName],
+    queryFn: () => dataService.getOpponentFFCVTeamStats(opponentName),
+    enabled: Boolean(opponentName),
+  });
+  const { data: leagueRankings } = useQuery({
+    queryKey: ['ffcv_league_rankings', opponentName],
+    queryFn: () => dataService.getOpponentFFCVLeagueRankings(opponentName),
+    enabled: Boolean(opponentName),
+  });
+  const { data: scoutingPlayers = [] } = useQuery({
+    queryKey: ['scouting_opponent', opponentName],
+    queryFn: () => opponentName ? dataService.getScoutingByTeam(opponentName) : dataService.getScouting(),
+  });
+
   const opponentShield = teams.find(t => isSameTeam(t.name, opponentName))?.shield_url || null;
   const clubLogo = settings?.logo_url || null;
   const shield = opponentShield || clubLogo;
@@ -507,9 +524,434 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
           </div>
         );
       }
+      case 'ffcv_stats': {
+        const stats = teamStats;
+        return (
+          <div className="flex flex-col h-full w-full gap-5 py-2 px-6 max-w-7xl mx-auto overflow-y-auto no-scrollbar">
+            {s.title && (
+              <h2 className="text-2xl sm:text-4xl font-black text-brand-red-500 uppercase tracking-wide text-center shrink-0">
+                {s.title}
+              </h2>
+            )}
+
+            {!stats || stats.played === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-brand-gray-muted text-base gap-3 border border-dashed border-brand-black-border rounded-2xl p-12">
+                <AlertCircle className="w-12 h-12 text-amber-500" />
+                <p className="text-lg font-bold text-white">Sin datos de partidos FFCV sincronizados</p>
+                <p className="text-xs text-brand-gray-muted text-center max-w-md">
+                  Sincroniza los partidos desde el panel de FFCV en el mural del rival para ver estadísticas oficiales acumuladas.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-5 flex-1 justify-center">
+                {/* Métricas Principales */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl text-center shadow-premium">
+                    <span className="text-[11px] text-brand-gray-muted font-bold uppercase block mb-1">Partidos</span>
+                    <span className="text-3xl font-black text-white">{stats.played}</span>
+                  </div>
+                  <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl text-center shadow-premium">
+                    <span className="text-[11px] text-brand-gray-muted font-bold uppercase block mb-1">Balance</span>
+                    <div className="text-lg font-black flex items-center justify-center gap-1">
+                      <span className="text-emerald-400">{stats.wins}V</span>
+                      <span className="text-amber-400">{stats.draws}E</span>
+                      <span className="text-red-400">{stats.losses}D</span>
+                    </div>
+                  </div>
+                  <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl text-center shadow-premium">
+                    <span className="text-[11px] text-brand-gray-muted font-bold uppercase block mb-1">Goles Favor</span>
+                    <span className="text-3xl font-black text-emerald-400">
+                      {stats.goalsFor} <span className="text-xs text-brand-gray-muted font-normal">({stats.avgGF}/p)</span>
+                    </span>
+                  </div>
+                  <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl text-center shadow-premium">
+                    <span className="text-[11px] text-brand-gray-muted font-bold uppercase block mb-1">Goles Contra</span>
+                    <span className="text-3xl font-black text-red-400">
+                      {stats.goalsAgainst} <span className="text-xs text-brand-gray-muted font-normal">({stats.avgGA}/p)</span>
+                    </span>
+                  </div>
+                  <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl text-center shadow-premium">
+                    <span className="text-[11px] text-brand-gray-muted font-bold uppercase block mb-1">Porterías 0</span>
+                    <span className="text-3xl font-black text-sky-400">{stats.cleanSheets}</span>
+                  </div>
+                  <div className="bg-brand-black-card border border-brand-black-border p-4 rounded-xl text-center shadow-premium">
+                    <span className="text-[11px] text-brand-gray-muted font-bold uppercase block mb-1">% Victorias</span>
+                    <span className="text-3xl font-black text-yellow-400">{stats.winRate}%</span>
+                  </div>
+                </div>
+
+                {/* Rendimiento Local vs Visitante & Disciplina */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-brand-black-card border border-brand-black-border p-5 rounded-xl flex flex-col gap-3 shadow-premium">
+                    <h3 className="text-sm font-bold text-white uppercase flex items-center gap-2 border-b border-brand-black-border pb-2">
+                      🏠 Rendimiento en Casa
+                    </h3>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-brand-gray-muted">Balance:</span>
+                      <span className="font-bold text-white">{stats.home.wins}V - {stats.home.draws}E - {stats.home.losses}D</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-brand-gray-muted">Goles:</span>
+                      <span>
+                        <span className="font-bold text-emerald-400">{stats.home.gf} GF</span> / <span className="font-bold text-red-400">{stats.home.ga} GC</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-brand-black-card border border-brand-black-border p-5 rounded-xl flex flex-col gap-3 shadow-premium">
+                    <h3 className="text-sm font-bold text-white uppercase flex items-center gap-2 border-b border-brand-black-border pb-2">
+                      ✈️ Rendimiento Fuera
+                    </h3>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-brand-gray-muted">Balance:</span>
+                      <span className="font-bold text-white">{stats.away.wins}V - {stats.away.draws}E - {stats.away.losses}D</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-brand-gray-muted">Goles:</span>
+                      <span>
+                        <span className="font-bold text-emerald-400">{stats.away.gf} GF</span> / <span className="font-bold text-red-400">{stats.away.ga} GC</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-brand-black-card border border-brand-black-border p-5 rounded-xl flex flex-col gap-3 shadow-premium">
+                    <h3 className="text-sm font-bold text-white uppercase flex items-center gap-2 border-b border-brand-black-border pb-2">
+                      🟨 Disciplina de Equipo
+                    </h3>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-brand-gray-muted">Tarjetas Amarillas:</span>
+                      <span className="font-bold text-amber-400">{stats.totalYellows || 0} 🟨</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-brand-gray-muted">Tarjetas Rojas:</span>
+                      <span className="font-bold text-red-500">{stats.totalReds || 0} 🟥</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'ffcv_highlights': {
+        const best = leagueRankings?.bestMetrics || [];
+        const worst = leagueRankings?.worstMetrics || [];
+        const total = leagueRankings?.totalTeams || 16;
+        return (
+          <div className="flex flex-col h-full w-full gap-5 py-2 px-6 max-w-7xl mx-auto overflow-y-auto no-scrollbar">
+            {s.title && (
+              <h2 className="text-2xl sm:text-4xl font-black text-brand-red-500 uppercase tracking-wide text-center shrink-0">
+                {s.title}
+              </h2>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
+              {/* Puntos Fuertes */}
+              <div className="bg-brand-black-card border border-emerald-900/60 rounded-2xl p-6 flex flex-col gap-4 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-emerald-400 uppercase tracking-wide flex items-center gap-2">
+                    🏆 Métricas Más Destacadas (Puntos Fuertes)
+                  </h3>
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">Top Liga</span>
+                </div>
+                {best.length === 0 ? (
+                  <p className="text-xs text-brand-gray-muted italic">Sin métricas destacadas disponibles</p>
+                ) : (
+                  <div className="space-y-3 overflow-y-auto no-scrollbar pr-1">
+                    {best.map((m: any, idx: number) => (
+                      <div key={idx} className="bg-black border border-emerald-950/80 p-4 rounded-xl flex items-center justify-between gap-3 hover:border-emerald-700/50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-bold text-white block mb-0.5">{m.title}</span>
+                          <span className="text-xs text-brand-gray-muted leading-relaxed block">{m.description}</span>
+                        </div>
+                        <span className="text-xs font-black text-emerald-400 bg-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-800 shrink-0">
+                          #{m.rank} / {total}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Vulnerabilidades */}
+              <div className="bg-brand-black-card border border-red-900/60 rounded-2xl p-6 flex flex-col gap-4 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-red-400 uppercase tracking-wide flex items-center gap-2">
+                    ⚠️ Peores Métricas en Liga (Puntos Débiles / A Explotar)
+                  </h3>
+                  <span className="text-[10px] font-bold text-red-400 bg-red-950 px-2 py-0.5 rounded border border-red-800">Vulnerabilidades</span>
+                </div>
+                {worst.length === 0 ? (
+                  <p className="text-xs text-brand-gray-muted italic">Sin vulnerabilidades marcadas</p>
+                ) : (
+                  <div className="space-y-3 overflow-y-auto no-scrollbar pr-1">
+                    {worst.map((m: any, idx: number) => (
+                      <div key={idx} className="bg-black border border-red-950/80 p-4 rounded-xl flex items-center justify-between gap-3 hover:border-red-700/50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-bold text-white block mb-0.5">{m.title}</span>
+                          <span className="text-xs text-brand-gray-muted leading-relaxed block">{m.description}</span>
+                        </div>
+                        <span className="text-xs font-black text-red-400 bg-red-950 px-3 py-1.5 rounded-xl border border-red-800 shrink-0">
+                          #{m.rank} / {total}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      case 'ffcv_intervals': {
+        const intervals = teamStats?.intervals || [
+          { label: "0-15'", gf: 0, ga: 0 },
+          { label: "16-30'", gf: 0, ga: 0 },
+          { label: "31-45+'", gf: 0, ga: 0 },
+          { label: "46-60'", gf: 0, ga: 0 },
+          { label: "61-75'", gf: 0, ga: 0 },
+          { label: "76-90+'", gf: 0, ga: 0 },
+        ];
+        return (
+          <div className="flex flex-col h-full w-full gap-6 py-4 px-6 max-w-6xl mx-auto justify-center">
+            {s.title && (
+              <h2 className="text-2xl sm:text-4xl font-black text-brand-red-500 uppercase tracking-wide text-center shrink-0">
+                {s.title}
+              </h2>
+            )}
+
+            <div className="flex items-center justify-center gap-6 text-sm mb-2">
+              <span className="flex items-center gap-2 font-bold text-emerald-400">
+                <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Goles A favor
+              </span>
+              <span className="flex items-center gap-2 font-bold text-red-400">
+                <span className="w-3 h-3 rounded-full bg-red-500 inline-block" /> Goles En contra
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              {intervals.map((inv: any, i: number) => {
+                const isWarning = inv.ga > inv.gf;
+                return (
+                  <div key={i} className={`bg-brand-black-card border rounded-2xl p-5 flex flex-col items-center gap-3 text-center shadow-premium transition-all ${isWarning ? 'border-amber-600/40 bg-amber-950/10' : 'border-brand-black-border'}`}>
+                    <span className="text-sm font-black text-white tracking-wider">{inv.label}</span>
+                    <div className="flex items-center gap-2.5 w-full justify-center">
+                      <div className="flex flex-col items-center bg-emerald-950/70 border border-emerald-800/60 px-3 py-2 rounded-xl min-w-[54px]">
+                        <span className="text-[10px] text-emerald-400 font-bold uppercase">GF</span>
+                        <span className="text-2xl font-black text-emerald-400">{inv.gf}</span>
+                      </div>
+                      <div className="flex flex-col items-center bg-red-950/70 border border-red-800/60 px-3 py-2 rounded-xl min-w-[54px]">
+                        <span className="text-[10px] text-red-400 font-bold uppercase">GC</span>
+                        <span className="text-2xl font-black text-red-400">{inv.ga}</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-brand-gray-muted">
+                      {inv.ga > inv.gf ? '⚠️ Encajador' : inv.gf > inv.ga ? '🔥 Goleador' : '— Igualado'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+      case 'roster_rankings': {
+        const teamSc = (scoutingPlayers || []).filter((sp: any) => isSameTeam(sp.team, opponentName));
+        
+        // Deduplicar jugadores por nombre normalizado
+        const bestByPlayer = new Map<string, any>();
+        teamSc.forEach((sp: any) => {
+          const key = (sp.player_name || '').toLowerCase().trim();
+          const existing = bestByPlayer.get(key);
+          const score = (Number(sp.titular) || 0) + (Number(sp.jugados) || 0) + (Number(sp.goles) || 0) + (Number(sp.amarillas) || 0);
+          const existingScore = existing ? (Number(existing.titular) || 0) + (Number(existing.jugados) || 0) + (Number(existing.goles) || 0) + (Number(existing.amarillas) || 0) : -1;
+          if (!existing || score > existingScore) {
+            bestByPlayer.set(key, sp);
+          }
+        });
+        const uniquePlayers = Array.from(bestByPlayer.values());
+
+        const topScorers = [...uniquePlayers].filter(p => (Number(p.goles) || Number(p.goals) || 0) > 0)
+          .sort((a, b) => (Number(b.goles) || Number(b.goals) || 0) - (Number(a.goles) || Number(a.goals) || 0))
+          .slice(0, 10);
+
+        const topStarters = [...uniquePlayers].filter(p => (Number(p.titular) || Number(p.starter_count) || 0) > 0 || (Number(p.jugados) || 0) > 0)
+          .sort((a, b) => (Number(b.titular) || Number(b.starter_count) || 0) - (Number(a.titular) || Number(a.starter_count) || 0))
+          .slice(0, 10);
+
+        const topCards = [...uniquePlayers].filter(p => (Number(p.amarillas) || Number(p.yellow_cards) || 0) > 0 || (Number(p.rojas) || Number(p.red_cards) || 0) > 0)
+          .sort((a, b) => (Number(b.amarillas) || Number(b.yellow_cards) || 0) - (Number(a.amarillas) || Number(a.yellow_cards) || 0))
+          .slice(0, 10);
+
+        return (
+          <div className="flex flex-col h-full w-full gap-5 py-2 px-6 max-w-7xl mx-auto overflow-y-auto no-scrollbar">
+            {s.title && (
+              <h2 className="text-2xl sm:text-4xl font-black text-brand-red-500 uppercase tracking-wide text-center shrink-0">
+                {s.title}
+              </h2>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+              {/* 1. Goleadores */}
+              <div className="bg-brand-black-card border border-brand-black-border rounded-2xl p-5 flex flex-col gap-3 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    ⚽ Top Goleadores Rival
+                  </h3>
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">Scraping FFCV</span>
+                </div>
+                {topScorers.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center text-xs text-brand-gray-dark italic">
+                    Sin goles registrados
+                  </div>
+                ) : (
+                  <div className="space-y-2 overflow-y-auto no-scrollbar pr-1">
+                    {topScorers.map((p, idx) => (
+                      <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-3 rounded-xl hover:border-brand-red-600/50 transition-colors">
+                        <span className="text-brand-gray-light font-medium truncate flex items-center gap-2">
+                          <span className="text-xs font-bold text-brand-gray-muted w-5">{idx + 1}.</span>
+                          <span className="text-white font-semibold">{p.player_name || p.name}</span>
+                          {p.dorsal ? <span className="text-xs text-brand-gray-muted">#{p.dorsal}</span> : null}
+                        </span>
+                        <span className="font-black text-emerald-400 shrink-0 text-base">{p.goles || p.goals} ⚽</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Más Titulares */}
+              <div className="bg-brand-black-card border border-brand-black-border rounded-2xl p-5 flex flex-col gap-3 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    👕 Más Titulares
+                  </h3>
+                  <span className="text-[10px] font-bold text-sky-400 bg-sky-950/80 px-2 py-0.5 rounded border border-sky-800">Scraping FFCV</span>
+                </div>
+                {topStarters.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center text-xs text-brand-gray-dark italic">
+                    Sin titularidades registradas
+                  </div>
+                ) : (
+                  <div className="space-y-2 overflow-y-auto no-scrollbar pr-1">
+                    {topStarters.map((p, idx) => (
+                      <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-3 rounded-xl hover:border-brand-red-600/50 transition-colors">
+                        <span className="text-brand-gray-light font-medium truncate flex items-center gap-2">
+                          <span className="text-xs font-bold text-brand-gray-muted w-5">{idx + 1}.</span>
+                          <span className="text-white font-semibold">{p.player_name || p.name}</span>
+                          {p.dorsal ? <span className="text-xs text-brand-gray-muted">#{p.dorsal}</span> : null}
+                        </span>
+                        <span className="font-bold text-sky-400 shrink-0 text-xs bg-sky-950/60 px-2 py-1 rounded border border-sky-900/50">
+                          {p.titular || p.starter_count || 0} Tit ({p.jugados || p.convocados || p.matches_played || 0} PJ)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Tarjetas & Sanciones */}
+              <div className="bg-brand-black-card border border-brand-black-border rounded-2xl p-5 flex flex-col gap-3 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    🟨 Tarjetas & Sanciones
+                  </h3>
+                  <span className="text-[10px] font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">Scraping FFCV</span>
+                </div>
+                {topCards.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center text-xs text-brand-gray-dark italic">
+                    Sin tarjetas registradas
+                  </div>
+                ) : (
+                  <div className="space-y-2 overflow-y-auto no-scrollbar pr-1">
+                    {topCards.map((p, idx) => {
+                      const yellow = Number(p.amarillas) || Number(p.yellow_cards) || 0;
+                      const red = Number(p.rojas) || Number(p.red_cards) || 0;
+                      const isSanction = yellow > 0 && yellow % 5 === 0;
+                      const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
+                      return (
+                        <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-3 rounded-xl hover:border-brand-red-600/50 transition-colors">
+                          <span className="text-brand-gray-light font-medium truncate flex items-center gap-2">
+                            <span className="text-xs font-bold text-brand-gray-muted w-5">{idx + 1}.</span>
+                            <span className="text-white font-semibold">{p.player_name || p.name}</span>
+                            {p.dorsal ? <span className="text-xs text-brand-gray-muted">#{p.dorsal}</span> : null}
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isSanction && <span className="text-[9px] font-black text-red-400 bg-red-950 border border-red-800 px-1.5 py-0.5 rounded">Sanción</span>}
+                            {isWarning && <span className="text-[9px] font-bold text-amber-400 bg-amber-950 border border-amber-800 px-1.5 py-0.5 rounded">Apercibido</span>}
+                            <span className="font-bold text-amber-400">{yellow} 🟨</span>
+                            {red > 0 ? <span className="font-bold text-red-500">{red} 🟥</span> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
       case 'general_summary': {
         const { summaryData } = s;
         if (!summaryData) return null;
+
+        const isOnlyRoster = !summaryData.mainFormation && (!summaryData.alternativeFormations || summaryData.alternativeFormations.length === 0) && (!summaryData.strengths || summaryData.strengths.length === 0) && (!summaryData.weaknesses || summaryData.weaknesses.length === 0) && summaryData.rosterComments && summaryData.rosterComments.length > 0;
+
+        if (isOnlyRoster) {
+          return (
+            <div className="flex flex-col h-full w-full gap-5 py-2 px-6 max-w-7xl mx-auto overflow-y-auto no-scrollbar">
+              {s.title && (
+                <h2 className="text-2xl sm:text-4xl font-black text-brand-red-500 uppercase tracking-wide text-center shrink-0">
+                  {s.title}
+                </h2>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1 pb-10">
+                {summaryData.rosterComments!.map((p, i) => {
+                  const yellow = p.yellow_cards || 0;
+                  const isSanction = yellow > 0 && yellow % 5 === 0;
+                  const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
+                  return (
+                    <div key={i} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 flex flex-col justify-between gap-3 shadow-premium hover:border-brand-red-600/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 shrink-0 bg-brand-black rounded-lg overflow-hidden border border-brand-black-border flex items-center justify-center">
+                          {p.photo_url ? (
+                            <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-xs font-bold text-brand-gray-muted uppercase">{p.number ? `#${p.number}` : '-'}</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold text-white text-sm truncate block">{p.name} {p.number ? `(#${p.number})` : ''}</span>
+                          <span className="text-[10px] text-brand-gray-muted font-mono bg-black px-1.5 py-0.5 rounded inline-block mt-0.5">{p.position || 'DF'}</span>
+                          {isSanction && <span className="text-[9px] font-black text-red-400 block mt-0.5">🟨 Sancionado (5ª)</span>}
+                          {isWarning && <span className="text-[9px] font-bold text-amber-400 block mt-0.5">⚠️ Apercibido (4ª)</span>}
+                        </div>
+                      </div>
+
+                      {(p.matches_played !== undefined || p.starter_count !== undefined || p.goals !== undefined || p.yellow_cards !== undefined) && (
+                        <div className="grid grid-cols-4 gap-1 text-center text-[10px] bg-black p-2 rounded-lg border border-brand-black-border/60 text-brand-gray-light font-mono">
+                          <div><span className="text-brand-gray-muted block text-[9px]">PJ</span><strong className="text-white">{p.matches_played ?? 0}</strong></div>
+                          <div><span className="text-brand-gray-muted block text-[9px]">TIT</span><strong className="text-sky-400">{p.starter_count ?? 0}</strong></div>
+                          <div><span className="text-brand-gray-muted block text-[9px]">GOL</span><strong className="text-emerald-400">{p.goals ?? 0}</strong></div>
+                          <div><span className="text-brand-gray-muted block text-[9px]">TAR</span><strong className="text-amber-400">{p.yellow_cards ?? 0}🟨</strong></div>
+                        </div>
+                      )}
+
+                      {p.comments && (
+                        <p className="text-xs text-brand-gray-light bg-black/50 p-2 rounded border border-brand-black-border/40 whitespace-pre-wrap leading-relaxed">
+                          {p.comments}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div className="flex flex-col h-full w-full gap-4 py-2">
             {s.title && <h2 className="text-xl sm:text-3xl font-black text-brand-red-500 uppercase tracking-wide shrink-0 text-center">{s.title}</h2>}

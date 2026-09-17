@@ -445,7 +445,7 @@ export const MatchReport: React.FC = () => {
 
   const { data: dbTeams = [] } = useQuery<Team[]>({
     queryKey: ['teams'],
-    queryFn: dataService.getTeams
+    queryFn: () => dataService.getTeams()
   });
 
   const getTeamLogo = (teamName: string): string => {

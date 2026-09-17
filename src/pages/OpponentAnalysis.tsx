@@ -6,7 +6,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { CardSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
-import { OpponentAnalysis } from '../types';
+import { OpponentAnalysis, Team } from '../types';
 import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 import {
   Plus, Search, Edit2, Trash2, Download,
@@ -45,34 +45,65 @@ export const OpponentAnalysisPage: React.FC = () => {
   });
 
   const { data: teamsList = [] } = useQuery({
-    queryKey: ['teams'],
-    queryFn: () => dataService.getTeams()
+    queryKey: ['teams', '2026-2027'],
+    queryFn: async () => {
+      const list2026 = await dataService.getTeams('2026-2027');
+      if (list2026 && list2026.length > 0) return list2026;
+      return dataService.getTeams();
+    }
   });
 
-  const { data: scoutingList = [] } = useQuery({
-    queryKey: ['scouting'],
-    queryFn: () => dataService.getScouting()
-  });
 
-  // Preparar opciones del selector de equipos (un equipo puede tener fila por cada temporada; deduplicar por nombre)
-  const ffcvTeams = Array.from(new Set(teamsList.map(t => t.name))).sort();
+  // Filtrar exclusivamente los equipos de la última temporada scrapeada (2026-2027)
+  const currentSeasonTeams = React.useMemo(() => {
+    const list2026 = teamsList.filter(t => t.season === '2026-2027');
+    return list2026.length > 0 ? list2026 : teamsList;
+  }, [teamsList]);
+
+  const ffcvTeams = Array.from(new Set(currentSeasonTeams.map(t => t.name))).sort();
   
-  // Equipos únicos de scouting que no estén ya en FFCV
-  const scoutingTeams = Array.from(
-    new Set(
-      scoutingList
-        .map(p => p.team)
-        .filter((t): t is string => Boolean(t) && !ffcvTeams.some(ft => isSameTeam(ft, t)))
-    )
-  ).sort();
+  // Organizar objetos de equipo de la temporada 2026-2027 por liga/competición
+  const teamsObjectsByLeague = React.useMemo(() => {
+    const map: Record<string, Team[]> = {
+      'Primera FFCV': [],
+      'Lliga Comunitat': [],
+      'Tercera Federación': [],
+      'Segona FFCV': [],
+      'Tercera FFCV': [],
+      'VI La Nostra Copa': [],
+    };
+
+    const getLeagueKey = (comp?: string, group?: string) => {
+      const c = (comp || group || '').toLowerCase();
+      if (c.includes('lliga') || c.includes('comunitat') || c.includes('905431821')) return 'Lliga Comunitat';
+      if (c.includes('tercera federaci') || c.includes('tercera rfef') || c.includes('905431604')) return 'Tercera Federación';
+      if (c.includes('segona') || c.includes('905431611')) return 'Segona FFCV';
+      if (c.includes('tercera') || c.includes('905431620')) return 'Tercera FFCV';
+      if (c.includes('copa') || c.includes('905432482')) return 'VI La Nostra Copa';
+      return 'Primera FFCV';
+    };
+
+    currentSeasonTeams.forEach(t => {
+      const lKey = getLeagueKey(t.competition, (t as any).group_name);
+      if (!map[lKey]) map[lKey] = [];
+      if (!map[lKey].some(x => x.name === t.name)) {
+        map[lKey].push(t);
+      }
+    });
+
+    return map;
+  }, [currentSeasonTeams]);
 
   // Mutaciones
   const createMutation = useMutation({
     mutationFn: (item: Omit<OpponentAnalysis, 'id'>) => dataService.createOpponentAnalysis(item),
-    onSuccess: () => {
+    onSuccess: (newItem) => {
       queryClient.invalidateQueries({ queryKey: ['opponent_analysis'] });
-      showToast('success', 'Análisis creado', 'Se ha guardado la ficha táctica del rival.');
+      showToast('success', 'Ficha creada', 'Abriendo la ficha interactiva del rival...');
       handleCloseModal();
+      if (newItem?.id) {
+        navigate(`/opponent-analysis/${newItem.id}`);
+      }
     },
     onError: (err) => showToast('error', 'Error', err.message)
   });
@@ -117,12 +148,13 @@ export const OpponentAnalysisPage: React.FC = () => {
       showToast('error', 'Validación', 'El nombre del rival es obligatorio.');
       return;
     }
-    if (!payload.tactical_system?.trim()) {
-      showToast('error', 'Validación', 'El sistema táctico es obligatorio.');
-      return;
-    }
 
     const finalPayload = {
+      tactical_system: '1-4-3-3',
+      strengths: [],
+      weaknesses: [],
+      key_players: [],
+      observations: '',
       ...payload,
       opponent: finalOpponent,
       team_category: filterTeam
@@ -376,7 +408,8 @@ export const OpponentAnalysisPage: React.FC = () => {
           onSave={handleSave}
           onCancel={handleCloseModal}
           ffcvTeams={ffcvTeams}
-          scoutingTeams={scoutingTeams}
+          scoutingTeams={[]}
+          teamsObjectsByLeague={teamsObjectsByLeague}
         />
       </Modal>
     </div>

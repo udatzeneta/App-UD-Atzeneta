@@ -5,21 +5,24 @@ import { dataService } from '../services/data';
 import { OpponentAnalysis, OpponentLibraryVideo, OpponentSubSection, OpponentFormation, OpponentPresentation } from '../types';
 import {
   ArrowLeft, ShieldAlert, Award, FileText, Settings as TacticalIcon,
-  Edit2, Save, X, Users, Film, Swords, Shield, Flag, Presentation, Plus, Trash2, Star,
+  Edit2, Save, X, Users, Film, Swords, Shield, Flag, Presentation, Plus, Trash2, Star, Trophy
 } from 'lucide-react';
 import { OpponentRosterManager } from '../components/opponent_analysis/OpponentRosterManager';
 import { OpponentVideoLibrary } from '../components/opponent_analysis/OpponentVideoLibrary';
 import { PhaseSection } from '../components/opponent_analysis/PhaseSection';
 import { FormationPitch } from '../components/opponent_analysis/FormationPitch';
 import { OpponentPresentationBuilder } from '../components/opponent_analysis/OpponentPresentationBuilder';
+import { FFCVOpponentSyncPanel } from '../components/opponent_analysis/FFCVOpponentSyncPanel';
 import { detectVideoProvider } from '../utils/opponentVideo';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { isSameTeam, isSamePlayer, normalizePlayerName } from '../utils/teamUtils';
+import { FORMATIONS_SLOTS, createFormationWithPlayers } from '../utils/formations';
 
 // Navegación por anclas del mural.
 const NAV = [
   { id: 'generales', label: 'Generales', icon: TacticalIcon },
+  { id: 'ffcv_sync', label: 'Estadísticas FFCV', icon: Trophy },
   { id: 'jugadores', label: 'Jugadores', icon: Users },
   { id: 'con_balon', label: 'Con Balón', icon: Swords },
   { id: 'sin_balon', label: 'Sin Balón', icon: Shield },
@@ -45,9 +48,10 @@ export const OpponentAnalysisMural: React.FC = () => {
 
   const analysis = analysisList.find(a => a.id === id);
 
-  const { data: scoutingPlayers = [] } = useQuery({
-    queryKey: ['scouting'],
-    queryFn: () => dataService.getScouting(),
+  const { data: scoutingPlayers = [], isLoading: isScoutingLoading } = useQuery({
+    queryKey: ['scouting_opponent', analysis?.opponent],
+    queryFn: () => dataService.getScoutingByTeam(analysis?.opponent || ''),
+    enabled: !!analysis?.opponent,
   });
 
   const getPlayerScore = (sp: typeof scoutingPlayers[0], seasonFilter: '2026-2027' | '2025-2026') => {
@@ -108,27 +112,42 @@ export const OpponentAnalysisMural: React.FC = () => {
             ? (sp.season === '2026-2027' || sp.season === '2026/2027')
             : (sp.season === '2025-2026' || sp.season === '2025/2026');
         const seasonSp = candidates.find(isTargetSeasonRow);
-        const matchingSp = seasonSp || candidates.sort((a, b) => getPlayerScore(b, selectedSeason) - getPlayerScore(a, selectedSeason))[0];
 
-        const spMatches = matchingSp ? (parseNum(matchingSp.jugados) || parseNum(matchingSp.convocados) || parseNum(matchingSp.matches_played)) : 0;
-        const spStarter = matchingSp ? (parseNum(matchingSp.titular) || parseNum(matchingSp.starter_count) || spMatches) : 0;
-        const spGoals = matchingSp ? (parseNum(matchingSp.goles) || parseNum(matchingSp.goals)) : 0;
-        const spYellow = matchingSp ? (parseNum(matchingSp.amarillas) || parseNum(matchingSp.yellow_cards)) : 0;
-        const spRed = matchingSp ? (parseNum(matchingSp.rojas) || parseNum(matchingSp.red_cards)) : 0;
+        let matches = 0;
+        let starter = 0;
+        let goals = 0;
+        let yellow_cards = 0;
+        let red_cards = 0;
 
-        const pMatches = parseNum(p.matches_played);
-        const pStarter = parseNum(p.starter_count);
-        const pGoals = parseNum(p.goals);
-        const pYellow = parseNum(p.yellow_cards);
-        const pRed = parseNum(p.red_cards);
+        if (seasonSp) {
+          matches = parseNum(seasonSp.jugados) || parseNum(seasonSp.convocados) || parseNum(seasonSp.matches_played);
+          starter = parseNum(seasonSp.titular) || parseNum(seasonSp.starter_count) || matches;
+          goals = parseNum(seasonSp.goles) || parseNum(seasonSp.goals);
+          yellow_cards = parseNum(seasonSp.amarillas) || parseNum(seasonSp.yellow_cards);
+          red_cards = parseNum(seasonSp.rojas) || parseNum(seasonSp.red_cards);
+        } else {
+          const pM = parseNum(p.matches_played);
+          const pS = parseNum(p.starter_count);
+          const pG = parseNum(p.goals);
+          const pY = parseNum(p.yellow_cards);
+          const pR = parseNum(p.red_cards);
 
-        // Si hay un registro scrapeado de la temporada seleccionada, manda siempre (aunque sea 0 partidos).
-        // Si no hay ninguno, se cae al mejor disponible (spMatches) y, en su defecto, a lo guardado a mano.
-        const matches = seasonSp ? spMatches : (spMatches > 0 ? spMatches : pMatches);
-        const starter = seasonSp ? spStarter : (spMatches > 0 ? spStarter : pStarter);
-        const goals = seasonSp ? spGoals : (spMatches > 0 ? spGoals : pGoals);
-        const yellow_cards = seasonSp ? spYellow : (spMatches > 0 ? spYellow : pYellow);
-        const red_cards = seasonSp ? spRed : (spMatches > 0 ? spRed : pRed);
+          if (selectedSeason === '2026-2027' && pM <= 3) {
+            matches = pM;
+            starter = pS;
+            goals = pG;
+            yellow_cards = pY;
+            red_cards = pR;
+          } else if (selectedSeason === '2025-2026') {
+            matches = pM;
+            starter = pS;
+            goals = pG;
+            yellow_cards = pY;
+            red_cards = pR;
+          }
+        }
+
+        const matchingSp = seasonSp || candidates.find(sp => sp.photo_url || sp.position);
 
         return {
           ...p,
@@ -211,6 +230,10 @@ export const OpponentAnalysisMural: React.FC = () => {
   // --- Filter estado para Jugadores Destacados vs Todos ---
   const [rosterFilter, setRosterFilter] = useState<'all' | 'featured'>('all');
 
+  // --- Modal para añadir nuevo sistema alternativo ---
+  const [isAddingAltModalOpen, setIsAddingAltModalOpen] = useState(false);
+  const [newAltLabel, setNewAltLabel] = useState('');
+
   const filteredRoster = useMemo(() => {
     if (rosterFilter === 'featured') {
       const featured = displayRoster.filter(p => p.is_featured);
@@ -220,50 +243,16 @@ export const OpponentAnalysisMural: React.FC = () => {
   }, [displayRoster, rosterFilter]);
 
   // Sincroniza el estado local de la videoteca con el servidor y migra
-  // vídeos legacy (dentro de los bloques antiguos) a la videoteca una vez.
+  // Sincroniza el estado local de la videoteca y campograma con el servidor al cargar/cambiar de rival.
   useEffect(() => {
     if (!analysis) return;
-    if (analysis.library_videos && analysis.library_videos.length > 0) {
-      setLibraryVideos(analysis.library_videos);
-      migratedRef.current = true;
-      return;
-    }
-    if (migratedRef.current) return;
-
-    // Migración suave: recopilar vídeos de los bloques legacy.
-    const legacy = [
-      ...(analysis.with_ball_blocks?.flatMap(b => b.videos || []) || []),
-      ...(analysis.without_ball_blocks?.flatMap(b => b.videos || []) || []),
-      ...(analysis.abp_blocks?.flatMap(b => b.videos || []) || []),
-    ];
-    const seen = new Set<string>();
-    const migrated: OpponentLibraryVideo[] = [];
-    legacy.forEach((v, idx) => {
-      if (!v.url || seen.has(v.url)) return;
-      seen.add(v.url);
-      const { provider, clippable } = detectVideoProvider(v.url);
-      migrated.push({
-        id: v.id || `libvid-mig-${idx}`,
-        url: v.url,
-        title: `Vídeo ${migrated.length + 1}`,
-        provider,
-        clippable,
-        clips: v.clips || [],
-      });
-    });
-    migratedRef.current = true;
-    if (migrated.length > 0) {
-      setLibraryVideos(migrated);
-      updateMutation.mutate({ library_videos: migrated });
-    }
-  }, [analysis?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sincroniza el campograma con el servidor al cargar/cambiar de rival.
-  useEffect(() => {
-    if (!analysis) return;
+    setLibraryVideos(analysis.library_videos || []);
     setFormation(analysis.general_formation || { system: 'Libre', players: [] });
     setAltFormations(analysis.alternative_formations || []);
     setPresentations(analysis.presentations || []);
+    setEditingGeneral(false);
+    setEditingRoster(false);
+    setEditData({});
   }, [analysis?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Guardado con debounce del campograma.
@@ -287,8 +276,15 @@ export const OpponentAnalysisMural: React.FC = () => {
   const updateAltFormation = (idx: number, updates: Partial<OpponentFormation>) => {
     handleAltFormationsChange(altFormations.map((f, i) => (i === idx ? { ...f, ...updates } : f)));
   };
-  const addAltFormation = () => {
-    handleAltFormationsChange([...altFormations, { system: 'Libre', players: [], label: `Alternativa ${altFormations.length + 1}` }]);
+  const openAddAltModal = () => {
+    setNewAltLabel('');
+    setIsAddingAltModalOpen(true);
+  };
+  const handleCreateAlt = (selectedSystem: string) => {
+    const newFormation = createFormationWithPlayers(selectedSystem, newAltLabel.trim() || undefined);
+    handleAltFormationsChange([...altFormations, newFormation]);
+    setNewAltLabel('');
+    setIsAddingAltModalOpen(false);
   };
   const removeAltFormation = (idx: number) => {
     handleAltFormationsChange(altFormations.filter((_, i) => i !== idx));
@@ -451,121 +447,207 @@ export const OpponentAnalysisMural: React.FC = () => {
 
             {editingGeneral ? (
               <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-6 shadow-premium space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-2">
-                    <label className="form-label">Alineación / Sistema de Juego (arrastra los jugadores)</label>
-                    <FormationPitch value={formation} onChange={handleFormationChange} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
+                {/* 1. Fila superior: Campograma Principal (izq) y Sistemas Alternativos (der) */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Izquierda: Campograma Principal (Grande) */}
+                  <div className="lg:col-span-7 bg-brand-black/40 border border-brand-black-border rounded-xl p-4 flex flex-col">
+                    <label className="form-label flex items-center justify-between mb-3">
+                      <span className="flex items-center gap-2">
+                        <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistema Principal (Arrastra jugadores)
+                      </span>
+                    </label>
+                    <FormationPitch
+                      value={formation}
+                      onChange={handleFormationChange}
+                      opponentName={analysis.opponent}
+                      rosterPlayers={analysis.roster_comments || []}
+                    />
                   </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="form-label flex items-center gap-2"><TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistema Táctico</label>
-                      <input type="text" className="form-input" value={editData.tactical_system || ''} onChange={e => setEditData({ ...editData, tactical_system: e.target.value })} />
+
+                  {/* Derecha: Sistemas Alternativos (Pequeños) */}
+                  <div className="lg:col-span-5 bg-brand-black/40 border border-brand-black-border rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="form-label flex items-center gap-2 mb-0">
+                        <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistemas Alternativos
+                      </label>
+                      <button
+                        type="button"
+                        onClick={openAddAltModal}
+                        className="flex items-center gap-1 text-xs font-semibold text-brand-red-500 hover:text-white bg-brand-red-600/10 border border-brand-red-600/20 px-2.5 py-1 rounded-lg hover:bg-brand-red-600 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Añadir
+                      </button>
                     </div>
-                    <div className="flex-1 flex flex-col">
-                      <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas (Una por línea)</label>
-                      <textarea className="form-input flex-1 min-h-[120px] resize-none" value={strengthsText} onChange={e => setStrengthsText(e.target.value)} />
-                    </div>
-                    <div className="flex-1 flex flex-col">
-                      <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades (Una por línea)</label>
-                      <textarea className="form-input flex-1 min-h-[120px] resize-none" value={weaknessesText} onChange={e => setWeaknessesText(e.target.value)} />
+                    <p className="text-[11px] text-brand-gray-muted mb-3">Variantes del sistema principal (repliegue, con balón, etc.)</p>
+                    
+                    <div className="space-y-4 max-h-[550px] overflow-y-auto pr-1">
+                      {altFormations.map((f, idx) => (
+                        <div key={idx} className="bg-brand-black border border-brand-black-border rounded-xl p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={f.label || ''}
+                              onChange={e => updateAltFormation(idx, { label: e.target.value })}
+                              placeholder="Ej: Repliegue 4-4-2, Ataque 3-4-3"
+                              className="flex-1 min-w-0 bg-black border border-brand-black-border rounded-lg px-2.5 py-1.5 text-xs text-brand-gray-light outline-none focus:border-brand-red-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeAltFormation(idx)}
+                              className="p-1.5 text-brand-gray-muted hover:text-brand-red-600 rounded-lg hover:bg-brand-black-card transition-colors shrink-0"
+                              title="Eliminar alternativa"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <FormationPitch
+                            compact
+                            value={f}
+                            onChange={data => updateAltFormation(idx, data)}
+                            opponentName={analysis.opponent}
+                            rosterPlayers={analysis.roster_comments || []}
+                          />
+                        </div>
+                      ))}
+                      {altFormations.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={openAddAltModal}
+                          className="w-full flex flex-col items-center justify-center gap-2 p-8 border-2 border-dashed border-brand-black-border rounded-xl text-brand-gray-muted hover:text-white hover:border-brand-red-600 transition-colors"
+                        >
+                          <Plus className="w-6 h-6" />
+                          <span className="text-xs font-semibold">Añadir primera variante alternativa</span>
+                        </button>
+                      )}
                     </div>
                   </div>
-                </div>
-                <div>
-                  <label className="form-label flex items-center gap-2"><FileText className="w-4 h-4 text-brand-gray-light" /> Observaciones Generales</label>
-                  <textarea className="form-input h-28 resize-none" value={editData.observations || ''} onChange={e => setEditData({ ...editData, observations: e.target.value })} />
                 </div>
 
-                {/* Sistemas de juego alternativos */}
-                <div className="border-t border-brand-black-border pt-5">
-                  <label className="form-label flex items-center gap-2"><TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistemas de juego alternativos</label>
-                  <p className="text-[11px] text-brand-gray-muted mb-3">Variantes al sistema principal (repliegue, con balón, etc.). Se muestran en campogramas pequeños.</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {altFormations.map((f, idx) => (
-                      <div key={idx} className="bg-brand-black border border-brand-black-border rounded-xl p-3 space-y-2">
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            value={f.label || ''}
-                            onChange={e => updateAltFormation(idx, { label: e.target.value })}
-                            placeholder="Nombre de la alternativa"
-                            className="flex-1 min-w-0 bg-black border border-brand-black-border rounded px-2 py-1 text-xs text-brand-gray-light outline-none focus:border-brand-red-600"
-                          />
-                          <button type="button" onClick={() => removeAltFormation(idx)} className="p-1 text-brand-gray-muted hover:text-brand-red-600 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
-                        </div>
-                        <FormationPitch compact value={f} onChange={data => updateAltFormation(idx, data)} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={addAltFormation}
-                      className="flex flex-col items-center justify-center gap-2 min-h-[160px] border-2 border-dashed border-brand-black-border rounded-xl text-brand-gray-muted hover:text-white hover:border-brand-red-600 transition-colors"
-                    >
-                      <Plus className="w-6 h-6" />
-                      <span className="text-xs font-semibold">Añadir alternativa</span>
-                    </button>
+                {/* 2. Fila inferior: Campos de texto */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-brand-black-border">
+                  <div>
+                    <label className="form-label flex items-center gap-2"><TacticalIcon className="w-4 h-4 text-brand-red-600" /> Nombre del Sistema Táctico</label>
+                    <input type="text" className="form-input" value={editData.tactical_system || ''} onChange={e => setEditData({ ...editData, tactical_system: e.target.value })} placeholder="Ej: 4-3-3 / 4-2-3-1" />
                   </div>
+                  <div className="flex flex-col">
+                    <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas (Una por línea)</label>
+                    <textarea className="form-input flex-1 min-h-[100px] resize-none" value={strengthsText} onChange={e => setStrengthsText(e.target.value)} />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="form-label flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades (Una por línea)</label>
+                    <textarea className="form-input flex-1 min-h-[100px] resize-none" value={weaknessesText} onChange={e => setWeaknessesText(e.target.value)} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label flex items-center gap-2"><FileText className="w-4 h-4 text-brand-gray-light" /> Observaciones Generales</label>
+                  <textarea className="form-input h-24 resize-none" value={editData.observations || ''} onChange={e => setEditData({ ...editData, observations: e.target.value })} />
                 </div>
               </div>
             ) : (
               <>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-brand-black-card border border-brand-black-border rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2">
-                      <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistema de Juego
-                    </h4>
-                    {formation.system !== 'Libre' && (
-                      <span className="text-[11px] font-bold text-brand-red-500 bg-brand-red-600/10 border border-brand-red-600/20 px-2.5 py-1 rounded-full">{formation.system}</span>
+                {/* 1. Grid de Campogramas: Principal (Izquierda) vs Alternativos (Derecha) */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+                  {/* Izquierda: Campograma Principal (Grande) */}
+                  <div className="lg:col-span-7 xl:col-span-7 bg-brand-black-card border border-brand-black-border rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2">
+                        <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistema Principal
+                      </h4>
+                      {formation.system && formation.system !== 'Libre' && (
+                        <span className="text-[11px] font-bold text-brand-red-500 bg-brand-red-600/10 border border-brand-red-600/20 px-2.5 py-1 rounded-full">
+                          {formation.system}
+                        </span>
+                      )}
+                    </div>
+                    <FormationPitch
+                      value={formation}
+                      onChange={handleFormationChange}
+                      readOnly={!canEdit}
+                      opponentName={analysis.opponent}
+                      rosterPlayers={analysis.roster_comments || []}
+                    />
+                  </div>
+
+                  {/* Derecha: Sistemas Alternativos (Campogramas Pequeños) */}
+                  <div className="lg:col-span-5 xl:col-span-5 bg-brand-black-card border border-brand-black-border rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2">
+                        <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistemas Alternativos
+                      </h4>
+                      {altFormations.length > 0 && (
+                        <span className="text-[10px] font-bold text-brand-gray-muted bg-brand-black border border-brand-black-border px-2 py-0.5 rounded-full">
+                          {altFormations.length} {altFormations.length === 1 ? 'variante' : 'variantes'}
+                        </span>
+                      )}
+                    </div>
+
+                    {altFormations.length === 0 ? (
+                      <div className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed border-brand-black-border rounded-xl text-center min-h-[300px]">
+                        <TacticalIcon className="w-8 h-8 text-brand-gray-muted/40 mb-2" />
+                        <p className="text-xs text-brand-gray-muted font-medium">Sin sistemas alternativos definidos</p>
+                        {canEdit && (
+                          <button onClick={openAddAltModal} className="mt-3 text-xs text-brand-red-500 font-semibold hover:underline flex items-center gap-1">
+                            <Plus className="w-3.5 h-3.5" /> Añadir sistemas alternativos
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto max-h-[550px] pr-1">
+                        {altFormations.map((f, idx) => (
+                          <div key={idx} className="bg-brand-black border border-brand-black-border rounded-xl p-2.5 flex flex-col items-center gap-2">
+                            <span className="text-[11px] font-bold text-white tracking-wide text-center truncate w-full">
+                              {f.label || f.system || `Alternativa ${idx + 1}`}
+                            </span>
+                            <FormationPitch
+                              compact
+                              readOnly
+                              value={f}
+                              onChange={() => {}}
+                              opponentName={analysis.opponent}
+                              rosterPlayers={analysis.roster_comments || []}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <FormationPitch value={formation} onChange={handleFormationChange} readOnly={!canEdit} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
                 </div>
-                <div className="lg:col-span-1 flex flex-col gap-6">
-                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex-1 min-h-[120px] overflow-y-auto no-scrollbar flex flex-col">
+
+                {/* 2. Tarjetas inferiores: Fortalezas, Debilidades y Observaciones */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex flex-col">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3 shrink-0"><ShieldAlert className="w-4 h-4 text-brand-red-600" /> Fortalezas</h4>
                     <div className="flex flex-wrap gap-2">
-                      {analysis.strengths.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguna</span> : analysis.strengths.map((s, i) => (
+                      {analysis.strengths.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguna especificada</span> : analysis.strengths.map((s, i) => (
                         <span key={i} className="text-[11px] bg-red-950/20 text-brand-red-500 border border-brand-red-600/20 px-2.5 py-1 rounded-md font-medium">{s}</span>
                       ))}
                     </div>
                   </div>
-                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex-1 min-h-[120px] overflow-y-auto no-scrollbar flex flex-col">
+
+                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex flex-col">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3 shrink-0"><ShieldAlert className="w-4 h-4 text-amber-500" /> Debilidades</h4>
                     <div className="flex flex-wrap gap-2">
-                      {analysis.weaknesses.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguna</span> : analysis.weaknesses.map((s, i) => (
+                      {analysis.weaknesses.length === 0 ? <span className="text-xs text-brand-gray-dark">Ninguna especificada</span> : analysis.weaknesses.map((s, i) => (
                         <span key={i} className="text-[11px] bg-amber-950/20 text-amber-500 border border-amber-500/20 px-2.5 py-1 rounded-md font-medium">{s}</span>
                       ))}
                     </div>
                   </div>
 
-                  {analysis.observations && (
-                    <div className="bg-brand-black border border-brand-black-border rounded-xl p-5">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3"><FileText className="w-4 h-4 text-brand-gray-light" /> Observaciones</h4>
-                      <p className="text-sm text-brand-gray-light whitespace-pre-wrap leading-relaxed">{analysis.observations}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Sistemas de juego alternativos (vista) */}
-              {altFormations.length > 0 && (
-                <div className="mt-6 bg-brand-black-card border border-brand-black-border rounded-xl p-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-4">
-                    <TacticalIcon className="w-4 h-4 text-brand-red-600" /> Sistemas de juego alternativos
-                  </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {altFormations.map((f, idx) => (
-                      <div key={idx} className="flex flex-col items-center gap-2">
-                        <FormationPitch compact readOnly value={f} onChange={() => {}} opponentName={analysis.opponent} rosterPlayers={analysis.roster_comments || []} />
-                        <span className="text-[11px] font-semibold text-brand-gray-light text-center leading-tight">{f.label || f.system}</span>
-                      </div>
-                    ))}
+                  <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 flex flex-col">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3 shrink-0"><FileText className="w-4 h-4 text-brand-gray-light" /> Observaciones</h4>
+                    <p className="text-xs text-brand-gray-light whitespace-pre-wrap leading-relaxed">
+                      {analysis.observations || 'Sin observaciones adicionales.'}
+                    </p>
                   </div>
                 </div>
-              )}
               </>
             )}
+          </div>
+
+          {/* FFCV Automatic Sync & Team Statistics Panel */}
+          <div id="ffcv_sync" className="mb-14 scroll-mt-24">
+            <FFCVOpponentSyncPanel opponentName={analysis.opponent} />
           </div>
 
           {/* 2. Jugadores Destacados */}
@@ -744,6 +826,11 @@ export const OpponentAnalysisMural: React.FC = () => {
               <div className="bg-brand-black-card border border-brand-black-border rounded-xl p-6 shadow-premium h-[600px]">
                 <OpponentRosterManager players={editData.roster_comments || []} onChange={players => setEditData({ ...editData, roster_comments: players })} opponentName={analysis.opponent} />
               </div>
+            ) : isScoutingLoading ? (
+              <div className="text-center py-12 text-brand-gray-muted text-sm border border-dashed border-brand-black-border rounded-xl flex flex-col items-center gap-2">
+                <div className="w-6 h-6 border-2 border-brand-red-600 border-t-transparent rounded-full animate-spin mb-1" />
+                <p>Cargando plantilla y estadísticas de {analysis.opponent}...</p>
+              </div>
             ) : filteredRoster.length === 0 ? (
               <div className="text-center py-12 text-brand-gray-muted text-sm border border-dashed border-brand-black-border rounded-xl flex flex-col items-center gap-2">
                 <Users className="w-8 h-8 text-brand-gray-dark mb-1" />
@@ -887,6 +974,76 @@ export const OpponentAnalysisMural: React.FC = () => {
           <OpponentVideoLibrary videos={libraryVideos} onChange={handleLibraryChange} canEdit={canEdit} />
         </div>
       </div>
+
+      {/* Modal para elegir sistema alternativo al añadir */}
+      {isAddingAltModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-brand-black-card border border-brand-black-border rounded-2xl p-6 max-w-xl w-full shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+              <div className="flex items-center gap-2">
+                <TacticalIcon className="w-5 h-5 text-brand-red-600" />
+                <h3 className="text-base font-bold text-white uppercase tracking-wider">Añadir Sistema Alternativo</h3>
+              </div>
+              <button
+                onClick={() => setIsAddingAltModalOpen(false)}
+                className="p-1 text-brand-gray-muted hover:text-white rounded-lg hover:bg-brand-black transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="form-label mb-1">Nombre o Etiqueta (opcional)</label>
+              <input
+                type="text"
+                value={newAltLabel}
+                onChange={e => setNewAltLabel(e.target.value)}
+                placeholder="Ej: Repliegue bajo 4-4-2, Presión alta 4-3-3, Balón parado"
+                className="form-input text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="form-label mb-2">Selecciona la Formación Táctica o Personalizado</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
+                <button
+                  type="button"
+                  onClick={() => handleCreateAlt('Libre')}
+                  className="flex flex-col items-center justify-center p-3 bg-brand-black border border-brand-red-600/50 rounded-xl hover:border-brand-red-600 hover:bg-brand-red-600/10 transition-colors text-center group"
+                >
+                  <span className="text-xs font-black text-brand-red-500 group-hover:text-white mb-0.5">Personalizado / Libre</span>
+                  <span className="text-[10px] text-brand-gray-muted leading-tight">Posicionar 11 jugadores en cualquier coordenada</span>
+                </button>
+                
+                {Object.keys(FORMATIONS_SLOTS).map(sys => {
+                  const val = sys.startsWith('1-') ? sys : `1-${sys}`;
+                  return (
+                    <button
+                      key={sys}
+                      type="button"
+                      onClick={() => handleCreateAlt(val)}
+                      className="flex flex-col items-center justify-center p-3 bg-brand-black border border-brand-black-border rounded-xl hover:border-brand-red-600 hover:bg-brand-black-card transition-colors text-center group"
+                    >
+                      <span className="text-xs font-bold text-white group-hover:text-brand-red-500 mb-0.5">{val}</span>
+                      <span className="text-[10px] text-brand-gray-muted">11 posiciones iniciales</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-brand-black-border">
+              <button
+                type="button"
+                onClick={() => setIsAddingAltModalOpen(false)}
+                className="btn-secondary py-1.5 px-4 text-xs"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

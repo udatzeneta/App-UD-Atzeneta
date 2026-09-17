@@ -13,8 +13,8 @@ interface Props {
 
 export const OpponentRosterManager: React.FC<Props> = ({ players, onChange, opponentName }) => {
   const { data: scoutingPlayers = [] } = useQuery({
-    queryKey: ['scouting'],
-    queryFn: () => dataService.getScouting()
+    queryKey: ['scouting_opponent', opponentName],
+    queryFn: () => opponentName ? dataService.getScoutingByTeam(opponentName) : dataService.getScouting()
   });
 
   type ScoutingRow = typeof scoutingPlayers[0];

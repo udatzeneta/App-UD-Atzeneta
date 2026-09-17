@@ -195,3 +195,22 @@ export const FORMATIONS_SLOTS: Record<string, { label: string; role: string; x: 
     { label: 'DC', role: 'Delantero Derecho', x: 62, y: 18 },
   ]
 };
+
+export function createFormationWithPlayers(system: string, label?: string) {
+  const normSystem = system.replace(/^1-/, '');
+  const slots = FORMATIONS_SLOTS[normSystem] || FORMATIONS_SLOTS[system] || FORMATIONS_SLOTS['4-4-2'];
+  const players = slots.map((slot, idx) => ({
+    id: `fp-${Date.now()}-${idx}`,
+    number: idx + 1,
+    label: slot.label,
+    role: slot.role,
+    x: slot.x,
+    y: slot.y,
+  }));
+  const formattedSys = system.startsWith('1-') || system === 'Libre' ? system : `1-${system}`;
+  return {
+    system: formattedSys,
+    label: label || (system === 'Libre' ? 'Personalizado' : formattedSys),
+    players,
+  };
+}

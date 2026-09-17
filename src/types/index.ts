@@ -424,7 +424,7 @@ export interface OpponentAnalysis {
 // pantalla completa (clips anotados, campogramas, informes de texto y
 // portadas de bloque).
 // =====================================================================
-export type PresentationSlideType = 'cover' | 'formation' | 'board' | 'text' | 'clip' | 'general_summary';
+export type PresentationSlideType = 'cover' | 'formation' | 'board' | 'text' | 'clip' | 'general_summary' | 'ffcv_stats' | 'ffcv_highlights' | 'ffcv_intervals' | 'roster_rankings';
 export type PresentationBlock = 'generales' | 'jugadores' | 'con_balon' | 'sin_balon' | 'abp';
 
 export interface PresentationSlide {

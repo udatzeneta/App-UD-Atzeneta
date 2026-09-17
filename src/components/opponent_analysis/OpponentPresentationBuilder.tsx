@@ -7,7 +7,7 @@ import type {
 import {
   Plus, Play, Trash2, Edit2, ChevronUp, ChevronDown, ArrowLeft, LayoutGrid,
   Presentation as PresentationIcon, PanelsTopLeft, Film, Users, ShieldAlert,
-  Award, FileText, Settings as TacticalIcon, Layers, Wand2,
+  Award, FileText, Settings as TacticalIcon, Layers, Wand2, BarChart2, Trophy, Activity,
 } from 'lucide-react';
 import { PresentationPlayer, BLOCK_LABELS } from './PresentationPlayer';
 import { OPPONENT_TAXONOMY, ABP_SIDES, catKey } from '../../constants/opponentTaxonomy';
@@ -44,8 +44,8 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
   const playing = presentations.find(p => p.id === playingId) || null;
 
   const { data: scoutingPlayers = [] } = useQuery({
-    queryKey: ['scouting'],
-    queryFn: () => dataService.getScouting()
+    queryKey: ['scouting_opponent', analysis?.opponent],
+    queryFn: () => analysis?.opponent ? dataService.getScoutingByTeam(analysis.opponent) : dataService.getScouting()
   });
 
   const teamScoutingPlayers = useMemo(() => {
@@ -97,7 +97,7 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
       generales: [], jugadores: [], con_balon: [], sin_balon: [], abp: [],
     };
 
-    // Generales (Todo en uno)
+    // Generales (Todo en uno & Estadísticas FFCV)
     const hasMainFormation = analysis.general_formation && (analysis.general_formation.players?.length || 0) > 0;
     const hasAlts = (analysis.alternative_formations || []).length > 0;
     const hasRoster = (analysis.roster_comments || []).length > 0;
@@ -128,35 +128,97 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
       });
     }
 
+    // Opciones de Estadísticas FFCV de Liga
+    cat.generales.push({
+      key: 'ffcv-stats',
+      block: 'generales',
+      label: '📊 Estadísticas FFCV de Liga (Partidos, V/E/D, Rendimiento)',
+      make: () => ({
+        id: uid(),
+        sourceKey: 'ffcv-stats',
+        type: 'ffcv_stats',
+        block: 'generales',
+        title: `Estadísticas FFCV en Liga — ${analysis.opponent}`,
+      })
+    });
+
+    cat.generales.push({
+      key: 'ffcv-highlights',
+      block: 'generales',
+      label: '🏆 Métricas Destacadas FFCV (Puntos Fuertes y Vulnerabilidades)',
+      make: () => ({
+        id: uid(),
+        sourceKey: 'ffcv-highlights',
+        type: 'ffcv_highlights',
+        block: 'generales',
+        title: 'Puntos Fuertes y Débiles en Liga (FFCV)',
+      })
+    });
+
+    cat.generales.push({
+      key: 'ffcv-intervals',
+      block: 'generales',
+      label: '⏱️ Distribución de Goles por Minuto (FFCV)',
+      make: () => ({
+        id: uid(),
+        sourceKey: 'ffcv-intervals',
+        type: 'ffcv_intervals',
+        block: 'generales',
+        title: 'Distribución de Goles por Intervalo de Minuto',
+      })
+    });
+
     // Jugadores / Plantilla (Bloque Jugadores)
     if (effectiveRoster.length > 0) {
+      // 1. Slide con Rankings de Jugadores (Top Goleadores, Más Titulares, Tarjetas)
+      cat.jugadores.push({
+        key: 'roster-rankings',
+        block: 'jugadores',
+        label: '⚽ Rankings de Jugadores Rival (Goleadores, Titulares y Tarjetas)',
+        make: () => ({
+          id: uid(),
+          sourceKey: 'roster-rankings',
+          type: 'roster_rankings',
+          block: 'jugadores',
+          title: 'Rankings y Estadísticas del Rival',
+        })
+      });
+
+      // Filtrar a SOLAMENTE los jugadores destacados
+      const explicitFeatured = effectiveRoster.filter(p => p.is_featured);
+      const featuredPlayers = explicitFeatured.length > 0
+        ? explicitFeatured
+        : effectiveRoster.filter(p => (p.comments && p.comments.trim().length > 0) || (p.starter_count || 0) > 0 || (p.goals || 0) > 0 || (p.yellow_cards || 0) >= 3).slice(0, 8);
+
+      // 2. Resumen de plantilla de destacados
       cat.jugadores.push({
         key: 'roster-summary',
         block: 'jugadores',
-        label: `Resumen de Plantilla y Jugadores Destacados (${effectiveRoster.length} jug.)`,
+        label: `⭐ Resumen de Jugadores Destacados (${featuredPlayers.length} jug. destacados)`,
         make: () => ({
           id: uid(),
           sourceKey: 'roster-summary',
           type: 'general_summary',
           block: 'jugadores',
-          title: 'Jugadores Destacados y Plantilla Rival',
+          title: 'Jugadores Destacados del Rival',
           summaryData: {
-            rosterComments: effectiveRoster,
+            rosterComments: featuredPlayers,
           }
         })
       });
 
-      effectiveRoster.forEach(p => {
+      // 3. Fichas individuales ÚNICAMENTE de jugadores destacados (no todos los 64)
+      featuredPlayers.forEach(p => {
         cat.jugadores.push({
           key: `player-${p.id}`,
           block: 'jugadores',
-          label: `Ficha: ${p.name} ${p.number ? `(#${p.number})` : ''} ${p.is_featured ? '⭐' : ''}`,
+          label: `⭐ Ficha: ${p.name} ${p.number ? `(#${p.number})` : ''}`,
           make: () => ({
             id: uid(),
             sourceKey: `player-${p.id}`,
             type: 'text',
             block: 'jugadores',
-            title: `Jugador Rival: ${p.name} ${p.number ? `(#${p.number})` : ''}`,
+            title: `Jugador Destacado: ${p.name} ${p.number ? `(#${p.number})` : ''}`,
             text: `Posición: ${p.position || 'Sin posición'}\n` +
                   `Partidos: ${p.matches_played ?? 0} | Titular: ${p.starter_count ?? 0}\n` +
                   `Minutos: ${p.minutes_played ? p.minutes_played + "'" : '0'}\n` +
@@ -371,6 +433,10 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
       case 'formation': return TacticalIcon;
       case 'board': return Layers;
       case 'clip': return Film;
+      case 'ffcv_stats': return BarChart2;
+      case 'ffcv_highlights': return Trophy;
+      case 'ffcv_intervals': return Activity;
+      case 'roster_rankings': return Users;
       default: return FileText;
     }
   };

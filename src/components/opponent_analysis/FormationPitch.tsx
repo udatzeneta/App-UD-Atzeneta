@@ -23,11 +23,15 @@ const EMPTY: OpponentFormation = { system: 'Libre', players: [] };
 // Dorsales por defecto para un 11 (portero = 1, resto correlativo).
 const defaultNumber = (idx: number) => idx + 1;
 
-// Campograma interactivo estilo scouting: coloca un sistema de juego y
-// arrastra las fichas de los jugadores del rival. Componente controlado.
-// Los nombres/fotos se rellenan desde la base de datos de scouting (por
-// equipo) o manualmente (con foto).
-export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = false, opponentName, rosterPlayers = [], compact = false, fitHeight = false }) => {
+export const FormationPitch: React.FC<Props> = ({
+  value,
+  onChange,
+  readOnly = false,
+  opponentName,
+  rosterPlayers = [],
+  compact = false,
+  fitHeight = false
+}) => {
   const data = {
     system: value?.system || EMPTY.system,
     players: value?.players || EMPTY.players,
@@ -42,20 +46,36 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
 
   // Jugadores del rival en la base de datos de scouting.
   const { data: scoutingPlayers = [] } = useQuery({
-    queryKey: ['scouting'],
-    queryFn: () => dataService.getScouting(),
+    queryKey: ['scouting_opponent', opponentName],
+    queryFn: () => opponentName ? dataService.getScoutingByTeam(opponentName) : dataService.getScouting(),
     enabled: !readOnly,
   });
   const teamScouting = opponentName
     ? scoutingPlayers.filter(p => isSameTeam(p.team, opponentName))
-    : [];
+    : scoutingPlayers;
 
   const commit = (players: FormationPlayer[], system = data.system) => onChange({ system, players });
 
   // Aplicar una formación: reposiciona los 11 en los slots (o crea el 11 si falta).
   const applyFormation = (system: string) => {
-    if (system === 'Libre') { commit(data.players, 'Libre'); return; }
-    const slots = FORMATIONS_SLOTS[system];
+    if (system === 'Libre') {
+      let players = data.players;
+      if (players.length === 0) {
+        const slots = FORMATIONS_SLOTS['4-4-2'] || [];
+        players = slots.map((slot, idx) => ({
+          id: `fp-${Date.now()}-${idx}`,
+          number: defaultNumber(idx),
+          label: slot.label,
+          role: slot.role,
+          x: slot.x,
+          y: slot.y,
+        }));
+      }
+      commit(players, 'Libre');
+      return;
+    }
+    const normSystem = system.replace(/^1-/, '');
+    const slots = FORMATIONS_SLOTS[normSystem] || FORMATIONS_SLOTS[system];
     if (!slots) return;
     const players: FormationPlayer[] = slots.map((slot, idx) => {
       const existing = data.players[idx];
@@ -70,14 +90,14 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
         y: slot.y,
       };
     });
-    commit(players, system);
+    const formattedSys = system.startsWith('1-') || system === 'Libre' ? system : `1-${system}`;
+    commit(players, formattedSys);
   };
 
   // Rellenar los tokens actuales con los jugadores de scouting del rival (en orden).
   const fillFromScouting = () => {
     if (teamScouting.length === 0) return;
     let base = data.players;
-    // Si no hay tokens, crea uno por cada jugador de scouting (colocados en fila).
     if (base.length === 0) {
       base = teamScouting.map((_, idx) => ({
         id: `fp-${Date.now()}-${idx}`,
@@ -141,7 +161,7 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
       document.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('touchend', onUp);
     };
-  }, [activeDragId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeDragId]);
 
   const handleTokenClick = (id: string) => {
     if (hasDraggedRef.current) { hasDraggedRef.current = false; return; }
@@ -165,7 +185,6 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
     setPickerId(newPlayer.id);
   };
 
-  // Asignar un jugador de scouting a una ficha del sistema.
   const assignScouting = (id: string, sp: ScoutingPlayer) => {
     updatePlayer(id, {
       name: sp.player_name,
@@ -176,51 +195,75 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
 
   const pickerPlayer = data.players.find(p => p.id === pickerId) || null;
 
+  const formationKeys = Object.keys(FORMATIONS_SLOTS);
+
   return (
-    <div className={fitHeight ? 'h-full flex items-center justify-center' : 'space-y-3'}>
-      {/* Controles */}
-      {!readOnly && (
-        <div className="bg-brand-black border border-brand-black-border p-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+    <div className={fitHeight ? 'h-full flex items-center justify-center' : 'space-y-3.5 w-full'}>
+      {/* Controles de Selección de Sistema */}
+      {!readOnly && !compact && (
+        <div className="bg-brand-black border border-brand-black-border p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-md">
+          {/* Sistema Principal */}
           <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-brand-gray-light flex items-center gap-1.5">
-              <RefreshCw className="w-3.5 h-3.5 text-brand-red-600" /> Sistema:
+            <label className="text-xs font-bold text-white flex items-center gap-1.5 shrink-0">
+              <RefreshCw className="w-3.5 h-3.5 text-brand-red-500" /> Sistema:
             </label>
             <select
               value={data.system}
               onChange={e => applyFormation(e.target.value)}
-              className="form-input bg-brand-black-bg border-brand-black-border py-1.5 text-xs w-40"
+              className="form-input bg-brand-black-bg border-brand-black-border py-1.5 px-2 text-xs w-44 font-bold text-white cursor-pointer"
             >
-              <option value="Libre">Libre (Arrastrar)</option>
-              {Object.keys(FORMATIONS_SLOTS).map(sys => (
-                <option key={sys} value={sys}>{sys}</option>
-              ))}
+              <option value="Libre">Libre (Personalizar)</option>
+              {formationKeys.map(sys => {
+                const val = sys.startsWith('1-') ? sys : `1-${sys}`;
+                return <option key={sys} value={val}>{val}</option>;
+              })}
             </select>
           </div>
+
+          {/* Botones de Acción */}
           <div className="flex flex-wrap gap-2">
             {teamScouting.length > 0 && (
               <button
                 type="button"
                 onClick={fillFromScouting}
-                className="btn-secondary py-1.5 px-3 text-xs bg-brand-red-600/10 text-brand-red-500 border-brand-red-600/30 hover:bg-brand-red-600 hover:text-white transition-colors flex items-center gap-1.5"
+                className="btn-secondary py-1.5 px-3 text-xs bg-brand-red-600/10 text-brand-red-500 border-brand-red-600/30 hover:bg-brand-red-600 hover:text-white transition-colors flex items-center gap-1.5 font-semibold"
                 title={`Rellenar con los ${teamScouting.length} jugadores de scouting de ${opponentName}`}
               >
                 <DownloadCloud className="w-3.5 h-3.5" /> Rellenar de Scouting
               </button>
             )}
-            <button type="button" onClick={addPlayer} className="btn-secondary py-1.5 px-3 text-xs">+ Jugador</button>
-            <button type="button" onClick={clear} className="btn-secondary py-1.5 px-3 text-xs text-red-400 hover:text-red-300">Limpiar</button>
+            <button type="button" onClick={addPlayer} className="btn-secondary py-1.5 px-3 text-xs font-semibold">+ Jugador</button>
+            <button type="button" onClick={clear} className="btn-secondary py-1.5 px-3 text-xs text-red-400 hover:text-red-300 font-semibold">Limpiar</button>
           </div>
         </div>
       )}
 
-      {/* Campo */}
+      {/* Controles para campograma compacto (alternativa) */}
+      {!readOnly && compact && (
+        <div className="flex items-center gap-1.5 mb-1.5 w-full">
+          <label className="text-[10px] font-bold text-brand-gray-muted shrink-0">Sistema:</label>
+          <select
+            value={data.system}
+            onChange={e => applyFormation(e.target.value)}
+            className="form-input bg-brand-black-bg border-brand-black-border py-1 px-2 text-[11px] font-bold text-white cursor-pointer w-full rounded"
+          >
+            <option value="Libre">Libre (Personalizar)</option>
+            {formationKeys.map(sys => {
+              const val = sys.startsWith('1-') ? sys : `1-${sys}`;
+              return <option key={sys} value={val}>{val}</option>;
+            })}
+          </select>
+        </div>
+      )}
+
+      {/* Campograma (Césped) */}
       <div
         ref={pitchRef}
         className={`relative mx-auto aspect-[2/3] bg-gradient-to-b from-emerald-800 to-emerald-950 border-emerald-100/30 overflow-hidden shadow-2xl select-none ${
           fitHeight
             ? 'h-full w-auto max-w-none border-4 rounded-2xl'
             : compact
-              ? 'w-full max-w-[220px] border-2 rounded-xl'
+              ? 'w-full max-w-[200px] border-2 rounded-xl'
               : 'w-full max-w-md border-4 rounded-2xl'
         }`}
       >
@@ -267,11 +310,11 @@ export const FormationPitch: React.FC<Props> = ({ value, onChange, readOnly = fa
                 <Star className="w-3 h-3 fill-white" />
               </div>
             )}
-            <div className={`relative rounded-full bg-brand-red-600 border-2 shadow-premium flex items-center justify-center overflow-visible group-hover:scale-110 transition-transform duration-150 ${compact ? 'w-6 h-6' : 'w-10 h-10'} ${pickerId === player.id ? 'border-white ring-2 ring-white/50' : 'border-white/70'}`}>
+            <div className={`relative rounded-full bg-brand-red-600 border-2 shadow-premium flex items-center justify-center overflow-visible group-hover:scale-110 transition-transform duration-150 ${compact ? 'w-5.5 h-5.5' : 'w-10 h-10'} ${pickerId === player.id ? 'border-white ring-2 ring-white/50' : 'border-white/70'}`}>
               {player.photo_url ? (
                 <img src={player.photo_url} alt={player.name || ''} className="w-full h-full object-cover rounded-full pointer-events-none" />
               ) : (
-                <span className={`text-white font-black font-mono pointer-events-none ${compact ? 'text-[9px]' : 'text-sm'}`}>{player.number}</span>
+                <span className={`text-white font-black font-mono pointer-events-none ${compact ? 'text-[8px]' : 'text-sm'}`}>{player.number}</span>
               )}
               {player.photo_url && !compact && (
                 <span className="absolute -bottom-1 -right-1 bg-brand-red-600 text-white font-mono text-[9px] font-black w-4 h-4 rounded-full border border-emerald-950 flex items-center justify-center">

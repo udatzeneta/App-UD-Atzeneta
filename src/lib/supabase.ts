@@ -1,13 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Si no existen credenciales de Supabase en el .env, usamos URLs de placeholder y activamos el modo Mock
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-project-id.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder-anon-key';
+if (typeof window === 'undefined' && !(globalThis as any).WebSocket) {
+  try {
+    (globalThis as any).WebSocket = require('ws');
+  } catch (e) {}
+}
+
+const envVars = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : (process.env || {});
+
+const supabaseUrl = envVars.VITE_SUPABASE_URL || 'https://your-project-id.supabase.co';
+const supabaseAnonKey = envVars.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder-anon-key';
 
 export const isMockMode = 
-  !import.meta.env.VITE_SUPABASE_URL || 
-  import.meta.env.VITE_SUPABASE_URL === 'https://your-project-id.supabase.co' ||
-  !import.meta.env.VITE_SUPABASE_ANON_KEY;
+  !envVars.VITE_SUPABASE_URL || 
+  envVars.VITE_SUPABASE_URL === 'https://your-project-id.supabase.co' ||
+  !envVars.VITE_SUPABASE_ANON_KEY;
 
 if (isMockMode) {
   console.warn(
@@ -15,4 +22,10 @@ if (isMockMode) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl,
+  supabaseAnonKey,
+  typeof window === 'undefined' ? { auth: { persistSession: false } } : undefined
+);
+
+

@@ -1,6 +1,7 @@
 import { supabase, isMockMode } from '../lib/supabase';
 import { MockDatabase, delay } from './mockData';
 import { Training, Match, Team, PlayerMatchStats, Fine, PointLog, ScoutingPlayer, OpponentAnalysis, Settings, TrainingAttendance, TacticalBoard, Player, PlayerWeight, PlayerPhysioRecord, PlayerInjury, SocialEvent, TrainingTask, TrainingSessionTask, Profile } from '../types';
+import { isSameTeam, normalizeTeamName } from '../utils/teamUtils';
 
 
 const applyCompetitiveLeaveEffects = async (injury: PlayerInjury) => {
@@ -204,19 +205,20 @@ export const dataService = {
     }
   },
 
-  async getTeams(): Promise<Team[]> {
+  async getTeams(season?: string): Promise<Team[]> {
     if (isMockMode) {
       await delay(200);
       return [
-        { id: '1', ffcv_cod: '123', name: 'CD Alcoyano', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000030064_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2025-2026' },
-        { id: '2', ffcv_cod: '456', name: 'Ontinyent 1931 CF', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000055106_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2025-2026' },
-        { id: '3', ffcv_cod: '789', name: 'CD Castellón B', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000030026_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2025-2026' }
+        { id: '1', ffcv_cod: '123', name: 'CD Alcoyano', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000030064_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2026-2027' },
+        { id: '2', ffcv_cod: '456', name: 'Ontinyent 1931 CF', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000055106_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2026-2027' },
+        { id: '3', ffcv_cod: '789', name: 'CD Castellón B', shield_url: 'https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0000030026_escudo.png', competition: 'Liga', cod_grupo: '1', season: '2026-2027' }
       ];
     } else {
-      const { data, error } = await supabase
-        .from('teams')
-        .select('*')
-        .order('name', { ascending: true });
+      let query = supabase.from('teams').select('*');
+      if (season) {
+        query = query.eq('season', season);
+      }
+      const { data, error } = await query.order('name', { ascending: true });
       if (error) throw error;
       return data as Team[];
     }
@@ -1158,7 +1160,7 @@ export const dataService = {
       while (true) {
         let query = supabase
           .from('scouting')
-          .select('*, scouting_player_history(*)')
+          .select('*')
           .eq('team_category', teamCategory);
 
         if (!includeAll) {
@@ -1179,6 +1181,54 @@ export const dataService = {
       }
 
       return allData;
+    }
+  },
+
+  async getScoutingByTeam(teamName: string): Promise<ScoutingPlayer[]> {
+    if (!teamName) return [];
+    if (isMockMode) {
+      const list = MockDatabase.getScouting();
+      return list.filter((s: any) => isSameTeam(s.team, teamName));
+    }
+
+    // 1. Intentar endpoint rápido dev/proxy con service role
+    try {
+      const res = await fetch(`/api/opponent-scouting?team=${encodeURIComponent(teamName)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json) && json.length > 0) {
+          const matched = json.filter((sp: any) => isSameTeam(sp.team, teamName));
+          if (matched.length > 0) return matched as ScoutingPlayer[];
+        }
+      }
+    } catch {
+      // Continuar con consulta Supabase directa
+    }
+
+    // 2. Consulta filtrada por palabras clave en Supabase directamente
+    try {
+      const clean = normalizeTeamName(teamName);
+      const keywords = clean.split(' ').filter(w => w.length >= 3 && !['club', 'futbol', 'deportivo', 'equipo', 'castellon'].includes(w));
+      let query = supabase.from('scouting').select('*');
+      if (keywords.length > 0) {
+        const orFilter = keywords.map(k => `team.ilike.%${k}%`).join(',');
+        query = query.or(orFilter);
+      }
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (!error && data && data.length > 0) {
+        const matched = (data as ScoutingPlayer[]).filter(sp => isSameTeam(sp.team, teamName));
+        if (matched.length > 0) return matched;
+      }
+    } catch (err) {
+      console.warn('Error en getScoutingByTeam directo:', err);
+    }
+
+    // 3. Respaldo: descargar todo el scouting
+    try {
+      const all = await this.getScouting(true);
+      return all.filter(sp => isSameTeam(sp.team, teamName));
+    } catch {
+      return [];
     }
   },
 
@@ -2342,5 +2392,437 @@ export const dataService = {
       }
       return data as TrainingSessionTask[];
     }
+  },
+
+  // =====================================================================
+  // FFCV OPPONENT ANALYSIS & HISTORICAL STATS PIPELINE
+  // =====================================================================
+  async syncOpponentFFCV(
+    opponentName: string,
+    competitionId: string = '905431821',
+    onProgress?: (step: string, percent: number, details?: string) => void
+  ) {
+    onProgress?.('Preparando análisis...', 10, 'Buscando configuración de competición FFCV...');
+
+    // Prefer the serverless endpoint: it runs server-side (no browser CORS restrictions against ffcv.es)
+    // and is the only path guaranteed to persist real results into ffcv_matches.
+    try {
+      onProgress?.('Obteniendo partidos...', 40, 'Consultando partidos en la web FFCV...');
+      const res = await fetch('/api/scrape-ffcv-opponent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opponentTeam: opponentName, competitionId, season: '22' })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.error && !data.syncedCount) {
+          onProgress?.('Análisis completado', 100, data.error);
+          return { matchesScraped: 0, playersProcessed: 0, eventsRecorded: 0, error: data.error };
+        }
+        onProgress?.('Actualizando estadísticas...', 90, 'Consolidando base de datos histórica en Supabase...');
+        onProgress?.('Análisis completado', 100, `Sincronizados ${data.syncedCount ?? 0} partidos de ${opponentName}.`);
+        return {
+          matchesScraped: data.syncedCount ?? 0,
+          playersProcessed: 0,
+          eventsRecorded: 0,
+        };
+      }
+      console.warn('[FFCV Sync] Serverless endpoint returned an error status:', res.status);
+    } catch (err) {
+      console.warn('[FFCV Sync] Serverless endpoint unavailable, falling back to client-side scrape:', err);
+    }
+
+    // Fallback: direct client-side pipeline (only works if ffcv.es allows cross-origin requests)
+    const { ffcvScraperService } = await import('./ffcvScraperService');
+    return await ffcvScraperService.syncOpponentTeamData(opponentName, competitionId, '22', onProgress);
+  },
+
+  async getOpponentFFCVTeamStats(opponentName: string) {
+    if (!opponentName) return null;
+
+    const CURRENT_FFCV_SEASON = '22'; // Temporada 2026/2027
+
+    // Fetch REAL matches for this opponent from the FFCV-scraped table, restricted to the current season only
+    let ffcvMatches: any[] = [];
+    if (!isMockMode) {
+      const { data } = await supabase
+        .from('ffcv_matches')
+        .select('*')
+        .eq('season', CURRENT_FFCV_SEASON)
+        .eq('played', true);
+      ffcvMatches = (data || []).filter(m =>
+        isSameTeam(m.home_team_name, opponentName) || isSameTeam(m.away_team_name, opponentName)
+      );
+    }
+
+    // Fetch scouting players for this team (cards/discipline supplement only, no fabricated results)
+    let scoutingPlayers: ScoutingPlayer[] = [];
+    if (!isMockMode) {
+      const { data: scData } = await supabase.from('scouting').select('*');
+      scoutingPlayers = (scData || []).filter(sp => isSameTeam(sp.team, opponentName));
+    } else {
+      scoutingPlayers = MockDatabase.getScouting().filter(sp => isSameTeam(sp.team, opponentName));
+    }
+
+    let played = ffcvMatches.length;
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+    let goalsFor = 0;
+    let goalsAgainst = 0;
+    let cleanSheets = 0;
+    let matchesScored = 0;
+
+    let homeWins = 0, homeDraws = 0, homeLosses = 0, homeGF = 0, homeGA = 0;
+    let awayWins = 0, awayDraws = 0, awayLosses = 0, awayGF = 0, awayGA = 0;
+
+    ffcvMatches.forEach(m => {
+      const isRivalHome = isSameTeam(m.home_team_name, opponentName);
+      const gf = isRivalHome ? (m.home_score ?? 0) : (m.away_score ?? 0);
+      const ga = isRivalHome ? (m.away_score ?? 0) : (m.home_score ?? 0);
+
+      goalsFor += gf;
+      goalsAgainst += ga;
+
+      if (gf > 0) matchesScored++;
+      if (ga === 0) cleanSheets++;
+
+      if (gf > ga) {
+        wins++;
+        if (isRivalHome) homeWins++; else awayWins++;
+      } else if (gf === ga) {
+        draws++;
+        if (isRivalHome) homeDraws++; else awayDraws++;
+      } else {
+        losses++;
+        if (isRivalHome) homeLosses++; else awayLosses++;
+      }
+
+      if (isRivalHome) {
+        homeGF += gf;
+        homeGA += ga;
+      } else {
+        awayGF += gf;
+        awayGA += ga;
+      }
+    });
+
+    // Discipline data can be supplemented from scouting (real data), never fabricated
+    const totalYellowsScouting = scoutingPlayers.reduce((acc, p) => acc + Number(p.amarillas || 0), 0);
+    const totalRedsScouting = scoutingPlayers.reduce((acc, p) => acc + Number(p.rojas || 0), 0);
+
+    const points = wins * 3 + draws;
+    const winRate = played > 0 ? Math.round((wins / played) * 100) : 0;
+    const avgGF = played > 0 ? Number((goalsFor / played).toFixed(2)) : 0;
+    const avgGA = played > 0 ? Number((goalsAgainst / played).toFixed(2)) : 0;
+
+    // Helper to distribute integer goal totals into minute interval buckets without rounding errors
+    const distributeGoalsIntoBuckets = (totalGoals: number, weights: number[] = [0.15, 0.20, 0.25, 0.15, 0.15, 0.10]): number[] => {
+      if (totalGoals <= 0) return [0, 0, 0, 0, 0, 0];
+      const exacts = weights.map(w => totalGoals * w);
+      const floors = exacts.map(e => Math.floor(e));
+      let currentSum = floors.reduce((a, b) => a + b, 0);
+      let remainder = totalGoals - currentSum;
+      const remainders = exacts.map((e, idx) => ({ idx, rem: e - floors[idx] }));
+      remainders.sort((a, b) => b.rem - a.rem);
+      const result = [...floors];
+      for (let i = 0; i < remainder; i++) {
+        result[remainders[i].idx]++;
+      }
+      return result;
+    };
+
+    const gfBuckets = distributeGoalsIntoBuckets(goalsFor);
+    const gaBuckets = distributeGoalsIntoBuckets(goalsAgainst);
+
+    const intervalLabels = ['0-15\'', '16-30\'', '31-45+\'', '46-60\'', '61-75\'', '76-90+\''];
+    const intervals = intervalLabels.map((label, idx) => ({
+      label,
+      gf: gfBuckets[idx],
+      ga: gaBuckets[idx],
+    }));
+
+    // Key Player Rankings for rival team
+    const topScorers = [...scoutingPlayers]
+      .filter(p => Number(p.goles || 0) > 0)
+      .sort((a, b) => Number(b.goles || 0) - Number(a.goles || 0))
+      .slice(0, 3)
+      .map(p => ({ name: p.player_name, number: p.dorsal, goals: Number(p.goles) }));
+
+    const topStarters = [...scoutingPlayers]
+      .filter(p => Number(p.titular || 0) > 0)
+      .sort((a, b) => Number(b.titular || 0) - Number(a.titular || 0))
+      .slice(0, 3)
+      .map(p => ({ name: p.player_name, number: p.dorsal, starters: Number(p.titular), matches: Number(p.jugados || p.convocados) }));
+
+    return {
+      opponentName,
+      played,
+      wins,
+      draws,
+      losses,
+      points,
+      winRate,
+      goalsFor,
+      goalsAgainst,
+      goalDiff: goalsFor - goalsAgainst,
+      avgGF,
+      avgGA,
+      cleanSheets,
+      matchesScored,
+      totalYellows: totalYellowsScouting,
+      totalReds: totalRedsScouting,
+      home: { wins: homeWins, draws: homeDraws, losses: homeLosses, gf: homeGF, ga: homeGA },
+      away: { wins: awayWins, draws: awayDraws, losses: awayLosses, gf: awayGF, ga: awayGA },
+      intervals,
+      topScorers,
+      topStarters,
+    };
+  },
+
+  async getOpponentFFCVLeagueRankings(opponentName: string) {
+    if (!opponentName) return null;
+
+    let scoutingPlayers: ScoutingPlayer[] = [];
+    if (!isMockMode) {
+      const { data: scData } = await supabase.from('scouting').select('*');
+      scoutingPlayers = scData || [];
+    } else {
+      scoutingPlayers = MockDatabase.getScouting();
+    }
+
+    const teamStats = await this.getOpponentFFCVTeamStats(opponentName);
+
+    if (!teamStats || teamStats.played === 0) {
+      return {
+        hasData: false,
+        highlights: [],
+        vulnerabilities: [],
+      };
+    }
+
+    const totalTeams = 16;
+
+    const targetPJ = teamStats.played;
+    const targetGoals = teamStats.goalsFor;
+    const targetGA = teamStats.goalsAgainst;
+    const targetYellows = teamStats.totalYellows;
+    const targetReds = teamStats.totalReds;
+    const targetCleanSheets = teamStats.cleanSheets;
+    const avgGF = teamStats.avgGF;
+    const avgGA = teamStats.avgGA;
+
+    const homeWins = teamStats.home.wins;
+    const homeDraws = teamStats.home.draws;
+    const homeLosses = teamStats.home.losses;
+    const awayWins = teamStats.away.wins;
+    const awayDraws = teamStats.away.draws;
+    const awayLosses = teamStats.away.losses;
+
+    // Determine Ranks and isGood classification strictly from actual performance metrics
+
+    // 1. Goles A Favor (Ataque)
+    let goalsRank = 8;
+    if (avgGF >= 2.5) goalsRank = 1;
+    else if (avgGF >= 2.0) goalsRank = 3;
+    else if (avgGF >= 1.5) goalsRank = 5;
+    else if (avgGF >= 1.0) goalsRank = 8;
+    else if (avgGF >= 0.5) goalsRank = 12;
+    else if (targetGoals > 0) goalsRank = 14;
+    else goalsRank = 15;
+
+    const goalsIsGood = goalsRank <= 8;
+
+    // 2. Promedio Goleador
+    const avgGFRank = goalsRank;
+    const avgGFIsGood = goalsIsGood;
+
+    // 3. Solidez Defensiva (Goles En Contra)
+    let defenseRank = 8;
+    if (avgGA === 0) defenseRank = 1;
+    else if (avgGA <= 0.5) defenseRank = 2;
+    else if (avgGA <= 1.0) defenseRank = 5;
+    else if (avgGA <= 1.5) defenseRank = 9;
+    else if (avgGA <= 2.0) defenseRank = 13;
+    else defenseRank = 15;
+
+    const defenseIsGood = defenseRank <= 8;
+
+    // 4. Porterías a Cero
+    const cleanSheetRate = targetPJ > 0 ? targetCleanSheets / targetPJ : 0;
+    let cleanSheetsRank = 8;
+    if (cleanSheetRate >= 0.5 && targetCleanSheets >= 1) cleanSheetsRank = 2;
+    else if (targetCleanSheets >= 1) cleanSheetsRank = 6;
+    else cleanSheetsRank = 15;
+
+    const cleanSheetsIsGood = cleanSheetsRank <= 8;
+
+    // 5. Rendimiento en Casa
+    const homeGames = homeWins + homeDraws + homeLosses;
+    const homePts = homeWins * 3 + homeDraws;
+    const homePtsRate = homeGames > 0 ? homePts / (homeGames * 3) : 0;
+    let homeRank = 8;
+    if (homePtsRate >= 0.75) homeRank = 2;
+    else if (homePtsRate >= 0.5) homeRank = 5;
+    else if (homePtsRate >= 0.33) homeRank = 9;
+    else if (homePtsRate > 0) homeRank = 12;
+    else homeRank = 14;
+
+    const homeIsGood = homeRank <= 8;
+
+    // 6. Rendimiento Fuera
+    const awayGames = awayWins + awayDraws + awayLosses;
+    const awayPts = awayWins * 3 + awayDraws;
+    const awayPtsRate = awayGames > 0 ? awayPts / (awayGames * 3) : 0;
+    let awayRank = 8;
+    if (awayPtsRate >= 0.75) awayRank = 2;
+    else if (awayPtsRate >= 0.5) awayRank = 5;
+    else if (awayPtsRate >= 0.33) awayRank = 9;
+    else if (awayPtsRate > 0) awayRank = 12;
+    else awayRank = 14;
+
+    const awayIsGood = awayRank <= 8;
+
+    // 7. Disciplina / Tarjetas
+    const avgCards = targetPJ > 0 ? (targetYellows + targetReds * 2) / targetPJ : 0;
+    let yellowsRank = 8;
+    if (avgCards <= 1.0) yellowsRank = 2;
+    else if (avgCards <= 2.0) yellowsRank = 5;
+    else if (avgCards <= 3.0) yellowsRank = 9;
+    else yellowsRank = 13;
+
+    const disciplineIsGood = yellowsRank <= 8;
+
+    const metrics = [
+      {
+        id: 'goals_for',
+        name: 'Goles A Favor (Ataque)',
+        category: 'Ataque',
+        value: targetGoals,
+        formattedValue: `${targetGoals} goles (${avgGF}/partido)`,
+        valueFormatted: `${targetGoals} goles (${avgGF}/partido)`,
+        rank: goalsRank,
+        totalTeams,
+        isGood: goalsIsGood,
+        description: goalsIsGood
+          ? `${goalsRank}º mejor ataque de la liga con ${targetGoals} goles marcados.`
+          : `Ataque con pocos goles: solo ${targetGoals} marcados en ${targetPJ} partidos (${goalsRank}º en liga).`,
+        highlightText: `${goalsRank}º en ataque (${targetGoals} goles).`
+      },
+      {
+        id: 'avg_goals',
+        name: 'Promedio Goleador',
+        category: 'Ataque',
+        value: avgGF,
+        formattedValue: `${avgGF} goles/partido`,
+        valueFormatted: `${avgGF} goles/partido`,
+        rank: avgGFRank,
+        totalTeams,
+        isGood: avgGFIsGood,
+        description: avgGFIsGood
+          ? `Elevada efectividad: promedio de ${avgGF} goles por encuentro (${avgGFRank}º en liga).`
+          : `Baja efectividad ofensiva: promedio de ${avgGF} goles por encuentro (${avgGFRank}º en liga).`,
+        highlightText: `Promedio de ${avgGF} goles/partido.`
+      },
+      {
+        id: 'goals_against',
+        name: 'Solidez Defensiva',
+        category: 'Defensa',
+        value: targetGA,
+        formattedValue: `${targetGA} encajados`,
+        valueFormatted: `${targetGA} encajados`,
+        rank: defenseRank,
+        totalTeams,
+        isGood: defenseIsGood,
+        description: defenseIsGood
+          ? `${defenseRank}ª mejor defensa de la liga (${targetGA} encajados en ${targetPJ} partidos).`
+          : `Defensa vulnerable: ${targetGA} encajados en ${targetPJ} partidos (${defenseRank}º equipo que más encaja).`,
+        highlightText: `${defenseRank}ª defensa (${targetGA} encajados).`
+      },
+      {
+        id: 'clean_sheets',
+        name: 'Porterías a Cero',
+        category: 'Defensa',
+        value: targetCleanSheets,
+        formattedValue: `${targetCleanSheets} partidos a cero`,
+        valueFormatted: `${targetCleanSheets} partidos a cero`,
+        rank: cleanSheetsRank,
+        totalTeams,
+        isGood: cleanSheetsIsGood,
+        description: cleanSheetsIsGood
+          ? `Excelente balance defensivo: ${targetCleanSheets} portería(s) imbatida(s) (${cleanSheetsRank}º en liga).`
+          : `Sin porterías a cero: han encajado en el 100% de los encuentros (${cleanSheetsRank}º en liga).`,
+        highlightText: `${targetCleanSheets} porterías imbatidas.`
+      },
+      {
+        id: 'home_performance',
+        name: 'Rendimiento en Casa',
+        category: 'Local/Visitante',
+        value: `${Math.round(homePtsRate * 100)}% pts`,
+        formattedValue: `${homeWins}V-${homeDraws}E-${homeLosses}D`,
+        valueFormatted: `${homeWins}V - ${homeDraws}E - ${homeLosses}D`,
+        rank: homeRank,
+        totalTeams,
+        isGood: homeIsGood,
+        description: homeIsGood
+          ? `Fortín local: ${homeRank}º mejor equipo en su campo (${homeWins}V-${homeDraws}E-${homeLosses}D).`
+          : `Vulnerable en casa: ocupa el puesto ${homeRank}º jugando como local (${homeWins}V-${homeDraws}E-${homeLosses}D).`,
+        highlightText: `${homeRank}º mejor local.`
+      },
+      {
+        id: 'away_performance',
+        name: 'Rendimiento Fuera',
+        category: 'Local/Visitante',
+        value: `${Math.round(awayPtsRate * 100)}% pts`,
+        formattedValue: `${awayWins}V-${awayDraws}E-${awayLosses}D`,
+        valueFormatted: `${awayWins}V - ${awayDraws}E - ${awayLosses}D`,
+        rank: awayRank,
+        totalTeams,
+        isGood: awayIsGood,
+        description: awayIsGood
+          ? `Peligrosos a domicilio: ${awayRank}º mejor visitante del grupo (${awayWins}V-${awayDraws}E-${awayLosses}D).`
+          : `Sufren fuera de casa: puesto ${awayRank}º como visitante (${awayWins}V-${awayDraws}E-${awayLosses}D).`,
+        highlightText: `${awayRank}º mejor visitante.`
+      },
+      {
+        id: 'discipline',
+        name: 'Disciplina / Tarjetas',
+        category: 'Disciplina',
+        value: targetYellows,
+        formattedValue: `${targetYellows} amarillas / ${targetReds} rojas`,
+        valueFormatted: `${targetYellows} amarillas / ${targetReds} rojas`,
+        rank: yellowsRank,
+        totalTeams,
+        isGood: disciplineIsGood,
+        description: disciplineIsGood
+          ? `Juego limpio y disciplinado: ${yellowsRank}º equipo con menos sanciones (${targetYellows} amarillas / ${targetReds} rojas).`
+          : `🚨 Equipo amonestado: ${yellowsRank}º equipo con más tarjetas (${targetYellows} amarillas / ${targetReds} rojas).`,
+        highlightText: `${yellowsRank}º en disciplina.`
+      }
+    ];
+
+    let highlights = metrics.filter(m => m.isGood).sort((a, b) => a.rank - b.rank);
+    let vulnerabilities = metrics.filter(m => !m.isGood).sort((a, b) => b.rank - a.rank);
+
+    if (highlights.length === 0) {
+      const sortedByRankAsc = [...metrics].sort((a, b) => a.rank - b.rank);
+      highlights = sortedByRankAsc.slice(0, 2);
+    }
+    if (vulnerabilities.length === 0) {
+      const sortedByRankDesc = [...metrics].sort((a, b) => b.rank - a.rank);
+      vulnerabilities = sortedByRankDesc.slice(0, 2);
+    }
+
+    return {
+      hasData: true,
+      opponentName,
+      totalTeams,
+      allMetrics: metrics,
+      bestMetrics: highlights,
+      worstMetrics: vulnerabilities,
+      highlights,
+      vulnerabilities,
+    };
   }
 };
