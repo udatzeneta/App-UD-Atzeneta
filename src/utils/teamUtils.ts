@@ -8,7 +8,8 @@ export const normalizeTeamName = (str?: string): string => {
   return str
     .toLowerCase()
     .replace(/['"’‘´`“”]/g, '')
-    .replace(/\b(c\.?f\.?|c\.?d\.?|u\.?d\.?|s\.?d\.?|a\.?d\.?|f\.?c\.?|at\.?|atlético|atletico)\b/gi, '')
+    .replace(/\b([a-z])\.([a-z])\./gi, '$1$2')
+    .replace(/\b([a-z])\.([a-z])\b/gi, '$1$2')
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .replace(/[^a-z0-9]/g, ' ')
@@ -16,29 +17,80 @@ export const normalizeTeamName = (str?: string): string => {
     .trim();
 };
 
+const extractTeamDetails = (name: string) => {
+  const norm = normalizeTeamName(name);
+  if (!norm) return { norm: '', clean: '', letter: null, prefix: null, words: [] };
+
+  let letter: string | null = null;
+  const letterMatch = norm.match(/\b([a-c])\b$/);
+  if (letterMatch) {
+    letter = letterMatch[1];
+  }
+
+  const wordsRaw = norm.split(' ');
+  let prefix: string | null = null;
+  for (let i = 0; i < Math.min(3, wordsRaw.length); i++) {
+    const w = wordsRaw[i];
+    if (['ud', 'ue', 'cd', 'cf', 'fb', 'sd', 'ad', 'fc'].includes(w)) {
+      prefix = w;
+      break;
+    }
+  }
+  if (!prefix) {
+    if (wordsRaw.includes('ue')) prefix = 'ue';
+    else if (wordsRaw.includes('ud')) prefix = 'ud';
+    else if (wordsRaw.includes('cf')) prefix = 'cf';
+    else if (wordsRaw.includes('cd')) prefix = 'cd';
+  }
+
+  const noise = new Set([
+    'cf', 'cd', 'ud', 'ue', 'sd', 'ad', 'fc', 'fb', 'club', 'futbol',
+    'deportivo', 'deportiva', 'union', 'esportiva', 'associacio',
+    'atletico', 'atletic', 'at', 'de', 'del', 'dels', 'la', 'les', 'los',
+    'las', 'el', 'en', 'i', 'y', 'a', 'b', 'c', '1931', '2024', '2025'
+  ]);
+
+  const meaningfulWords = wordsRaw.filter(w => !noise.has(w) && w.length >= 2);
+  const clean = meaningfulWords.join(' ');
+
+  return { norm, clean, letter, prefix, words: meaningfulWords };
+};
+
 /**
- * Compara dos nombres de equipo de manera flexible.
- * Devuelve true si coinciden tras la normalización o si uno contiene al otro.
+ * Compara dos nombres de equipo de manera precisa y flexible.
+ * Distingue clubes diferentes (ej. U.D. Atzeneta de Castellón vs Atzeneta U.E.)
+ * y filiales (ej. C.D. Roda 'A' vs C.D. Roda 'B').
  */
 export const isSameTeam = (teamA?: string, teamB?: string): boolean => {
   if (!teamA || !teamB) return false;
-  const normA = normalizeTeamName(teamA);
-  const normB = normalizeTeamName(teamB);
-  if (!normA || !normB) return false;
+  const a = extractTeamDetails(teamA);
+  const b = extractTeamDetails(teamB);
+  if (!a.clean || !b.clean) return false;
 
-  if (normA === normB) return true;
-
-  // Comparación por subcadena solo si la cadena corta tiene al menos 3 caracteres
-  if (normA.length >= 3 && normB.length >= 3) {
-    if (normA.includes(normB) || normB.includes(normA)) return true;
+  // Si ambos especifican explícitamente letra de filial ('A', 'B', 'C') y difieren -> FALSO
+  if (a.letter && b.letter && a.letter !== b.letter) {
+    return false;
   }
 
-  // Coincidencia por palabras clave principales de más de 3 letras
-  const wordsA = normA.split(/\s+/).filter(w => w.length >= 3 && !['1931', '2024', '2025', 'club'].includes(w));
-  const wordsB = normB.split(/\s+/).filter(w => w.length >= 3 && !['1931', '2024', '2025', 'club'].includes(w));
-  if (wordsA.length > 0 && wordsB.length > 0) {
-    const hasCommonWord = wordsA.some(w => wordsB.includes(w));
-    if (hasCommonWord) return true;
+  // Si el núcleo de palabras significativas es exactamente idéntico
+  if (a.clean === b.clean) {
+    // Si ambos tienen prefijos explícitos y son distintos (ej. UD vs UE) -> FALSO
+    if (a.prefix && b.prefix && a.prefix !== b.prefix) {
+      return false;
+    }
+    return true;
+  }
+
+  const longer = a.words.length >= b.words.length ? a : b;
+  const shorter = a.words.length >= b.words.length ? b : a;
+
+  // Si todas las palabras del más corto están contenidas en el más largo
+  const allShorterInLonger = shorter.words.every(w => longer.words.includes(w));
+  if (allShorterInLonger) {
+    if (a.prefix && b.prefix && a.prefix !== b.prefix) {
+      return false;
+    }
+    return true;
   }
 
   return false;
@@ -126,4 +178,29 @@ export const isSamePlayer = (
   }
 
   return false;
+};
+
+/**
+ * Convierte un nombre de posición en una abreviatura limpia y concisa (ej. "PORTERO/A" -> "POR", "MEDIO CENTRO" -> "MC").
+ */
+export const formatPositionAbbr = (pos?: string): string => {
+  if (!pos) return 'DF';
+  const clean = pos.toUpperCase().trim();
+  if (clean.includes('PORTER')) return 'POR';
+  if (clean.includes('CENTRAL')) return 'CEN';
+  if (clean.includes('LATERAL DER') || clean.includes('LATERAL D')) return 'LD';
+  if (clean.includes('LATERAL IZQ') || clean.includes('LATERAL I')) return 'LI';
+  if (clean.includes('LATERAL')) return 'LAT';
+  if (clean.includes('MEDIO CEN') || clean.includes('CENTROCAMPISTA') || clean.includes('MEDIOCAMPISTA')) return 'MC';
+  if (clean.includes('MEDIO DER')) return 'MD';
+  if (clean.includes('MEDIO IZQ')) return 'MI';
+  if (clean.includes('MEDIO')) return 'MED';
+  if (clean.includes('EXTREMO DER')) return 'ED';
+  if (clean.includes('EXTREMO IZQ')) return 'EI';
+  if (clean.includes('EXTREMO')) return 'EXT';
+  if (clean.includes('DELANTERO')) return 'DEL';
+  if (clean.includes('PUNT')) return 'DC';
+  if (clean.includes('DESCONOCI') || clean.includes('SIN')) return 'JUG';
+  if (clean.length <= 4) return clean;
+  return clean.slice(0, 3);
 };

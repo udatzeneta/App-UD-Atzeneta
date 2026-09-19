@@ -94,6 +94,54 @@
   }
 }
 
+/* --- Transiciones entre diapositivas (Presentación de Análisis Rival) --- */
+/* Empuje tipo Keynote: la diapositiva actual sale por un lado mientras la
+   siguiente entra por el contrario. Ambas comparten curva y duración para que
+   el movimiento se lea como un único gesto y no como dos animaciones sueltas.
+   La duración debe coincidir con SLIDE_TRANSITION_MS en PresentationPlayer. */
+@keyframes slide-out-left {
+  0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-102%, 0, 0) scale(0.94); }
+}
+
+@keyframes slide-in-right {
+  0%   { opacity: 0; transform: translate3d(102%, 0, 0) scale(0.94); }
+  30%  { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes slide-out-right {
+  0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(102%, 0, 0) scale(0.94); }
+}
+
+@keyframes slide-in-left {
+  0%   { opacity: 0; transform: translate3d(-102%, 0, 0) scale(0.94); }
+  30%  { opacity: 1; }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@layer utilities {
+  .slide-out-left  { animation: slide-out-left  0.56s cubic-bezier(0.76, 0, 0.24, 1) both; }
+  .slide-in-right  { animation: slide-in-right  0.56s cubic-bezier(0.76, 0, 0.24, 1) both; }
+  .slide-out-right { animation: slide-out-right 0.56s cubic-bezier(0.76, 0, 0.24, 1) both; }
+  .slide-in-left   { animation: slide-in-left   0.56s cubic-bezier(0.76, 0, 0.24, 1) both; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-out-left,
+  .slide-out-right { display: none; }
+
+  .slide-in-right,
+  .slide-in-left {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media print {
   @page {
     margin: 5mm;

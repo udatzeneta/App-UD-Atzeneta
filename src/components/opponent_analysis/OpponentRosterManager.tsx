@@ -23,53 +23,33 @@ export const OpponentRosterManager: React.FC<Props> = ({ players, onChange, oppo
     !!sp && [sp.jugados, sp.convocados, sp.titular, sp.goles, sp.amarillas]
       .some(v => (Number(v) || 0) > 0);
 
-  // Temporada más reciente disponible para el equipo (la plantilla "actual" es la de esa temporada)
+  // Temporada más reciente disponible para el equipo (la plantilla "actual" es la de esa temporada, preferentemente 2026-2027)
   const currentSeasonFor = (team: string) => {
     const seasons = scoutingPlayers
       .filter(p => isSameTeam(p.team, team))
       .map(p => p.season)
       .filter((s): s is string => Boolean(s));
-    if (seasons.length === 0) return null;
+    if (seasons.length === 0) return '2026-2027';
+    if (seasons.includes('2026-2027') || seasons.includes('2026/2027')) return '2026-2027';
     const sorted = seasons.sort();
     return sorted[sorted.length - 1];
   };
 
-  // Construye la plantilla "actual": jugadores de la temporada más reciente, reforzando
-  // con las estadísticas de la temporada anterior cuando la actual aún no tiene partidos jugados.
+  // Construye la plantilla actual: jugadores de la temporada 2026-2027 del equipo rival
   const buildCurrentRoster = (team: string): ScoutingRow[] => {
     const matchingSp = scoutingPlayers.filter(p => isSameTeam(p.team, team));
     if (matchingSp.length === 0) return [];
 
-    const currentSeason = currentSeasonFor(team);
-    const currentSp = currentSeason ? matchingSp.filter(p => p.season === currentSeason) : matchingSp;
+    const targetSeason = currentSeasonFor(team);
+    const currentSp = matchingSp.filter(p => p.season === targetSeason || (targetSeason === '2026-2027' && (p.season === '2026-2027' || p.season === '2026/2027')));
+    const rosterList = currentSp.length > 0 ? currentSp : matchingSp;
     const byName = new Map<string, ScoutingRow>();
 
-    for (const sp of currentSp) {
+    for (const sp of rosterList) {
       const key = sp.player_name.toLowerCase().trim();
-      if (byName.has(key)) continue;
-
-      if (hasRealStats(sp)) {
+      if (!byName.has(key)) {
         byName.set(key, sp);
-        continue;
       }
-
-      // Temporada actual aún sin partidos: usar estadísticas de la temporada anterior como referencia
-      const previous = matchingSp
-        .filter(p => p.player_name.toLowerCase().trim() === key && p.season !== currentSeason)
-        .sort((a, b) => (b.season || '').localeCompare(a.season || ''))
-        .find(hasRealStats);
-
-      byName.set(key, previous
-        ? {
-            ...sp,
-            ...previous,
-            dorsal: sp.dorsal ?? previous.dorsal,
-            position: sp.position || previous.position,
-            photo_url: sp.photo_url || previous.photo_url,
-            season: sp.season,
-            notes: `Estadísticas de referencia: temporada ${previous.season}`
-          }
-        : sp);
     }
 
     return Array.from(byName.values());

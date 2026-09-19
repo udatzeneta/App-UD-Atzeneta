@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:sanctions": "node sync_sanctions_ffcv.cjs",
+    "sync:players": "node sync_players_scouting.cjs",
+    "sync:all": "node sync_all_ffcv.cjs"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",

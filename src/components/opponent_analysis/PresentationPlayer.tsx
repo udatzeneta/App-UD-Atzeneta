@@ -9,6 +9,7 @@ import type {
 import {
   X, ChevronLeft, ChevronRight, Maximize2, AlertTriangle, Film, LayoutGrid,
   Pencil, Eraser, Undo2, Trash2, BarChart2, Trophy, Activity, Users, AlertCircle,
+  Circle, Square, Move, ShieldAlert, ArrowRight,
 } from 'lucide-react';
 import { FormationPitch } from './FormationPitch';
 import { TaskBoardEditor } from '../TaskBoardEditor';
@@ -19,11 +20,25 @@ import { detectVideoProvider } from '../../utils/opponentVideo';
 import { getValidUrl, formatTime } from '../../utils/opponentVideo';
 import { dataService } from '../../services/data';
 
+// Datos ya resueltos por el servidor para el visor público: quien abre un
+// enlace compartido no tiene sesión, así que no puede consultarlos él mismo.
+export interface SharedPresentationData {
+  teams?: any[];
+  settings?: any;
+  teamStats?: any;
+  leagueRankings?: any;
+  scoutingPlayers?: any[];
+  ffcvSanctions?: any[];
+}
+
 interface Props {
   presentation: OpponentPresentation;
   libraryVideos: OpponentLibraryVideo[];
   opponentName: string;
   onClose: () => void;
+  /** Oculta rotulador y botón de salir: la presentación es toda la página. */
+  publicView?: boolean;
+  sharedData?: SharedPresentationData;
 }
 
 export const BLOCK_LABELS: Record<PresentationBlock, string> = {
@@ -34,8 +49,29 @@ export const BLOCK_LABELS: Record<PresentationBlock, string> = {
   abp: 'Balón Parado',
 };
 
+export type DrawTool = 'freehand' | 'circle' | 'rect' | 'arrow' | 'move';
+
+export interface ShapeItem {
+  id: string;
+  type: 'freehand' | 'circle' | 'rect' | 'arrow';
+  color: string;
+  fillColor?: string; // hex o 'transparent'
+  width: number;
+  points: { x: number; y: number }[]; // para freehand o [start, end] para formas y flechasmas
+  // Propiedades para posicionar rect/circle
+  x?: number; // 0..1
+  y?: number; // 0..1
+  w?: number; // 0..1
+  h?: number; // 0..1
+}
+
 // Colores del rotulador (más un selector libre para cualquier color).
-const MARKER_COLORS = ['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#38bdf8', '#a855f7', '#ffffff', '#000000'];
+// Duración del empuje entre diapositivas. Debe coincidir con las utilidades
+// .slide-in-* / .slide-out-* de index.css.
+const SLIDE_TRANSITION_MS = 560;
+
+const MARKER_COLORS =['#ef4444', '#f59e0b', '#facc15', '#22c55e', '#38bdf8', '#a855f7', '#ffffff', '#000000'];
+const FILL_COLORS = ['transparent', '#ef444466', '#f59e0b66', '#facc1566', '#22c55e66', '#38bdf866', '#a855f766', '#ffffff66', '#00000088'];
 
 interface Stroke {
   color: string;
@@ -48,7 +84,9 @@ interface Stroke {
 const ClipSlide: React.FC<{
   clip: OpponentVideoClip;
   videoUrl: string;
-}> = ({ clip, videoUrl }) => {
+  // La copia que está saliendo del escenario: se pausa y suelta el teclado.
+  frozen?: boolean;
+}> = ({ clip, videoUrl, frozen = false }) => {
   const playerRef = useRef<any>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ cw: 0, ch: 0 });
@@ -84,6 +122,7 @@ const ClipSlide: React.FC<{
 
   // Interceptar teclas de control
   useEffect(() => {
+    if (frozen) return;
     const onKey = async (e: KeyboardEvent) => {
       const player = playerRef.current;
       if (!player) return;
@@ -151,7 +190,7 @@ const ClipSlide: React.FC<{
     // Usamos true (capture phase) para ser los primeros en interceptar
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [start, end, freezeTime]);
+  }, [start, end, freezeTime, frozen]);
 
   return (
     <div className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl flex items-center justify-center p-2 sm:p-4">
@@ -171,7 +210,7 @@ const ClipSlide: React.FC<{
               src={validUrl}
               width="100%"
               height="100%"
-          playing={playing}
+          playing={playing && !frozen}
           controls={false} // Ocultamos los controles de YouTube para mostrar solo nuestro progreso
           progressInterval={100} // ESENCIAL para que el bucle y la pausa detecten el milisegundo exacto
           onPlay={() => setPlaying(true)}
@@ -312,7 +351,7 @@ const ClipSlide: React.FC<{
 // Reproductor de presentaciones a pantalla completa: pasa diapositivas con las
 // flechas del teclado, Espacio (siguiente), Esc (cerrar) y F (fullscreen real).
 // Incluye escudo del club, campograma grande y rotulador para dibujar encima.
-export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideos, opponentName, onClose }) => {
+export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideos, opponentName, onClose, publicView = false, sharedData }) => {
   const [index, setIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -322,42 +361,100 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
   const isIntro = index === 0;
   const slide: PresentationSlide | undefined = isIntro ? undefined : slides[index - 1];
 
+  // Con sharedData los datos vienen del endpoint público y las consultas se
+  // apagan: el visitante de un enlace no tiene sesión con la que resolverlas.
+  const injected = Boolean(sharedData);
+
   // Escudo: primero el del rival (equipo FFCV por nombre), si no el del club.
-  const { data: teams = [] } = useQuery({ queryKey: ['teams'], queryFn: () => dataService.getTeams() });
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => dataService.getSettings() });
+  const { data: teamsQuery = [] } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => dataService.getTeams(),
+    enabled: !injected,
+  });
+  const { data: settingsQuery } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => dataService.getSettings(),
+    enabled: !injected,
+  });
 
   // Datos de FFCV y plantilla para diapositivas estadísticas y de rankings
-  const { data: teamStats } = useQuery({
+  const { data: teamStatsQuery } = useQuery({
     queryKey: ['ffcv_team_stats', opponentName],
     queryFn: () => dataService.getOpponentFFCVTeamStats(opponentName),
-    enabled: Boolean(opponentName),
+    enabled: !injected && Boolean(opponentName),
   });
-  const { data: leagueRankings } = useQuery({
+  const { data: leagueRankingsQuery } = useQuery({
     queryKey: ['ffcv_league_rankings', opponentName],
     queryFn: () => dataService.getOpponentFFCVLeagueRankings(opponentName),
-    enabled: Boolean(opponentName),
+    enabled: !injected && Boolean(opponentName),
   });
-  const { data: scoutingPlayers = [] } = useQuery({
+  const { data: scoutingPlayersQuery = [] } = useQuery({
     queryKey: ['scouting_opponent', opponentName],
     queryFn: () => opponentName ? dataService.getScoutingByTeam(opponentName) : dataService.getScouting(),
+    enabled: !injected,
   });
+  const { data: ffcvSanctionsQuery = [] } = useQuery({
+    queryKey: ['ffcv_sanctions_all'],
+    queryFn: () => dataService.getFFCVSanctions(),
+    enabled: !injected,
+  });
+
+  const teams = sharedData?.teams ?? teamsQuery;
+  const settings = sharedData?.settings ?? settingsQuery;
+  const teamStats = sharedData?.teamStats ?? teamStatsQuery;
+  const leagueRankings = sharedData?.leagueRankings ?? leagueRankingsQuery;
+  const scoutingPlayers = sharedData?.scoutingPlayers ?? scoutingPlayersQuery;
+  const ffcvSanctions = sharedData?.ffcvSanctions ?? ffcvSanctionsQuery;
 
   const opponentShield = teams.find(t => isSameTeam(t.name, opponentName))?.shield_url || null;
   const clubLogo = settings?.logo_url || null;
   const shield = opponentShield || clubLogo;
   const initials = opponentName.trim().slice(0, 3).toUpperCase();
 
-  // ----- Rotulador (dibujo libre sobre la presentación) -----
+  // ----- Rotulador y Formas Geométricas -----
   const [drawMode, setDrawMode] = useState(false);
+  const [activeTool, setActiveTool] = useState<DrawTool>('freehand');
   const [color, setColor] = useState<string>('#ef4444');
+  const [fillColor, setFillColor] = useState<string>('transparent');
   const [width, setWidth] = useState(4);
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [current, setCurrent] = useState<Stroke | null>(null);
+  const [shapes, setShapes] = useState<ShapeItem[]>([]);
+  const [current, setCurrent] = useState<ShapeItem | null>(null);
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; shapeX: number; shapeY: number } | null>(null);
 
   // Limpia los trazos al cambiar de diapositiva.
-  useEffect(() => { setStrokes([]); setCurrent(null); }, [index]);
+  useEffect(() => {
+    setShapes([]);
+    setCurrent(null);
+    setSelectedShapeId(null);
+  }, [index]);
 
-  const go = (dir: 1 | -1) => setIndex(i => Math.min(total - 1, Math.max(0, i + dir)));
+  // Sentido del último salto: decide hacia dónde sale una y por dónde entra la otra.
+  const [navDir, setNavDir] = useState<1 | -1>(1);
+  // Diapositiva que abandona el escenario: sigue montada mientras dura el empuje.
+  const [leavingIndex, setLeavingIndex] = useState<number | null>(null);
+  // El listener de teclado se registra una sola vez, así que lee el índice por ref.
+  const indexRef = useRef(index);
+  const leaveTimerRef = useRef<number | null>(null);
+
+  useEffect(() => { indexRef.current = index; }, [index]);
+  useEffect(() => () => {
+    if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current);
+  }, []);
+
+  const goTo = (target: number) => {
+    const from = indexRef.current;
+    const next = Math.min(total - 1, Math.max(0, target));
+    if (next === from) return;
+    indexRef.current = next; // evita saltos dobles si se pulsa antes del commit
+    setNavDir(next > from ? 1 : -1);
+    setLeavingIndex(from);
+    setIndex(next);
+    if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = window.setTimeout(() => setLeavingIndex(null), SLIDE_TRANSITION_MS);
+  };
+
+  const go = (dir: 1 | -1) => goTo(indexRef.current + dir);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -378,29 +475,147 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
     else document.exitFullscreen?.().catch(() => { /* noop */ });
   };
 
-  // --- Handlers de dibujo ---
+  // --- Handlers de dibujo y manipulación ---
   const pointFromEvent = (e: React.PointerEvent) => {
     const r = stageRef.current?.getBoundingClientRect();
     if (!r) return { x: 0, y: 0 };
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (!drawMode) return;
+    const pt = pointFromEvent(e);
+
+    if (activeTool === 'move') {
+      // Intentar seleccionar o arrastrar la forma bajo el cursor
+      const clicked = [...shapes].reverse().find(s => {
+        if (s.type === 'circle') {
+          const rx = (s.w || 0) / 2;
+          const ry = (s.h || 0) / 2;
+          const cx = (s.x || 0) + rx;
+          const cy = (s.y || 0) + ry;
+          const dx = (pt.x - cx) / (rx || 0.001);
+          const dy = (pt.y - cy) / (ry || 0.001);
+          return dx * dx + dy * dy <= 1;
+        } else if (s.type === 'rect') {
+          return pt.x >= (s.x || 0) && pt.x <= (s.x || 0) + (s.w || 0) && pt.y >= (s.y || 0) && pt.y <= (s.y || 0) + (s.h || 0);
+        }
+        return false;
+      });
+
+      if (clicked) {
+        setSelectedShapeId(clicked.id);
+        dragStartRef.current = { x: pt.x, y: pt.y, shapeX: clicked.x || 0, shapeY: clicked.y || 0 };
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+      } else {
+        setSelectedShapeId(null);
+      }
+      return;
+    }
+
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    setCurrent({ color, width, points: [pointFromEvent(e)] });
+    const id = `shape-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    if (activeTool === 'freehand') {
+      setCurrent({ id, type: 'freehand', color, width, points: [pt] });
+    } else {
+      setCurrent({
+        id,
+        type: activeTool,
+        color,
+        fillColor,
+        width,
+        points: [pt, pt],
+        x: pt.x,
+        y: pt.y,
+        w: 0,
+        h: 0,
+      });
+    }
   };
+
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!drawMode || !current) return;
-    const p = pointFromEvent(e);
-    setCurrent(c => (c ? { ...c, points: [...c.points, p] } : c));
-  };
-  const onPointerUp = () => {
+    if (!drawMode) return;
+    const pt = pointFromEvent(e);
+
+    if (activeTool === 'move' && dragStartRef.current && selectedShapeId) {
+      const dx = pt.x - dragStartRef.current.x;
+      const dy = pt.y - dragStartRef.current.y;
+      setShapes(prev => prev.map(s => {
+        if (s.id !== selectedShapeId) return s;
+        return {
+          ...s,
+          x: dragStartRef.current!.shapeX + dx,
+          y: dragStartRef.current!.shapeY + dy,
+        };
+      }));
+      return;
+    }
+
     if (!current) return;
-    setStrokes(s => (current.points.length > 1 ? [...s, current] : s));
+
+    if (current.type === 'freehand') {
+      setCurrent(c => (c ? { ...c, points: [...c.points, pt] } : c));
+    } else if (current.type === 'arrow') {
+      const p0 = current.points[0];
+      setCurrent(c => (c ? { ...c, points: [p0, pt] } : c));
+    } else {
+      const p0 = current.points[0];
+      const minX = Math.min(p0.x, pt.x);
+      const minY = Math.min(p0.y, pt.y);
+      const w = Math.abs(pt.x - p0.x);
+      const h = Math.abs(pt.y - p0.y);
+      setCurrent(c => (c ? { ...c, points: [p0, pt], x: minX, y: minY, w, h } : c));
+    }
+  };
+
+  const onPointerUp = () => {
+    if (activeTool === 'move') {
+      dragStartRef.current = null;
+      return;
+    }
+    if (!current) return;
+    if (current.type === 'freehand') {
+      if (current.points.length > 1) setShapes(s => [...s, current]);
+    } else if (current.type === 'arrow') {
+      const p0 = current.points[0];
+      const p1 = current.points[1];
+      if (p0 && p1) {
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        if (Math.hypot(dx, dy) > 0.005) {
+          setShapes(s => [...s, current]);
+        }
+      }
+    } else {
+      if ((current.w || 0) > 0.005 || (current.h || 0) > 0.005) {
+        setShapes(s => [...s, current]);
+      }
+    }
     setCurrent(null);
   };
-  const undoStroke = () => setStrokes(s => s.slice(0, -1));
-  const clearStrokes = () => { setStrokes([]); setCurrent(null); };
+
+  const undoShape = () => {
+    setShapes(s => s.slice(0, -1));
+    setSelectedShapeId(null);
+  };
+  const clearShapes = () => {
+    setShapes([]);
+    setCurrent(null);
+    setSelectedShapeId(null);
+  };
+
+  // Cambiar propiedades de la forma seleccionada
+  const updateSelectedShape = (patch: Partial<ShapeItem>) => {
+    if (!selectedShapeId) return;
+    setShapes(prev => prev.map(s => s.id === selectedShapeId ? { ...s, ...patch } : s));
+  };
+
+  const deleteSelectedShape = () => {
+    if (!selectedShapeId) return;
+    setShapes(prev => prev.filter(s => s.id !== selectedShapeId));
+    setSelectedShapeId(null);
+  };
 
   const toPointsAttr = (pts: { x: number; y: number }[]) => pts.map(p => `${p.x},${p.y}`).join(' ');
 
@@ -448,7 +663,7 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
     </div>
   );
 
-  const renderSlide = (s: PresentationSlide) => {
+  const renderSlide = (s: PresentationSlide, frozen = false) => {
     switch (s.type) {
       case 'cover':
         return (
@@ -518,7 +733,7 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
               <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wide shrink-0">{s.title || clip.title}</h2>
             )}
             <div className="flex-1 min-h-0 w-full flex items-center justify-center">
-              <ClipSlide key={s.id} clip={clip} videoUrl={video.url} />
+              <ClipSlide key={s.id} clip={clip} videoUrl={video.url} frozen={frozen} />
             </div>
             <span className="text-xs text-brand-gray-muted font-mono shrink-0">{formatTime(clip.start)} – {formatTime(clip.end)}</span>
           </div>
@@ -757,16 +972,17 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
       }
       case 'roster_rankings': {
         const teamSc = (scoutingPlayers || []).filter((sp: any) => isSameTeam(sp.team, opponentName));
+        const current2627 = teamSc.filter((sp: any) => sp.season === '2026-2027' || sp.season === '2026/2027');
+        const rosterRaw = current2627.length > 0 ? current2627 : teamSc;
         
-        // Deduplicar jugadores por nombre normalizado
+        // Deduplicar jugadores por nombre normalizado e integrar foto de roster_comments si está disponible
         const bestByPlayer = new Map<string, any>();
-        teamSc.forEach((sp: any) => {
+        rosterRaw.forEach((sp: any) => {
           const key = (sp.player_name || '').toLowerCase().trim();
-          const existing = bestByPlayer.get(key);
-          const score = (Number(sp.titular) || 0) + (Number(sp.jugados) || 0) + (Number(sp.goles) || 0) + (Number(sp.amarillas) || 0);
-          const existingScore = existing ? (Number(existing.titular) || 0) + (Number(existing.jugados) || 0) + (Number(existing.goles) || 0) + (Number(existing.amarillas) || 0) : -1;
-          if (!existing || score > existingScore) {
-            bestByPlayer.set(key, sp);
+          if (!bestByPlayer.has(key)) {
+            // Intentar emparejar foto desde scoutingPlayers o roster_comments
+            const photo = sp.photo_url || (scoutingPlayers || []).find((p: any) => (p.player_name || '').toLowerCase().trim() === key)?.photo_url;
+            bestByPlayer.set(key, { ...sp, photo_url: photo });
           }
         });
         const uniquePlayers = Array.from(bestByPlayer.values());
@@ -807,13 +1023,22 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                 ) : (
                   <div className="space-y-2 overflow-y-auto no-scrollbar pr-1">
                     {topScorers.map((p, idx) => (
-                      <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-3 rounded-xl hover:border-brand-red-600/50 transition-colors">
-                        <span className="text-brand-gray-light font-medium truncate flex items-center gap-2">
-                          <span className="text-xs font-bold text-brand-gray-muted w-5">{idx + 1}.</span>
-                          <span className="text-white font-semibold">{p.player_name || p.name}</span>
-                          {p.dorsal ? <span className="text-xs text-brand-gray-muted">#{p.dorsal}</span> : null}
-                        </span>
-                        <span className="font-black text-emerald-400 shrink-0 text-base">{p.goles || p.goals} ⚽</span>
+                      <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-2.5 rounded-xl hover:border-brand-red-600/50 transition-colors">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-xs font-bold text-brand-gray-muted w-4 shrink-0 text-center">{idx + 1}.</span>
+                          <div className="w-8 h-8 rounded-lg bg-brand-black-border shrink-0 overflow-hidden border border-brand-black-border flex items-center justify-center">
+                            {p.photo_url ? (
+                              <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-[9px] font-bold text-brand-gray-muted">{p.dorsal ? `#${p.dorsal}` : '-'}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-white font-semibold text-xs sm:text-sm truncate block">{p.player_name || p.name}</span>
+                            {p.dorsal ? <span className="text-[10px] text-brand-gray-muted font-mono">Dorsal #{p.dorsal}</span> : null}
+                          </div>
+                        </div>
+                        <span className="font-black text-emerald-400 shrink-0 text-base ml-2">{p.goles || p.goals} ⚽</span>
                       </div>
                     ))}
                   </div>
@@ -835,13 +1060,22 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                 ) : (
                   <div className="space-y-2 overflow-y-auto no-scrollbar pr-1">
                     {topStarters.map((p, idx) => (
-                      <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-3 rounded-xl hover:border-brand-red-600/50 transition-colors">
-                        <span className="text-brand-gray-light font-medium truncate flex items-center gap-2">
-                          <span className="text-xs font-bold text-brand-gray-muted w-5">{idx + 1}.</span>
-                          <span className="text-white font-semibold">{p.player_name || p.name}</span>
-                          {p.dorsal ? <span className="text-xs text-brand-gray-muted">#{p.dorsal}</span> : null}
-                        </span>
-                        <span className="font-bold text-sky-400 shrink-0 text-xs bg-sky-950/60 px-2 py-1 rounded border border-sky-900/50">
+                      <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-2.5 rounded-xl hover:border-brand-red-600/50 transition-colors">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-xs font-bold text-brand-gray-muted w-4 shrink-0 text-center">{idx + 1}.</span>
+                          <div className="w-8 h-8 rounded-lg bg-brand-black-border shrink-0 overflow-hidden border border-brand-black-border flex items-center justify-center">
+                            {p.photo_url ? (
+                              <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-[9px] font-bold text-brand-gray-muted">{p.dorsal ? `#${p.dorsal}` : '-'}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-white font-semibold text-xs sm:text-sm truncate block">{p.player_name || p.name}</span>
+                            {p.dorsal ? <span className="text-[10px] text-brand-gray-muted font-mono">Dorsal #{p.dorsal}</span> : null}
+                          </div>
+                        </div>
+                        <span className="font-bold text-sky-400 shrink-0 text-xs bg-sky-950/60 px-2 py-1 rounded border border-sky-900/50 ml-2">
                           {p.titular || p.starter_count || 0} Tit ({p.jugados || p.convocados || p.matches_played || 0} PJ)
                         </span>
                       </div>
@@ -867,17 +1101,24 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                     {topCards.map((p, idx) => {
                       const yellow = Number(p.amarillas) || Number(p.yellow_cards) || 0;
                       const red = Number(p.rojas) || Number(p.red_cards) || 0;
-                      const isSanction = yellow > 0 && yellow % 5 === 0;
                       const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
                       return (
-                        <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-3 rounded-xl hover:border-brand-red-600/50 transition-colors">
-                          <span className="text-brand-gray-light font-medium truncate flex items-center gap-2">
-                            <span className="text-xs font-bold text-brand-gray-muted w-5">{idx + 1}.</span>
-                            <span className="text-white font-semibold">{p.player_name || p.name}</span>
-                            {p.dorsal ? <span className="text-xs text-brand-gray-muted">#{p.dorsal}</span> : null}
-                          </span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {isSanction && <span className="text-[9px] font-black text-red-400 bg-red-950 border border-red-800 px-1.5 py-0.5 rounded">Sanción</span>}
+                        <div key={p.id || idx} className="flex items-center justify-between text-sm bg-black border border-brand-black-border/70 p-2.5 rounded-xl hover:border-brand-red-600/50 transition-colors">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-xs font-bold text-brand-gray-muted w-4 shrink-0 text-center">{idx + 1}.</span>
+                            <div className="w-8 h-8 rounded-lg bg-brand-black-border shrink-0 overflow-hidden border border-brand-black-border flex items-center justify-center">
+                              {p.photo_url ? (
+                                <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[9px] font-bold text-brand-gray-muted">{p.dorsal ? `#${p.dorsal}` : '-'}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-white font-semibold text-xs sm:text-sm truncate block">{p.player_name || p.name}</span>
+                              {p.dorsal ? <span className="text-[10px] text-brand-gray-muted font-mono">Dorsal #{p.dorsal}</span> : null}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
                             {isWarning && <span className="text-[9px] font-bold text-amber-400 bg-amber-950 border border-amber-800 px-1.5 py-0.5 rounded">Apercibido</span>}
                             <span className="font-bold text-amber-400">{yellow} 🟨</span>
                             {red > 0 ? <span className="font-bold text-red-500">{red} 🟥</span> : null}
@@ -885,6 +1126,108 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      case 'ffcv_sanctions': {
+        const teamSc = (scoutingPlayers || []).filter((sp: any) => isSameTeam(sp.team, opponentName));
+        const current2627 = teamSc.filter((sp: any) => sp.season === '2026-2027' || sp.season === '2026/2027');
+        const rosterBase = current2627.length > 0 ? current2627 : teamSc;
+
+        const normOpp = (opponentName || '').toLowerCase().trim();
+        const activeSanctions = (ffcvSanctions || []).filter((s: any) => {
+          if (!s.team_name) return false;
+          return isSameTeam(s.team_name, opponentName);
+        });
+
+        // Filtrar a los que realmente siguen sancionados comprobando días transcurridos
+        const todayStr = new Date().toISOString().split('T')[0];
+        const validSanctions = activeSanctions.filter((s: any) => {
+          if (!s.resolution_date) return true;
+          const resDate = new Date(s.resolution_date);
+          const now = new Date(todayStr);
+          const diffDays = Math.floor((now.getTime() - resDate.getTime()) / (1000 * 60 * 60 * 24));
+          const elapsedWeekends = Math.floor(diffDays / 7);
+          const remaining = (s.matches_count || 1) - elapsedWeekends;
+          return remaining > 0;
+        });
+
+        const warned = rosterBase.filter((sp: any) => {
+          const yellow = Number(sp.amarillas) || Number(sp.yellow_cards) || 0;
+          return yellow > 0 && (yellow + 1) % 5 === 0;
+        });
+
+        return (
+          <div className="flex flex-col h-full w-full gap-5 py-2 px-6 max-w-7xl mx-auto overflow-y-auto no-scrollbar">
+            {s.title && (
+              <h2 className="text-2xl sm:text-4xl font-black text-brand-red-500 uppercase tracking-wide text-center shrink-0">
+                {s.title}
+              </h2>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
+              {/* Sancionados */}
+              <div className="bg-brand-black-card border border-red-900/60 rounded-2xl p-5 flex flex-col gap-4 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-red-500 uppercase tracking-wide flex items-center gap-2">
+                    🚫 Sancionados Confirmados (Comité FFCV)
+                  </h3>
+                  <span className="text-[10px] font-bold text-red-400 bg-red-950 px-2.5 py-0.5 rounded border border-red-800">Bajas Confirmadas</span>
+                </div>
+                {validSanctions.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-xs text-brand-gray-dark italic gap-2 py-8">
+                    <span className="text-2xl">✅</span>
+                    <span>Sin jugadores sancionados actualmente.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-3 overflow-y-auto no-scrollbar pr-1">
+                    {validSanctions.map((sanc: any, idx: number) => (
+                      <div key={idx} className="bg-black border border-red-900/50 p-4 rounded-xl flex items-center justify-between gap-3 shadow-lg">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-black text-white block uppercase tracking-wide">{sanc.player_name}</span>
+                          <span className="text-xs text-brand-gray-muted block mt-0.5">
+                            {sanc.article ? `Artículo ${sanc.article}` : 'Resolución Comité'} {sanc.resolution_date ? `• ${sanc.resolution_date}` : ''}
+                          </span>
+                        </div>
+                        <span className="text-xs font-black text-red-400 bg-red-950 px-3 py-1.5 rounded-lg border border-red-800 shrink-0">
+                          {sanc.matches_count || 1} {sanc.matches_count === 1 ? 'partido' : 'partidos'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Apercibidos */}
+              <div className="bg-brand-black-card border border-amber-900/60 rounded-2xl p-5 flex flex-col gap-4 shadow-premium">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-3">
+                  <h3 className="text-base font-black text-amber-400 uppercase tracking-wide flex items-center gap-2">
+                    ⚠️ Jugadores Apercibidos (4 Amarillas)
+                  </h3>
+                  <span className="text-[10px] font-bold text-amber-400 bg-amber-950 px-2.5 py-0.5 rounded border border-amber-800">Riesgo Sanción</span>
+                </div>
+                {warned.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-xs text-brand-gray-dark italic gap-2 py-8">
+                    <span className="text-2xl">👍</span>
+                    <span>Sin jugadores apercibidos de sanción.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-3 overflow-y-auto no-scrollbar pr-1">
+                    {warned.map((p: any, idx: number) => (
+                      <div key={idx} className="bg-black border border-amber-900/50 p-4 rounded-xl flex items-center justify-between gap-3 shadow-lg">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-black text-white block uppercase tracking-wide">{p.player_name || p.name}</span>
+                          <span className="text-xs text-amber-400/80 block mt-0.5 font-medium">A una tarjeta de la suspensión</span>
+                        </div>
+                        <span className="text-xs font-black text-amber-400 bg-amber-950 px-3 py-1.5 rounded-lg border border-amber-800 shrink-0">
+                          {(Number(p.amarillas) || Number(p.yellow_cards) || 0)} 🟨
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -910,7 +1253,6 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1 pb-10">
                 {summaryData.rosterComments!.map((p, i) => {
                   const yellow = p.yellow_cards || 0;
-                  const isSanction = yellow > 0 && yellow % 5 === 0;
                   const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
                   return (
                     <div key={i} className="bg-brand-black-card border border-brand-black-border rounded-xl p-4 flex flex-col justify-between gap-3 shadow-premium hover:border-brand-red-600/50 transition-colors">
@@ -925,7 +1267,6 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                         <div className="flex-1 min-w-0">
                           <span className="font-bold text-white text-sm truncate block">{p.name} {p.number ? `(#${p.number})` : ''}</span>
                           <span className="text-[10px] text-brand-gray-muted font-mono bg-black px-1.5 py-0.5 rounded inline-block mt-0.5">{p.position || 'DF'}</span>
-                          {isSanction && <span className="text-[9px] font-black text-red-400 block mt-0.5">🟨 Sancionado (5ª)</span>}
                           {isWarning && <span className="text-[9px] font-bold text-amber-400 block mt-0.5">⚠️ Apercibido (4ª)</span>}
                         </div>
                       </div>
@@ -1015,7 +1356,6 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                       <div className="flex flex-col gap-3">
                         {summaryData.rosterComments.map((p, i) => {
                           const yellow = p.yellow_cards || 0;
-                          const isSanction = yellow > 0 && yellow % 5 === 0;
                           const isWarning = yellow > 0 && (yellow + 1) % 5 === 0;
                           return (
                             <div key={i} className="flex flex-col gap-2 bg-black border border-brand-black-border rounded-lg p-3">
@@ -1032,7 +1372,6 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
                                     <span className="font-bold text-white text-sm truncate">{p.name} {p.number ? `(#${p.number})` : ''}</span>
                                     {p.position && <span className="text-[10px] text-brand-gray-muted uppercase shrink-0 font-mono bg-brand-black px-1.5 py-0.5 rounded">{p.position}</span>}
                                   </div>
-                                  {isSanction && <span className="text-[9px] font-black text-red-400 block mt-0.5">🟨 Sancionado (5ª Amarilla)</span>}
                                   {isWarning && <span className="text-[9px] font-bold text-amber-400 block mt-0.5">⚠️ Apercibido (4ª Amarilla)</span>}
                                 </div>
                               </div>
@@ -1071,6 +1410,22 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
     }
   };
 
+  // Renderiza cualquier diapositiva por índice (0 = portada automática) para
+  // poder tener montadas a la vez la que sale y la que entra.
+  const renderAt = (i: number, frozen: boolean) => {
+    if (i === 0) return renderIntro();
+    const sl = slides[i - 1];
+    if (!sl) {
+      return (
+        <div className="flex flex-col items-center gap-3 text-brand-gray-muted">
+          <Film className="w-10 h-10 opacity-40" />
+          <p>Esta presentación no tiene diapositivas todavía. Añade contenido desde el montador.</p>
+        </div>
+      );
+    }
+    return renderSlide(sl, frozen);
+  };
+
   const content = (
     <div ref={rootRef} className="fixed inset-0 z-[110] bg-gradient-to-br from-black via-brand-black to-black flex flex-col animate-fade-in">
       {/* Cabecera */}
@@ -1083,9 +1438,11 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
           <button onClick={toggleFullscreen} className="p-2 text-brand-gray-muted hover:text-white rounded-lg hover:bg-brand-black-card transition-colors" title="Pantalla completa (F)">
             <Maximize2 className="w-5 h-5" />
           </button>
-          <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white border border-brand-red-600/30 rounded-lg transition-colors font-bold uppercase text-xs tracking-wide" title="Cerrar (Esc)">
-            <X className="w-5 h-5" /> Salir
-          </button>
+          {!publicView && (
+            <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 bg-brand-red-600/10 text-brand-red-500 hover:bg-brand-red-600 hover:text-white border border-brand-red-600/30 rounded-lg transition-colors font-bold uppercase text-xs tracking-wide" title="Cerrar (Esc)">
+              <X className="w-5 h-5" /> Salir
+            </button>
+          )}
         </div>
       </div>
 
@@ -1105,13 +1462,23 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
           <ChevronLeft className="w-6 h-6" />
         </button>
 
-        <div className="w-full h-full flex items-center justify-center overflow-y-auto no-scrollbar py-2">
-          {isIntro ? renderIntro() : slide ? renderSlide(slide) : (
-            <div className="flex flex-col items-center gap-3 text-brand-gray-muted">
-              <Film className="w-10 h-10 opacity-40" />
-              <p>Esta presentación no tiene diapositivas todavía. Añade contenido desde el montador.</p>
+        {/* Visor: recorta las dos capas para que el empuje entre y salga de plano. */}
+        <div className="relative w-full h-full overflow-hidden">
+          {leavingIndex !== null && leavingIndex !== index && (
+            <div
+              key={`leave-${leavingIndex}`}
+              aria-hidden
+              className={`absolute inset-0 flex items-center justify-center overflow-hidden no-scrollbar py-2 pointer-events-none will-change-transform ${navDir === 1 ? 'slide-out-left' : 'slide-out-right'}`}
+            >
+              {renderAt(leavingIndex, true)}
             </div>
           )}
+          <div
+            key={`enter-${index}`}
+            className={`absolute inset-0 flex items-center justify-center overflow-y-auto no-scrollbar py-2 will-change-transform ${navDir === 1 ? 'slide-in-right' : 'slide-in-left'}`}
+          >
+            {renderAt(index, false)}
+          </div>
         </div>
 
         {/* Flecha derecha */}
@@ -1123,9 +1490,9 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
           <ChevronRight className="w-6 h-6" />
         </button>
 
-        {/* Capa de dibujo del rotulador */}
+        {/* Capa de dibujo del rotulador y formas geométricas */}
         <svg
-          className={`absolute inset-0 w-full h-full z-20 ${drawMode ? 'pointer-events-auto cursor-crosshair' : 'pointer-events-none'}`}
+          className={`absolute inset-0 w-full h-full z-20 ${drawMode ? (activeTool === 'move' ? 'pointer-events-auto cursor-grab active:cursor-grabbing' : 'pointer-events-auto cursor-crosshair') : 'pointer-events-none'}`}
           viewBox="0 0 1 1"
           preserveAspectRatio="none"
           onPointerDown={onPointerDown}
@@ -1133,61 +1500,276 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
         >
-          {[...strokes, ...(current ? [current] : [])].map((st, i) => (
-            <polyline
-              key={i}
-              points={toPointsAttr(st.points)}
-              fill="none"
-              stroke={st.color}
-              strokeWidth={st.width}
-              vectorEffect="non-scaling-stroke"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
+          <defs>
+            {MARKER_COLORS.map((c, i) => (
+              <marker
+                key={i}
+                id={`arrowhead-${i}`}
+                markerWidth="6"
+                markerHeight="6"
+                refX="5"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M 0 0 L 6 3 L 0 6 z" fill={c} />
+              </marker>
+            ))}
+          </defs>
+          {[...shapes, ...(current ? [current] : [])].map((item) => {
+            const isSelected = selectedShapeId === item.id;
+            const colorIdx = Math.max(0, MARKER_COLORS.indexOf(item.color));
+
+            if (item.type === 'freehand') {
+              return (
+                <polyline
+                  key={item.id}
+                  points={toPointsAttr(item.points)}
+                  fill="none"
+                  stroke={item.color}
+                  strokeWidth={item.width}
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              );
+            } else if (item.type === 'arrow') {
+              const p0 = item.points[0] || { x: 0, y: 0 };
+              const p1 = item.points[1] || p0;
+              return (
+                <g key={item.id}>
+                  <line
+                    x1={p0.x}
+                    y1={p0.y}
+                    x2={p1.x}
+                    y2={p1.y}
+                    stroke={item.color}
+                    strokeWidth={item.width}
+                    vectorEffect="non-scaling-stroke"
+                    strokeLinecap="round"
+                    markerEnd={`url(#arrowhead-${colorIdx})`}
+                  />
+                  {isSelected && (
+                    <line
+                      x1={p0.x}
+                      y1={p0.y}
+                      x2={p1.x}
+                      y2={p1.y}
+                      stroke="#38bdf8"
+                      strokeWidth={item.width + 2}
+                      strokeDasharray="4 4"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                </g>
+              );
+            } else if (item.type === 'circle') {
+              const rx = (item.w || 0) / 2;
+              const ry = (item.h || 0) / 2;
+              const cx = (item.x || 0) + rx;
+              const cy = (item.y || 0) + ry;
+              return (
+                <g key={item.id}>
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={rx}
+                    ry={ry}
+                    fill={item.fillColor || 'transparent'}
+                    stroke={item.color}
+                    strokeWidth={item.width}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {isSelected && (
+                    <ellipse
+                      cx={cx}
+                      cy={cy}
+                      rx={rx + 0.005}
+                      ry={ry + 0.005}
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                </g>
+              );
+            } else if (item.type === 'rect') {
+              return (
+                <g key={item.id}>
+                  <rect
+                    x={item.x || 0}
+                    y={item.y || 0}
+                    width={item.w || 0}
+                    height={item.h || 0}
+                    fill={item.fillColor || 'transparent'}
+                    stroke={item.color}
+                    strokeWidth={item.width}
+                    vectorEffect="non-scaling-stroke"
+                    rx={0.005}
+                  />
+                  {isSelected && (
+                    <rect
+                      x={(item.x || 0) - 0.003}
+                      y={(item.y || 0) - 0.003}
+                      width={(item.w || 0) + 0.006}
+                      height={(item.h || 0) + 0.006}
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+                </g>
+              );
+            }
+            return null;
+          })}
         </svg>
       </div>
 
-      {/* Barra de rotulador (flotante) */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-16 z-40 flex items-center gap-2 bg-brand-black/90 backdrop-blur-md border border-brand-black-border rounded-full px-3 py-2 shadow-2xl">
+      {/* Barra de rotulador y formas geométricas (flotante) */}
+      <div className={`absolute left-1/2 -translate-x-1/2 bottom-16 z-40 flex items-center gap-2 bg-brand-black/95 backdrop-blur-md border border-brand-black-border rounded-full px-4 py-2 shadow-2xl ${publicView ? 'hidden' : ''}`}>
         <button
           onClick={() => setDrawMode(d => !d)}
           className={`p-2 rounded-full transition-colors ${drawMode ? 'bg-brand-red-600 text-white' : 'text-brand-gray-muted hover:text-white'}`}
-          title="Rotulador (D)"
+          title="Modo Dibujo / Formas (D)"
         >
           <Pencil className="w-4 h-4" />
         </button>
 
         {drawMode && (
           <>
-            <div className="flex items-center gap-1.5 px-1">
+            {/* Herramientas (Libre, Flecha, Círculo, Rectángulo, Mover) */}
+            <div className="flex items-center gap-1 px-1.5 border-l border-brand-black-border">
+              <button
+                onClick={() => { setActiveTool('freehand'); setSelectedShapeId(null); }}
+                className={`p-1.5 rounded-lg transition-colors ${activeTool === 'freehand' ? 'bg-brand-red-600/30 text-brand-red-400 border border-brand-red-600/50' : 'text-brand-gray-muted hover:text-white'}`}
+                title="Lápiz libre"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => { setActiveTool('arrow'); setSelectedShapeId(null); }}
+                className={`p-1.5 rounded-lg transition-colors ${activeTool === 'arrow' ? 'bg-brand-red-600/30 text-brand-red-400 border border-brand-red-600/50' : 'text-brand-gray-muted hover:text-white'}`}
+                title="Flecha táctica"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => { setActiveTool('circle'); setSelectedShapeId(null); }}
+                className={`p-1.5 rounded-lg transition-colors ${activeTool === 'circle' ? 'bg-brand-red-600/30 text-brand-red-400 border border-brand-red-600/50' : 'text-brand-gray-muted hover:text-white'}`}
+                title="Círculo / Elipse"
+              >
+                <Circle className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => { setActiveTool('rect'); setSelectedShapeId(null); }}
+                className={`p-1.5 rounded-lg transition-colors ${activeTool === 'rect' ? 'bg-brand-red-600/30 text-brand-red-400 border border-brand-red-600/50' : 'text-brand-gray-muted hover:text-white'}`}
+                title="Cuadrado / Rectángulo"
+              >
+                <Square className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setActiveTool('move')}
+                className={`p-1.5 rounded-lg transition-colors ${activeTool === 'move' ? 'bg-sky-600/30 text-sky-400 border border-sky-500/50' : 'text-brand-gray-muted hover:text-white'}`}
+                title="Mover y Seleccionar formas"
+              >
+                <Move className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Selector de color de trazo */}
+            <div className="flex items-center gap-1.5 px-1.5 border-l border-brand-black-border" title="Color de borde">
+              <span className="text-[10px] text-brand-gray-muted uppercase font-bold mr-0.5">Borde</span>
               {MARKER_COLORS.map(c => (
                 <button
                   key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-5 h-5 rounded-full border-2 transition-transform ${color === c ? 'border-white scale-110' : 'border-transparent'}`}
+                  onClick={() => {
+                    setColor(c);
+                    if (selectedShapeId) updateSelectedShape({ color: c });
+                  }}
+                  className={`w-4 h-4 rounded-full border transition-transform ${color === c ? 'border-white scale-125' : 'border-transparent'}`}
                   style={{ backgroundColor: c }}
-                  title={c}
                 />
               ))}
-              <label className="w-5 h-5 rounded-full overflow-hidden border-2 border-brand-black-border cursor-pointer relative" title="Color libre">
+              <label className="w-4 h-4 rounded-full overflow-hidden border border-brand-black-border cursor-pointer relative">
                 <span className="absolute inset-0 bg-[conic-gradient(red,orange,yellow,lime,cyan,blue,magenta,red)]" />
-                <input type="color" value={color} onChange={e => setColor(e.target.value)} className="opacity-0 w-full h-full cursor-pointer" />
+                <input
+                  type="color"
+                  value={color}
+                  onChange={e => {
+                    setColor(e.target.value);
+                    if (selectedShapeId) updateSelectedShape({ color: e.target.value });
+                  }}
+                  className="opacity-0 w-full h-full cursor-pointer"
+                />
               </label>
             </div>
 
-            <div className="flex items-center gap-1 px-1 border-l border-brand-black-border">
+            {/* Selector de color de relleno */}
+            <div className="flex items-center gap-1.5 px-1.5 border-l border-brand-black-border" title="Color de relleno">
+              <span className="text-[10px] text-brand-gray-muted uppercase font-bold mr-0.5">Relleno</span>
+              {FILL_COLORS.map((fc, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setFillColor(fc);
+                    if (selectedShapeId) updateSelectedShape({ fillColor: fc });
+                  }}
+                  className={`w-4 h-4 rounded-full border transition-transform flex items-center justify-center text-[9px] ${fillColor === fc ? 'border-white scale-125' : 'border-brand-black-border/60'}`}
+                  style={{ backgroundColor: fc === 'transparent' ? '#111' : fc }}
+                >
+                  {fc === 'transparent' ? '🚫' : null}
+                </button>
+              ))}
+              <label className="w-4 h-4 rounded-full overflow-hidden border border-brand-black-border cursor-pointer relative">
+                <span className="absolute inset-0 bg-[conic-gradient(red,orange,yellow,lime,cyan,blue,magenta,red)] opacity-70" />
+                <input
+                  type="color"
+                  value={fillColor === 'transparent' ? '#ef4444' : fillColor.slice(0, 7)}
+                  onChange={e => {
+                    const translucent = `${e.target.value}66`;
+                    setFillColor(translucent);
+                    if (selectedShapeId) updateSelectedShape({ fillColor: translucent });
+                  }}
+                  className="opacity-0 w-full h-full cursor-pointer"
+                />
+              </label>
+            </div>
+
+            {/* Selector de grosor */}
+            <div className="flex items-center gap-1 px-1.5 border-l border-brand-black-border">
               {[3, 5, 8].map(w => (
-                <button key={w} onClick={() => setWidth(w)} className={`rounded-full transition-colors ${width === w ? 'bg-brand-red-600' : 'bg-brand-gray-muted hover:bg-white'}`} style={{ width: w + 4, height: w + 4 }} title={`Grosor ${w}`} />
+                <button
+                  key={w}
+                  onClick={() => {
+                    setWidth(w);
+                    if (selectedShapeId) updateSelectedShape({ width: w });
+                  }}
+                  className={`rounded-full transition-colors ${width === w ? 'bg-brand-red-600' : 'bg-brand-gray-muted hover:bg-white'}`}
+                  style={{ width: w + 3, height: w + 3 }}
+                  title={`Grosor ${w}`}
+                />
               ))}
             </div>
 
-            <button onClick={undoStroke} disabled={strokes.length === 0} className="p-2 text-brand-gray-muted hover:text-white disabled:opacity-30" title="Deshacer">
-              <Undo2 className="w-4 h-4" />
-            </button>
-            <button onClick={clearStrokes} disabled={strokes.length === 0 && !current} className="p-2 text-brand-gray-muted hover:text-brand-red-500 disabled:opacity-30" title="Borrar todo">
-              <Eraser className="w-4 h-4" />
-            </button>
+            {/* Botones de acción */}
+            <div className="flex items-center gap-1 border-l border-brand-black-border pl-1">
+              {selectedShapeId && (
+                <button onClick={deleteSelectedShape} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-950/50 rounded-lg transition-colors" title="Eliminar elemento seleccionado">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              <button onClick={undoShape} disabled={shapes.length === 0} className="p-1.5 text-brand-gray-muted hover:text-white disabled:opacity-30" title="Deshacer último trazo">
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button onClick={clearShapes} disabled={shapes.length === 0 && !current} className="p-1.5 text-brand-gray-muted hover:text-brand-red-500 disabled:opacity-30" title="Borrar todo">
+                <Eraser className="w-4 h-4" />
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -1205,7 +1787,7 @@ export const PresentationPlayer: React.FC<Props> = ({ presentation, libraryVideo
             {Array.from({ length: total }).map((_, i) => (
               <button
                 key={i}
-                onClick={() => setIndex(i)}
+                onClick={() => goTo(i)}
                 className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-brand-red-600' : 'w-1.5 bg-brand-gray-dark hover:bg-brand-gray-muted'}`}
                 title={i === 0 ? 'Portada' : `Diapositiva ${i}`}
               />

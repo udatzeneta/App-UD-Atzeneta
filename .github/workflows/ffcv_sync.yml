@@ -1,0 +1,31 @@
+name: Sincronización Semanal FFCV
+
+on:
+  schedule:
+    # Todos los jueves a las 08:00 AM CET (07:00 UTC)
+    - cron: '0 7 * * 4'
+  workflow_dispatch: # Permite ejecutar manualmente desde GitHub UI
+
+jobs:
+  sync-ffcv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Instalar dependencias y Playwright
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+
+      - name: Ejecutar Sincronización FFCV (Jugadores, Estadísticas y Sanciones)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          npm run sync:all

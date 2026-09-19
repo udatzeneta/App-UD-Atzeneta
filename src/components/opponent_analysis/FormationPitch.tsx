@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { OpponentFormation, FormationPlayer, ScoutingPlayer, OpponentRosterPlayer } from '../../types';
 import { FORMATIONS_SLOTS } from '../../utils/formations';
@@ -50,9 +50,12 @@ export const FormationPitch: React.FC<Props> = ({
     queryFn: () => opponentName ? dataService.getScoutingByTeam(opponentName) : dataService.getScouting(),
     enabled: !readOnly,
   });
-  const teamScouting = opponentName
-    ? scoutingPlayers.filter(p => isSameTeam(p.team, opponentName))
-    : scoutingPlayers;
+  const teamScouting = useMemo(() => {
+    if (!opponentName) return scoutingPlayers;
+    const sameTeam = scoutingPlayers.filter(p => isSameTeam(p.team, opponentName));
+    const current2627 = sameTeam.filter(p => p.season === '2026-2027' || p.season === '2026/2027');
+    return current2627.length > 0 ? current2627 : sameTeam;
+  }, [scoutingPlayers, opponentName]);
 
   const commit = (players: FormationPlayer[], system = data.system) => onChange({ system, players });
 

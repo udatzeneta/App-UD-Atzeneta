@@ -424,7 +424,7 @@ export interface OpponentAnalysis {
 // pantalla completa (clips anotados, campogramas, informes de texto y
 // portadas de bloque).
 // =====================================================================
-export type PresentationSlideType = 'cover' | 'formation' | 'board' | 'text' | 'clip' | 'general_summary' | 'ffcv_stats' | 'ffcv_highlights' | 'ffcv_intervals' | 'roster_rankings';
+export type PresentationSlideType = 'cover' | 'formation' | 'board' | 'text' | 'clip' | 'general_summary' | 'ffcv_stats' | 'ffcv_highlights' | 'ffcv_intervals' | 'roster_rankings' | 'ffcv_sanctions';
 export type PresentationBlock = 'generales' | 'jugadores' | 'con_balon' | 'sin_balon' | 'abp';
 
 export interface PresentationSlide {
@@ -813,3 +813,21 @@ export interface FuerzaSesionEjercicio {
   comentarios?: string;
   created_at?: string;
 }
+
+export interface FFCVSanction {
+  id: string;
+  team_name: string;
+  player_name: string;
+  photo_url?: string | null;
+  category?: string;
+  article?: string;
+  sanction_text: string;
+  matches_count: number;
+  resolution_date: string;
+  cod_licencia?: string | null;
+  cod_competicion?: string | null;
+  cod_grupo?: string | null;
+  season?: string;
+  created_at?: string;
+}
+

@@ -10,6 +10,7 @@ import {
   Award, FileText, Settings as TacticalIcon, Layers, Wand2, BarChart2, Trophy, Activity,
 } from 'lucide-react';
 import { PresentationPlayer, BLOCK_LABELS } from './PresentationPlayer';
+import { PresentationShareButton } from './PresentationShareButton';
 import { OPPONENT_TAXONOMY, ABP_SIDES, catKey } from '../../constants/opponentTaxonomy';
 import { allLibraryClips } from '../../utils/opponentVideo';
 import { dataService } from '../../services/data';
@@ -39,6 +40,7 @@ const bullets = (arr: string[]) => arr.map(s => `•  ${s}`).join('\n');
 export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, presentations, libraryVideos, canEdit, onChange }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
 
   const editing = presentations.find(p => p.id === editingId) || null;
   const playing = presentations.find(p => p.id === playingId) || null;
@@ -50,7 +52,9 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
 
   const teamScoutingPlayers = useMemo(() => {
     if (!analysis?.opponent) return [];
-    return scoutingPlayers.filter(sp => isSameTeam(sp.team, analysis.opponent));
+    const sameTeam = scoutingPlayers.filter(sp => isSameTeam(sp.team, analysis.opponent));
+    const current2627 = sameTeam.filter(sp => sp.season === '2026-2027' || sp.season === '2026/2027');
+    return current2627.length > 0 ? current2627 : sameTeam;
   }, [scoutingPlayers, analysis?.opponent]);
 
   const effectiveRoster = useMemo<OpponentRosterPlayer[]>(() => {
@@ -60,13 +64,13 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
         if (!matchingSp) return p;
         return {
           ...p,
-          matches_played: (p.matches_played !== undefined && p.matches_played > 0) ? p.matches_played : (matchingSp.jugados ?? matchingSp.convocados ?? matchingSp.matches_played ?? 0),
-          starter_count: (p.starter_count !== undefined && p.starter_count > 0) ? p.starter_count : (matchingSp.titular ?? matchingSp.starter_count ?? 0),
-          minutes_played: (p.minutes_played !== undefined && p.minutes_played > 0) ? p.minutes_played : (matchingSp.minutes_played ?? 0),
-          goals: (p.goals !== undefined && p.goals > 0) ? p.goals : (matchingSp.goles ?? matchingSp.goals ?? 0),
-          assists: (p.assists !== undefined && p.assists > 0) ? p.assists : (matchingSp.assists ?? 0),
-          yellow_cards: (p.yellow_cards !== undefined && p.yellow_cards > 0) ? p.yellow_cards : (matchingSp.amarillas ?? matchingSp.yellow_cards ?? 0),
-          red_cards: (p.red_cards !== undefined && p.red_cards > 0) ? p.red_cards : (matchingSp.rojas ?? matchingSp.red_cards ?? 0),
+          matches_played: matchingSp.jugados ?? matchingSp.convocados ?? matchingSp.matches_played ?? p.matches_played ?? 0,
+          starter_count: matchingSp.titular ?? matchingSp.starter_count ?? (matchingSp.jugados ?? matchingSp.convocados ?? matchingSp.matches_played ?? p.starter_count ?? 0),
+          minutes_played: matchingSp.minutes_played ?? p.minutes_played ?? 0,
+          goals: matchingSp.goles ?? matchingSp.goals ?? p.goals ?? 0,
+          assists: matchingSp.assists ?? p.assists ?? 0,
+          yellow_cards: matchingSp.amarillas ?? matchingSp.yellow_cards ?? p.yellow_cards ?? 0,
+          red_cards: matchingSp.rojas ?? matchingSp.red_cards ?? p.red_cards ?? 0,
           photo_url: p.photo_url || matchingSp.photo_url,
           position: p.position || matchingSp.position || 'DF'
         };
@@ -96,6 +100,23 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
     const cat: Record<PresentationBlock, CatalogItem[]> = {
       generales: [], jugadores: [], con_balon: [], sin_balon: [], abp: [],
     };
+
+    // Opción para insertar portada personalizada manual en cualquier bloque
+    BLOCK_ORDER.forEach(b => {
+      cat[b].push({
+        key: `cover-${b}-manual`,
+        block: b,
+        label: `📌 Portada de Bloque: ${BLOCK_LABELS[b]}`,
+        make: () => ({
+          id: uid(),
+          sourceKey: `cover-${b}-manual`,
+          type: 'cover',
+          block: b,
+          title: BLOCK_LABELS[b],
+          subtitle: `Análisis ${analysis.opponent}`,
+        })
+      });
+    });
 
     // Generales (Todo en uno & Estadísticas FFCV)
     const hasMainFormation = analysis.general_formation && (analysis.general_formation.players?.length || 0) > 0;
@@ -181,6 +202,20 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
           type: 'roster_rankings',
           block: 'jugadores',
           title: 'Rankings y Estadísticas del Rival',
+        })
+      });
+
+      // 1b. Slide con Sancionados y Apercibidos del Comité FFCV
+      cat.jugadores.push({
+        key: 'ffcv-sanctions',
+        block: 'jugadores',
+        label: '🚫 Sancionados y Apercibidos (Comité FFCV)',
+        make: () => ({
+          id: uid(),
+          sourceKey: 'ffcv-sanctions',
+          type: 'ffcv_sanctions',
+          block: 'jugadores',
+          title: 'Sancionados y Apercibidos para la Jornada',
         })
       });
 
@@ -369,12 +404,25 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
 
   const addSlide = (make: () => PresentationSlide) => {
     if (!editing) return;
-    updatePresentation(editing.id, { slides: [...editing.slides, make()] });
+    const newSlide = make();
+    if (selectedSlideId) {
+      const idx = editing.slides.findIndex(s => s.id === selectedSlideId);
+      if (idx !== -1) {
+        const next = [...editing.slides];
+        next.splice(idx, 0, newSlide);
+        updatePresentation(editing.id, { slides: next });
+        setSelectedSlideId(newSlide.id);
+        return;
+      }
+    }
+    updatePresentation(editing.id, { slides: [...editing.slides, newSlide] });
+    setSelectedSlideId(newSlide.id);
   };
 
   const removeSlide = (slideId: string) => {
     if (!editing) return;
     updatePresentation(editing.id, { slides: editing.slides.filter(s => s.id !== slideId) });
+    if (selectedSlideId === slideId) setSelectedSlideId(null);
   };
 
   const moveSlide = (idx: number, dir: -1 | 1) => {
@@ -405,8 +453,29 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
     updatePresentation(editing.id, { slides: sorted });
   };
 
-  const addAutoCovers = () => {
-    if (!editing) return;
+  const addCoverBeforeSelectedOrAuto = () => {
+    if (!editing || editing.slides.length === 0) return;
+
+    if (selectedSlideId) {
+      const idx = editing.slides.findIndex(s => s.id === selectedSlideId);
+      if (idx !== -1) {
+        const targetSlide = editing.slides[idx];
+        const coverSlide: PresentationSlide = {
+          id: uid(),
+          type: 'cover',
+          block: targetSlide.block,
+          title: targetSlide.title || BLOCK_LABELS[targetSlide.block],
+          subtitle: `Análisis ${analysis.opponent}`,
+        };
+        const next = [...editing.slides];
+        next.splice(idx, 0, coverSlide);
+        updatePresentation(editing.id, { slides: next });
+        setSelectedSlideId(coverSlide.id);
+        return;
+      }
+    }
+
+    // Fallback: Si no hay selección, añade portadas de bloque automáticas al principio
     const present = BLOCK_ORDER.filter(b => editing.slides.some(s => s.block === b));
     const existingCovers = new Set(editing.slides.filter(s => s.type === 'cover').map(s => s.block));
     const covers: PresentationSlide[] = present
@@ -437,6 +506,7 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
       case 'ffcv_highlights': return Trophy;
       case 'ffcv_intervals': return Activity;
       case 'roster_rankings': return Users;
+      case 'ffcv_sanctions': return ShieldAlert;
       default: return FileText;
     }
   };
@@ -514,8 +584,13 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
                 <LayoutGrid className="w-4 h-4 text-brand-red-600" /> Diapositivas
               </h4>
               <div className="flex items-center gap-1.5">
-                <button onClick={addAutoCovers} disabled={editing.slides.length === 0} className="text-[11px] font-semibold text-brand-gray-muted hover:text-white bg-brand-black-card border border-brand-black-border px-2 py-1 rounded flex items-center gap-1 disabled:opacity-40" title="Añadir portadas de bloque">
-                  <Wand2 className="w-3 h-3" /> Portadas
+                <button
+                  onClick={addCoverBeforeSelectedOrAuto}
+                  disabled={editing.slides.length === 0}
+                  className="text-[11px] font-semibold text-brand-gray-muted hover:text-white bg-brand-black-card border border-brand-black-border px-2.5 py-1 rounded flex items-center gap-1 disabled:opacity-40 hover:border-brand-red-600/50 transition-colors"
+                  title={selectedSlideId ? "Añadir portada justo antes de la diapositiva seleccionada" : "Añadir portadas de bloque automáticamente"}
+                >
+                  <Wand2 className="w-3 h-3 text-brand-red-500" /> Portadas
                 </button>
                 <button onClick={sortByBlocks} disabled={editing.slides.length === 0} className="text-[11px] font-semibold text-brand-gray-muted hover:text-white bg-brand-black-card border border-brand-black-border px-2 py-1 rounded flex items-center gap-1 disabled:opacity-40" title="Ordenar por bloques">
                   <Layers className="w-3 h-3" /> Ordenar
@@ -534,22 +609,88 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
                   const TypeIcon = slideTypeIcon(slide.type);
                   const prevBlock = idx > 0 ? editing.slides[idx - 1].block : null;
                   const showBlockHeader = slide.block !== prevBlock;
+                  const isSelected = selectedSlideId === slide.id;
                   return (
                     <React.Fragment key={slide.id}>
                       {showBlockHeader && (
                         <div className="text-[10px] font-bold uppercase tracking-wider text-brand-gray-dark pt-2 pb-0.5 px-1">{BLOCK_LABELS[slide.block]}</div>
                       )}
-                      <div className="flex items-center gap-2 bg-black border border-brand-black-border rounded-lg p-2">
-                        <span className="text-[10px] font-mono text-brand-gray-muted w-5 text-center shrink-0">{idx + 1}</span>
-                        <span className="p-1.5 bg-brand-red-600/10 text-brand-red-500 rounded shrink-0"><TypeIcon className="w-3.5 h-3.5" /></span>
-                        <input
-                          type="text"
-                          value={slide.title || ''}
-                          onChange={e => updateSlideTitle(slide.id, e.target.value)}
-                          placeholder={slide.type === 'cover' ? 'Título de portada' : 'Título de la diapositiva'}
-                          className="flex-1 min-w-0 bg-transparent text-xs text-brand-gray-light outline-none"
-                        />
-                        <div className="flex items-center shrink-0">
+                      <div
+                        onClick={() => setSelectedSlideId(slide.id)}
+                        className={`flex items-center gap-3 border rounded-xl p-2.5 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'ring-2 ring-brand-red-500 bg-brand-red-950/30 border-brand-red-500 shadow-lg'
+                            : slide.type === 'cover'
+                            ? 'bg-gradient-to-r from-brand-red-950/40 via-black to-black border-brand-red-600/60 shadow-md'
+                            : 'bg-black border-brand-black-border/80 hover:border-brand-gray-muted'
+                        }`}
+                      >
+                        <span className="text-[10px] font-mono text-brand-gray-muted w-4 text-center shrink-0">{idx + 1}</span>
+
+                        {/* Diapositiva en miniatura (Thumbnail Preview) */}
+                        <div className={`w-16 h-10 rounded-lg overflow-hidden shrink-0 border flex flex-col items-center justify-center p-1 relative shadow-inner ${
+                          slide.type === 'cover'
+                            ? 'bg-gradient-to-br from-brand-red-900 to-black border-brand-red-500'
+                            : 'bg-brand-black-card border-brand-black-border'
+                        }`}>
+                          {slide.type === 'cover' ? (
+                            <div className="flex flex-col items-center justify-center gap-0.5 text-center">
+                              <PanelsTopLeft className="w-4 h-4 text-brand-red-400" />
+                              <span className="text-[7px] font-black text-white uppercase tracking-tighter truncate max-w-[50px]">PORTADA</span>
+                            </div>
+                          ) : slide.type === 'formation' ? (
+                            <div className="w-full h-full bg-emerald-950/60 border border-emerald-800/40 rounded flex items-center justify-center">
+                              <TacticalIcon className="w-4 h-4 text-emerald-400" />
+                            </div>
+                          ) : slide.type === 'board' ? (
+                            <div className="w-full h-full bg-emerald-950/80 border border-emerald-700/50 rounded flex items-center justify-center">
+                              <Layers className="w-4 h-4 text-emerald-300" />
+                            </div>
+                          ) : slide.type === 'clip' ? (
+                            <div className="w-full h-full bg-black border border-brand-red-900/60 rounded flex items-center justify-center">
+                              <Film className="w-4 h-4 text-brand-red-500" />
+                            </div>
+                          ) : slide.type === 'ffcv_stats' || slide.type === 'ffcv_highlights' || slide.type === 'ffcv_intervals' ? (
+                            <div className="w-full h-full bg-amber-950/40 border border-amber-800/40 rounded flex items-center justify-center">
+                              <BarChart2 className="w-4 h-4 text-amber-400" />
+                            </div>
+                          ) : slide.type === 'roster_rankings' || slide.type === 'ffcv_sanctions' ? (
+                            <div className="w-full h-full bg-sky-950/40 border border-sky-800/40 rounded flex items-center justify-center">
+                              <Users className="w-4 h-4 text-sky-400" />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full bg-brand-black border border-brand-black-border rounded flex flex-col gap-0.5 p-1">
+                              <div className="w-3/4 h-1 bg-brand-red-500/80 rounded-full" />
+                              <div className="w-full h-0.5 bg-brand-gray-dark rounded-full" />
+                              <div className="w-2/3 h-0.5 bg-brand-gray-dark rounded-full" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Título de la diapositiva */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                              slide.type === 'cover'
+                                ? 'bg-brand-red-600 text-white font-extrabold'
+                                : 'bg-brand-black-card text-brand-gray-muted border border-brand-black-border'
+                            }`}>
+                              {slide.type === 'cover' ? '📌 PORTADA DE BLOQUE' : BLOCK_LABELS[slide.block]}
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={slide.title || ''}
+                            onChange={e => updateSlideTitle(slide.id, e.target.value)}
+                            placeholder={slide.type === 'cover' ? 'Título de portada' : 'Título de la diapositiva'}
+                            className={`w-full bg-transparent text-xs font-semibold outline-none border-b border-transparent focus:border-brand-red-600 ${
+                              slide.type === 'cover' ? 'text-brand-red-400 font-black text-sm' : 'text-white'
+                            }`}
+                          />
+                        </div>
+
+                        {/* Acciones */}
+                        <div className="flex items-center shrink-0 gap-0.5">
                           <button onClick={() => moveSlide(idx, -1)} disabled={idx === 0} className="p-1 text-brand-gray-muted hover:text-white disabled:opacity-20"><ChevronUp className="w-3.5 h-3.5" /></button>
                           <button onClick={() => moveSlide(idx, 1)} disabled={idx === editing.slides.length - 1} className="p-1 text-brand-gray-muted hover:text-white disabled:opacity-20"><ChevronDown className="w-3.5 h-3.5" /></button>
                           <button onClick={() => removeSlide(slide.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -616,6 +757,7 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
                 </button>
                 {canEdit && (
                   <>
+                    <PresentationShareButton analysisId={analysis.id} opponentName={analysis.opponent} presentation={p} />
                     <button onClick={() => setEditingId(p.id)} className="p-2 text-brand-gray-muted hover:text-white bg-black border border-brand-black-border rounded-lg" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
                     <button onClick={() => deletePresentation(p.id)} className="p-2 text-brand-gray-muted hover:text-brand-red-600 bg-black border border-brand-black-border rounded-lg" title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
                   </>

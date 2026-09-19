@@ -26,6 +26,7 @@ import { AccessDenied } from '../pages/AccessDenied';
 import { NotFound } from '../pages/NotFound';
 import { Register } from '../pages/Register';
 import { UpdatePassword } from '../pages/UpdatePassword';
+import { SharedPresentation } from '../pages/SharedPresentation';
 
 // Componente Wrapper para Proteger Rutas según Autenticación y Permisos Dinámicos
 interface ProtectedRouteProps {
@@ -71,6 +72,9 @@ export const AppRoutes: React.FC = () => {
 
       {/* Ruta de Recuperación de Contraseña */}
       <Route path="/update-password" element={<UpdatePassword />} />
+
+      {/* Presentación compartida: pública a propósito, el token es la llave */}
+      <Route path="/p/:token" element={<SharedPresentation />} />
 
       {/* Rutas Privadas / Protegidas */}
       <Route element={<ProtectedRoute />}>
