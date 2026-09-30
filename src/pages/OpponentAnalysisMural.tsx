@@ -303,6 +303,8 @@ export const OpponentAnalysisMural: React.FC = () => {
           stats_2026_2027: { matches: 0, starter: 0, goals: 0, yellow_cards: 0, red_cards: 1 },
           stats_2025_2026: { matches: 0, starter: 0, goals: 0, yellow_cards: 0, red_cards: 0, team: null }
         };
+      } else if (!player.photo_url && s.photo_url) {
+        player = { ...player, photo_url: s.photo_url };
       }
 
       // 1. Partidos registrados en la BD local posteriores a la fecha de reunión del comité

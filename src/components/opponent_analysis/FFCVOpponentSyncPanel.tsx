@@ -84,6 +84,8 @@ export const FFCVOpponentSyncPanel: React.FC<FFCVOpponentSyncPanelProps> = ({ op
       await refetchRankings();
       queryClient.invalidateQueries({ queryKey: ['opponent_analysis'] });
       queryClient.invalidateQueries({ queryKey: ['scouting'] });
+      queryClient.invalidateQueries({ queryKey: ['ffcv_sanctions'] });
+      queryClient.invalidateQueries({ queryKey: ['ffcv_sanctions_all'] });
 
       if (onSyncComplete) onSyncComplete();
     } catch (err: any) {

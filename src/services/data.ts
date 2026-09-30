@@ -2607,11 +2607,12 @@ export const dataService = {
     }
 
     try {
-      const res = await fetch('/data/ffcv_sanctions.json');
+      const res = await fetch(`/data/ffcv_sanctions.json?t=${Date.now()}`, { cache: 'no-store' });
       if (res.ok) {
         const localData = await res.json();
         if (season) {
-          return localData.filter((s: FFCVSanction) => !s.season || s.season === season);
+          const normSeason = season.replace('/', '-');
+          return localData.filter((s: FFCVSanction) => !s.season || s.season.replace('/', '-') === normSeason);
         }
         return localData as FFCVSanction[];
       }
