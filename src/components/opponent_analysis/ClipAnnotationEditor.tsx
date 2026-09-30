@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactPlayer from 'react-player';
+import { YouTubePlayer } from './YouTubePlayer';
+import { detectVideoProvider } from '../../utils/opponentVideo';
 import { OpponentVideoClip, ClipAnnotation, ClipAnnotationType, ClipCategory } from '../../types';
 import { ClipCategorySelector } from './ClipCategorySelector';
 import { ClipAnnotationRenderer } from './ClipAnnotationRenderer';
@@ -498,48 +500,90 @@ export const ClipAnnotationEditor: React.FC<Props> = ({ videoUrl, clip, allClips
                 return (
                   <Player
                     ref={playerRef}
-                src={videoUrl}
-                width="100%"
-                height="100%"
-                controls={false}
-                playing={playing}
-                onReady={() => { 
-                  if (frozen) seekToFreeze(); 
-                  const d = playerRef.current?.duration || playerRef.current?.getDuration?.();
-                  if (d && d > 0) setDuration(d);
-                }}
-                onDurationChange={(e: any) => {
-                  const d = e.currentTarget.duration;
-                  if (d && !isNaN(d)) setDuration(d);
-                }}
-                onTimeUpdate={(e: any) => {
-                  const t = e.currentTarget.currentTime;
-                  setCurrentTime(t);
-                  
-                  // 1. Loop/Boundaries en reproducción
-                  if (!frozen) {
-                    if (t >= end) {
-                      seekTo(start, false);
-                      return;
-                    }
-                    if (t < start) {
-                      seekTo(start, false);
-                      return;
-                    }
-
-                    // 2. Auto-pausa en anotaciones
-                    if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.3) {
-                      setPlaying(false); // esto hará frozen=true y mostrará el dibujo
-                      setHasAutoPaused(true);
-                      seekToFreeze(); // asegura que clavemos el tiempo exacto
+                    src={videoUrl}
+                    url={videoUrl}
+                    width="100%"
+                    height="100%"
+                    controls={false}
+                    playing={playing}
+                    config={{
+                      youtube: {
+                        cc_load_policy: 0,
+                        cc_lang_pref: 'none',
+                        iv_load_policy: 3,
+                        rel: 0,
+                        hl: 'es',
+                        playsinline: 1,
+                        disablekb: 0,
+                      },
+                    }}
+                    onReady={() => { 
+                      try {
+                        const internal = playerRef.current?.getInternalPlayer?.() || playerRef.current;
+                        if (internal) {
+                          if (typeof internal.unloadModule === 'function') {
+                            internal.unloadModule('captions');
+                            internal.unloadModule('cc');
+                          }
+                          if (typeof internal.setOption === 'function') {
+                            internal.setOption('captions', 'track', {});
+                            internal.setOption('cc', 'track', {});
+                            internal.setOption('captions', 'fontSize', 0);
+                          }
+                        }
+                      } catch (_) {}
+                      if (frozen) seekToFreeze(); 
+                      const d = playerRef.current?.duration || playerRef.current?.getDuration?.();
+                      if (d && d > 0) setDuration(d);
+                    }}
+                    onPlay={() => {
+                      try {
+                        const internal = playerRef.current?.getInternalPlayer?.() || playerRef.current;
+                        if (internal) {
+                          if (typeof internal.unloadModule === 'function') {
+                            internal.unloadModule('captions');
+                            internal.unloadModule('cc');
+                          }
+                          if (typeof internal.setOption === 'function') {
+                            internal.setOption('captions', 'track', {});
+                            internal.setOption('cc', 'track', {});
+                            internal.setOption('captions', 'fontSize', 0);
+                          }
+                        }
+                      } catch (_) {}
+                    }}
+                    onDurationChange={(e: any) => {
+                      const d = e.currentTarget.duration;
+                      if (d && !isNaN(d)) setDuration(d);
+                    }}
+                    onTimeUpdate={(e: any) => {
+                      const t = e.currentTarget.currentTime;
+                      setCurrentTime(t);
                       
-                      autoPauseTimerRef.current = setTimeout(() => {
-                        setPlaying(true);
-                      }, pauseDuration * 1000);
-                    }
-                  }
-                }}
-              />
+                      // 1. Loop/Boundaries en reproducción
+                      if (!frozen) {
+                        if (t >= end) {
+                          seekTo(start, false);
+                          return;
+                        }
+                        if (t < start) {
+                          seekTo(start, false);
+                          return;
+                        }
+
+                        // 2. Auto-pausa en anotaciones
+                        if (annotations.length > 0 && !hasAutoPaused && t >= freezeTime && t < freezeTime + 0.3) {
+                          setPlaying(false); // esto hará frozen=true y mostrará el dibujo
+                          setHasAutoPaused(true);
+                          seekToFreeze(); // asegura que clavemos el tiempo exacto
+                          
+                          autoPauseTimerRef.current = setTimeout(() => {
+                            setPlaying(true);
+                          }, pauseDuration * 1000);
+                        }
+                      }
+                    }}
+                  />
                 );
               })()}
 

@@ -20,6 +20,15 @@ export const MagnifierLens: React.FC<{
 
   const seek = () => {
     if (ref.current) {
+      try {
+        const internal = (ref.current as any)?.getInternalPlayer?.() || ref.current;
+        if (internal) {
+          if (typeof internal.unloadModule === 'function') {
+            internal.unloadModule('captions');
+            internal.unloadModule('cc');
+          }
+        }
+      } catch (_) {}
       try { ref.current.currentTime = freezeTime; } catch { /* noop */ }
     }
   };
@@ -53,6 +62,15 @@ export const MagnifierLens: React.FC<{
           height="100%"
           controls={false}
           playing={false}
+          config={{
+            youtube: {
+              cc_load_policy: 0,
+              cc_lang_pref: 'none',
+              iv_load_policy: 3,
+              rel: 0,
+              hl: 'es',
+            },
+          }}
           onReady={seek}
         />
       </div>

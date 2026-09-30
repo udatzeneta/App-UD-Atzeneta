@@ -301,6 +301,31 @@ export const OpponentVideoClipper: React.FC<Props> = ({ videos = [], onChange, r
               height="100%"
               controls={true}
               playing={false}
+              config={{
+                youtube: {
+                  cc_load_policy: 0,
+                  cc_lang_pref: 'none',
+                  iv_load_policy: 3,
+                  rel: 0,
+                  hl: 'es',
+                },
+              }}
+              onReady={() => {
+                try {
+                  const internal = (playerRef.current as any)?.getInternalPlayer?.() || playerRef.current;
+                  if (internal) {
+                    if (typeof internal.unloadModule === 'function') {
+                      internal.unloadModule('captions');
+                      internal.unloadModule('cc');
+                    }
+                    if (typeof internal.setOption === 'function') {
+                      internal.setOption('captions', 'track', {});
+                      internal.setOption('cc', 'track', {});
+                      internal.setOption('captions', 'fontSize', 0);
+                    }
+                  }
+                } catch (_) {}
+              }}
             />
           </div>
 

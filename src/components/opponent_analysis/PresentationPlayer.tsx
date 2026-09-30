@@ -210,22 +210,61 @@ const ClipSlide: React.FC<{
               src={validUrl}
               width="100%"
               height="100%"
-          playing={playing && !frozen}
-          controls={false} // Ocultamos los controles de YouTube para mostrar solo nuestro progreso
-          progressInterval={100} // ESENCIAL para que el bucle y la pausa detecten el milisegundo exacto
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onReady={() => {
-             if (playerRef.current) {
-               if (typeof playerRef.current.seekTo === 'function') {
-                 playerRef.current.seekTo(start, 'seconds');
-               } else {
-                 try { playerRef.current.currentTime = start; } catch { /* noop */ }
-               }
-               const d = playerRef.current.duration || (playerRef.current.getDuration ? playerRef.current.getDuration() : 0);
-               if (d > 0) setDuration(d);
-             }
-          }}
+              playing={playing && !frozen}
+              controls={false} // Ocultamos los controles de YouTube para mostrar solo nuestro progreso
+              progressInterval={100} // ESENCIAL para que el bucle y la pausa detecten el milisegundo exacto
+              config={{
+                youtube: {
+                  cc_load_policy: 0,
+                  cc_lang_pref: 'none',
+                  iv_load_policy: 3,
+                  rel: 0,
+                  hl: 'es',
+                  playsinline: 1,
+                  disablekb: 0,
+                },
+              }}
+              onPlay={() => {
+                try {
+                  const internal = playerRef.current?.getInternalPlayer?.() || playerRef.current;
+                  if (internal) {
+                    if (typeof internal.unloadModule === 'function') {
+                      internal.unloadModule('captions');
+                      internal.unloadModule('cc');
+                    }
+                    if (typeof internal.setOption === 'function') {
+                      internal.setOption('captions', 'track', {});
+                      internal.setOption('cc', 'track', {});
+                    }
+                  }
+                } catch (_) {}
+                setPlaying(true);
+              }}
+              onPause={() => setPlaying(false)}
+              onReady={() => {
+                 if (playerRef.current) {
+                   try {
+                     const internal = playerRef.current?.getInternalPlayer?.() || playerRef.current;
+                     if (internal) {
+                       if (typeof internal.unloadModule === 'function') {
+                         internal.unloadModule('captions');
+                         internal.unloadModule('cc');
+                       }
+                       if (typeof internal.setOption === 'function') {
+                         internal.setOption('captions', 'track', {});
+                         internal.setOption('cc', 'track', {});
+                       }
+                     }
+                   } catch (_) {}
+                   if (typeof playerRef.current.seekTo === 'function') {
+                     playerRef.current.seekTo(start, 'seconds');
+                   } else {
+                     try { playerRef.current.currentTime = start; } catch { /* noop */ }
+                   }
+                   const d = playerRef.current.duration || (playerRef.current.getDuration ? playerRef.current.getDuration() : 0);
+                   if (d > 0) setDuration(d);
+                 }
+              }}
           onProgress={({ playedSeconds }: { playedSeconds: number }) => {
             if (isSeekingRef.current) return; // Ignorar onProgress mientras YouTube ejecuta un salto
             

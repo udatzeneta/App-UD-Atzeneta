@@ -32,6 +32,34 @@
   input, select, textarea {
     @apply focus:outline-none focus:ring-1 focus:ring-brand-red-600 focus:border-brand-red-600;
   }
+
+  /* Desactivar subtítulos y pistas de texto en todos los reproductores de vídeo */
+  video::cue {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    font-size: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    background: transparent !important;
+    color: transparent !important;
+  }
+
+  video::-webkit-media-text-track-display {
+    display: none !important;
+  }
+
+  video::-webkit-media-text-track-container {
+    display: none !important;
+  }
+
+  .ytp-caption-window-bottom,
+  .ytp-caption-segment,
+  .caption-window {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
 }
 
 @layer components {

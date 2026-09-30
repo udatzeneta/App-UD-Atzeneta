@@ -180,7 +180,48 @@ export const LibraryVideoStudio: React.FC<Props> = ({ video, onChange, onClose, 
                   height="100%" 
                   controls 
                   playing={playing}
-                  onPlay={() => setPlaying(true)}
+                  config={{
+                    youtube: {
+                      cc_load_policy: 0,
+                      cc_lang_pref: 'none',
+                      iv_load_policy: 3,
+                      rel: 0,
+                      hl: 'es',
+                    },
+                  }}
+                  onReady={() => {
+                    try {
+                      const internal = (playerRef.current as any)?.getInternalPlayer?.() || playerRef.current;
+                      if (internal) {
+                        if (typeof internal.unloadModule === 'function') {
+                          internal.unloadModule('captions');
+                          internal.unloadModule('cc');
+                        }
+                        if (typeof internal.setOption === 'function') {
+                          internal.setOption('captions', 'track', {});
+                          internal.setOption('cc', 'track', {});
+                          internal.setOption('captions', 'fontSize', 0);
+                        }
+                      }
+                    } catch (_) {}
+                  }}
+                  onPlay={() => {
+                    try {
+                      const internal = (playerRef.current as any)?.getInternalPlayer?.() || playerRef.current;
+                      if (internal) {
+                        if (typeof internal.unloadModule === 'function') {
+                          internal.unloadModule('captions');
+                          internal.unloadModule('cc');
+                        }
+                        if (typeof internal.setOption === 'function') {
+                          internal.setOption('captions', 'track', {});
+                          internal.setOption('cc', 'track', {});
+                          internal.setOption('captions', 'fontSize', 0);
+                        }
+                      }
+                    } catch (_) {}
+                    setPlaying(true);
+                  }}
                   onPause={() => setPlaying(false)}
                   onTimeUpdate={(e: any) => {
                     const t = e.currentTarget.currentTime;

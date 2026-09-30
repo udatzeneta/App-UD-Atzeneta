@@ -1633,3 +1633,384 @@ export const exportAttendanceToPDF = async (
 
   doc.save(`${filename}.pdf`);
 };
+
+export interface PointsLeaderboardItem {
+  id: string;
+  rank: number;
+  name: string;
+  fullName?: string;
+  dorsal?: number | string;
+  avatarUrl?: string;
+  points: number;
+  positivePoints: number;
+  negativePoints: number;
+  eventsCount: number;
+  teamCategory?: string;
+}
+
+export interface ExportPointsPDFOptions {
+  title?: string;
+  teamName: string;
+  intervalLabel: string;
+  startDate?: string;
+  endDate?: string;
+  leaderboard: PointsLeaderboardItem[];
+  totalPointsInInterval: number;
+  totalEventsInInterval: number;
+}
+
+/**
+ * Exporta la clasificación de puntos por intervalo a un PDF estilizado
+ * con foto, nombre, dorsal, posición/medalla y puntos de cada jugador.
+ */
+export const exportPointsLeaderboardToPDF = async (
+  options: ExportPointsPDFOptions
+): Promise<void> => {
+  const { jsPDF } = await import('jspdf');
+  const autoTable = (await import('jspdf-autotable')).default;
+
+  const {
+    title = 'CLASIFICACIÓN DE RENDIMIENTO (+/- PUNTOS)',
+    teamName,
+    intervalLabel,
+    leaderboard,
+    totalPointsInInterval,
+    totalEventsInInterval,
+  } = options;
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.width; // 210 mm
+  const pageHeight = doc.internal.pageSize.height; // 297 mm
+  const marginX = 12;
+  const contentWidth = pageWidth - marginX * 2; // 186 mm
+
+  // 1. Cargar el escudo del club
+  let logoData: string | null = null;
+  try {
+    const logoRes = await fetch(CLUB_LOGO_URL);
+    if (logoRes.ok) {
+      const logoBlob = await logoRes.blob();
+      const reader = new FileReader();
+      logoData = await new Promise<string | null>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(logoBlob);
+      });
+    }
+  } catch (e) {
+    console.warn('No se pudo cargar el logo del club para el PDF:', e);
+  }
+
+  // 2. Pre-procesar las fotos de los jugadores en círculos Base64 PNG
+  const processedAvatars = await Promise.all(
+    leaderboard.map(async (item) => {
+      let rawBase64: string | null = null;
+      if (item.avatarUrl) {
+        try {
+          const res = await fetch(item.avatarUrl);
+          if (res.ok) {
+            const blob = await res.blob();
+            rawBase64 = await new Promise<string | null>((resolve) => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result as string);
+              r.onerror = () => resolve(null);
+              r.readAsDataURL(blob);
+            });
+          }
+        } catch {
+          rawBase64 = null;
+        }
+      }
+
+      // Convertir a avatar circular con fallback
+      return new Promise<string>((resolve) => {
+        const canvas = document.createElement('canvas');
+        const size = 120;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve('');
+          return;
+        }
+
+        const renderFallback = () => {
+          ctx.clearRect(0, 0, size, size);
+          ctx.fillStyle = '#1e293b'; // slate-800
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#c1121f';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 40px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const label = item.dorsal ? String(item.dorsal) : (item.name ? item.name.substring(0, 2).toUpperCase() : 'UD');
+          ctx.fillText(label, size / 2, size / 2);
+          resolve(canvas.toDataURL('image/png'));
+        };
+
+        if (rawBase64) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            ctx.clearRect(0, 0, size, size);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+
+            const minDim = Math.min(img.width, img.height);
+            const sx = (img.width - minDim) / 2;
+            const sy = (img.height - minDim) / 2;
+            ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+            ctx.strokeStyle = '#c1121f';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => renderFallback();
+          img.src = rawBase64;
+        } else {
+          renderFallback();
+        }
+      });
+    })
+  );
+
+  // 3. Función para dibujar cabecera de página
+  const drawPageHeader = () => {
+    // Franja superior a rayas rojinegras
+    const stripeWidth = 10;
+    const bannerHeight = 4;
+    const numStripes = Math.ceil(pageWidth / stripeWidth);
+    for (let i = 0; i < numStripes; i++) {
+      const isRed = i % 2 === 0;
+      doc.setFillColor(isRed ? 193 : 15, isRed ? 18 : 15, isRed ? 31 : 15);
+      doc.rect(i * stripeWidth, 0, stripeWidth, bannerHeight, 'F');
+    }
+
+    // Escudo del club
+    if (logoData) {
+      doc.addImage(logoData, 'PNG', marginX, 7, 14, 16, undefined, 'FAST');
+    }
+
+    // Título y subtítulos
+    const textStartX = logoData ? marginX + 18 : marginX;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(...BRAND_RED);
+    doc.text('UD ATZENETA', textStartX, 13);
+
+    doc.setFontSize(10.5);
+    doc.setTextColor(20, 20, 20);
+    doc.text(title, textStartX, 18);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text(`Registro Oficial de Puntos y Rendimiento Deportivo`, textStartX, 22.5);
+
+    // Panel resumen de metadatos (Intervalo, Equipo, Totales)
+    const cardY = 26;
+    const cardHeight = 14;
+
+    doc.setFillColor(247, 248, 250);
+    doc.setDrawColor(220, 225, 230);
+    doc.setLineWidth(0.2);
+    doc.roundedRect(marginX, cardY, contentWidth, cardHeight, 1.5, 1.5, 'FD');
+
+    // Columna 1: Equipo e Intervalo
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 30, 30);
+    doc.text(`Equipo: ${teamName}`, marginX + 4, cardY + 5.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Intervalo: ${intervalLabel}`, marginX + 4, cardY + 10.5);
+
+    // Columna 2: Balance de Puntos
+    const col2X = marginX + 85;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    const isPositive = totalPointsInInterval >= 0;
+    doc.setTextColor(isPositive ? 16 : 220, isPositive ? 185 : 38, isPositive ? 129 : 38);
+    doc.text(
+      `Puntos Totales: ${totalPointsInInterval > 0 ? '+' : ''}${totalPointsInInterval} pts`,
+      col2X,
+      cardY + 5.5
+    );
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Registros en intervalo: ${totalEventsInInterval}`, col2X, cardY + 10.5);
+
+    // Columna 3: Fecha de emisión
+    const col3X = marginX + contentWidth - 4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-ES')}`, col3X, cardY + 5.5, { align: 'right' });
+    doc.text(`Jugadores en tabla: ${leaderboard.length}`, col3X, cardY + 10.5, { align: 'right' });
+  };
+
+  drawPageHeader();
+
+  // 4. Estructura de tabla
+  const headers = ['Pos.', 'Foto', 'Dorsal', 'Jugador', 'Puntos Acumulados', 'Desglose (+ / -)'];
+
+  const rows = leaderboard.map((item) => {
+    const ptsStr = `${item.points > 0 ? '+' : ''}${item.points} pts`;
+    const detailStr = `+${item.positivePoints} / -${Math.abs(item.negativePoints)} (${item.eventsCount} reg.)`;
+    return [
+      String(item.rank),
+      '', // Espacio para foto
+      item.dorsal !== undefined && item.dorsal !== null && String(item.dorsal) !== '' ? `#${item.dorsal}` : '-',
+      item.name,
+      ptsStr,
+      detailStr,
+    ];
+  });
+
+  const photoSize = 8; // 8mm de diámetro
+
+  autoTable(doc, {
+    head: [headers],
+    body: rows,
+    startY: 43,
+    margin: { left: marginX, right: marginX, bottom: 14 },
+    styles: {
+      fontSize: 8.5,
+      cellPadding: { top: 2.2, bottom: 2.2, left: 2, right: 2 },
+      minCellHeight: 11.5,
+      valign: 'middle',
+      textColor: [30, 30, 30],
+    },
+    columnStyles: {
+      0: { cellWidth: 16, halign: 'center' }, // Pos
+      1: { cellWidth: 16, halign: 'center' }, // Foto
+      2: { cellWidth: 16, halign: 'center', fontStyle: 'bold', textColor: [100, 100, 100] }, // Dorsal
+      3: { cellWidth: 70, halign: 'left', fontStyle: 'bold' }, // Jugador
+      4: { cellWidth: 34, halign: 'center', fontStyle: 'bold' }, // Puntos
+      5: { cellWidth: 34, halign: 'center', textColor: [100, 100, 100], fontSize: 7.5 }, // Desglose
+    },
+    headStyles: {
+      fillColor: BRAND_RED,
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      minCellHeight: 8,
+      halign: 'center',
+    },
+    alternateRowStyles: {
+      fillColor: [249, 250, 251],
+    },
+    theme: 'grid',
+    tableLineColor: [225, 230, 235],
+    tableLineWidth: 0.15,
+    didDrawCell: (data: any) => {
+      if (data.cell.section === 'body') {
+        const item = leaderboard[data.row.index];
+        if (!item) return;
+
+        // 1. Dibujar medalla o badge de posición en columna 0
+        if (data.column.index === 0) {
+          const rank = item.rank;
+          const cellCenterX = data.cell.x + data.cell.width / 2;
+          const cellCenterY = data.cell.y + data.cell.height / 2;
+          const badgeRadius = 3.6;
+
+          if (rank === 1) {
+            // Oro
+            doc.setFillColor(234, 179, 8); // Gold #eab308
+            doc.circle(cellCenterX, cellCenterY, badgeRadius, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text('1', cellCenterX, cellCenterY + 1, { align: 'center' });
+          } else if (rank === 2) {
+            // Plata
+            doc.setFillColor(148, 163, 184); // Silver #94a3b8
+            doc.circle(cellCenterX, cellCenterY, badgeRadius, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text('2', cellCenterX, cellCenterY + 1, { align: 'center' });
+          } else if (rank === 3) {
+            // Bronce
+            doc.setFillColor(180, 83, 9); // Bronze #b45309
+            doc.circle(cellCenterX, cellCenterY, badgeRadius, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text('3', cellCenterX, cellCenterY + 1, { align: 'center' });
+          } else {
+            // Badges generales
+            doc.setFillColor(240, 243, 246);
+            doc.setDrawColor(210, 215, 220);
+            doc.setLineWidth(0.1);
+            doc.circle(cellCenterX, cellCenterY, badgeRadius, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(70, 75, 80);
+            doc.text(String(rank), cellCenterX, cellCenterY + 1, { align: 'center' });
+          }
+        }
+
+        // 2. Dibujar foto circular en columna 1
+        if (data.column.index === 1) {
+          const avatarData = processedAvatars[data.row.index];
+          if (avatarData) {
+            const imgX = data.cell.x + (data.cell.width - photoSize) / 2;
+            const imgY = data.cell.y + (data.cell.height - photoSize) / 2;
+            doc.addImage(avatarData, 'PNG', imgX, imgY, photoSize, photoSize, undefined, 'FAST');
+          }
+        }
+
+        // 3. Pintar color de puntos en columna 4
+        if (data.column.index === 4) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          if (item.points > 0) {
+            doc.setTextColor(16, 185, 129); // Emerald
+          } else if (item.points < 0) {
+            doc.setTextColor(220, 38, 38); // Red
+          } else {
+            doc.setTextColor(120, 120, 120);
+          }
+          const ptsText = `${item.points > 0 ? '+' : ''}${item.points} pts`;
+          doc.text(ptsText, data.cell.x + data.cell.width / 2, data.cell.y + data.cell.height / 2 + 1, {
+            align: 'center',
+          });
+        }
+      }
+    },
+    didDrawPage: (data: any) => {
+      // Pie de página
+      const pageNumber = data.pageNumber;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(140, 140, 140);
+      doc.text('UD Atzeneta · Casillero de Rendimiento (+/- Puntos)', marginX, pageHeight - 6);
+      doc.text(`Página ${pageNumber}`, pageWidth - marginX, pageHeight - 6, { align: 'right' });
+    },
+  });
+
+  const dateSlug = options.startDate && options.endDate ? `${options.startDate}_a_${options.endDate}` : 'Historico';
+  const cleanTeam = teamName.toLowerCase().replace(/\s+/g, '_');
+  const filename = `Clasificacion_Puntos_${cleanTeam}_${dateSlug}_${Date.now()}`;
+  doc.save(`${filename}.pdf`);
+};
+

@@ -8,10 +8,16 @@ import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
 import { PointLog, Profile } from '../types';
-import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
+import {
+  exportToCSV,
+  exportToPDF,
+  exportPointsLeaderboardToPDF,
+  ExportCell,
+} from '../utils/export';
 import {
   Award, Search, Download, FileText, Plus, Trash2, Edit2,
-  TrendingUp, TrendingDown, Calendar, User, Trophy, Users, Check
+  TrendingUp, TrendingDown, Calendar, User, Trophy, Users, Check,
+  Loader2, Filter, Sparkles
 } from 'lucide-react';
 
 // Valores de puntuación predefinidos
@@ -40,9 +46,22 @@ export const Points: React.FC = () => {
   const [search, setSearch] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [leaderboardTab, setLeaderboardTab] = useState<'monthly' | 'general'>('monthly');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPoint, setEditingPoint] = useState<PointLog | null>(null);
+
+  // Modal exportar clasificación PDF con intervalo (Total / Mensual / Semanal / Personalizado)
+  const [isExportPdfModalOpen, setIsExportPdfModalOpen] = useState(false);
+  const [exportIntervalMode, setExportIntervalMode] = useState<'total' | 'monthly' | 'weekly' | 'custom'>('total');
+  const [exportMonthlyMonth, setExportMonthlyMonth] = useState<number>(new Date().getMonth() + 1);
+  const [exportMonthlyYear, setExportMonthlyYear] = useState<number>(new Date().getFullYear());
+  const [exportWeeklyType, setExportWeeklyType] = useState<'current' | 'last' | 'custom'>('current');
+  const [exportWeeklyRefDate, setExportWeeklyRefDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [exportTeamFilter, setExportTeamFilter] = useState<'Primer Equipo' | 'Juvenil' | 'Todos'>('Primer Equipo');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Campos formulario
   const [targetUserId, setTargetUserId] = useState('');
@@ -56,6 +75,22 @@ export const Points: React.FC = () => {
   const { data: pointsLogs = [], isLoading: loadingPoints } = useQuery({
     queryKey: ['points'],
     queryFn: () => dataService.getPoints()
+  });
+
+  // Lista de todos los jugadores de ambos equipos para exportaciones completas
+  const { data: allPlayersData = [] } = useQuery({
+    queryKey: ['players-all-teams-points'],
+    queryFn: async () => {
+      try {
+        const [p1, p2] = await Promise.all([
+          dataService.getPlayers('Primer Equipo'),
+          dataService.getPlayers('Juvenil')
+        ]);
+        return [...p1, ...p2];
+      } catch {
+        return [];
+      }
+    }
   });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
@@ -254,14 +289,33 @@ export const Points: React.FC = () => {
     return matchSearch;
   });
 
-  // 3. Tabla de clasificación (Leaderboard) - Abierta para todo el vestuario
-  const getLeaderboard = () => {
+  // Estadísticas globales del usuario (o acumuladas si es técnico)
+  const filterByDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.getMonth() + 1 === selectedMonth && d.getFullYear() === selectedYear;
+  };
+
+  // 3. Tabla de clasificación (Leaderboard) - Soporta Mensual y General
+  const getLeaderboard = (mode: 'general' | 'monthly' = leaderboardTab) => {
     // Agrupar por jugador
-    const playerPointsMap: { [userId: string]: { name: string; avatar: string; points: number; email: string } } = {};
+    const playerPointsMap: {
+      [userId: string]: {
+        name: string;
+        avatar: string;
+        dorsal?: number | string;
+        points: number;
+        positivePoints: number;
+        negativePoints: number;
+        eventsCount: number;
+        email: string;
+      };
+    } = {};
     
-    // Inicializar con todos los perfiles de la base de datos (o los que tienen logs)
-    // Para modo Demo o Supabase real, usaremos los perfiles vinculados en los logs y los profiles disponibles
-    const allProfiles = (profiles.length > 0 ? profiles : pointsLogs.map(p => p.profiles).filter(Boolean) as Profile[]).filter(p => (p.team_category || 'Primer Equipo') === filterTeam);
+    const allProfiles = (
+      profiles.length > 0
+        ? profiles
+        : (pointsLogs.map(p => p.profiles).filter(Boolean) as Profile[])
+    ).filter(p => (p.team_category || 'Primer Equipo') === filterTeam);
 
     allProfiles.forEach(p => {
       // Solo jugadores en la tabla de posiciones
@@ -270,31 +324,41 @@ export const Points: React.FC = () => {
           name: p.nickname || p.full_name,
           email: p.email,
           avatar: p.avatar_url || '',
-          points: 0
+          dorsal: p.dorsal,
+          points: 0,
+          positivePoints: 0,
+          negativePoints: 0,
+          eventsCount: 0
         };
       }
     });
 
-    // Sumar puntos de los logs
+    // Sumar puntos de los logs (filtrando por mes si el modo es mensual)
     pointsLogs.forEach(log => {
+      if (mode === 'monthly' && !filterByDate(log.date)) return;
+
       if (playerPointsMap[log.user_id]) {
         playerPointsMap[log.user_id].points += log.points;
+        if (log.points > 0) {
+          playerPointsMap[log.user_id].positivePoints += log.points;
+        } else {
+          playerPointsMap[log.user_id].negativePoints += log.points;
+        }
+        playerPointsMap[log.user_id].eventsCount += 1;
       }
     });
 
     // Convertir a array y ordenar desc
     return Object.keys(playerPointsMap)
       .map(id => ({ id, ...playerPointsMap[id] }))
-      .sort((a, b) => b.points - a.points);
+      .sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.positivePoints !== a.positivePoints) return b.positivePoints - a.positivePoints;
+        return (Number(a.dorsal) || 999) - (Number(b.dorsal) || 999);
+      });
   };
 
-  const leaderboard = getLeaderboard();
-
-  // Estadísticas globales del usuario (o acumuladas si es técnico)
-  const filterByDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.getMonth() + 1 === selectedMonth && d.getFullYear() === selectedYear;
-  };
+  const leaderboard = getLeaderboard(leaderboardTab);
 
   const totalPoints = visibleLogs.reduce((acc, p) => acc + p.points, 0);
   const monthlyPoints = visibleLogs.filter(p => filterByDate(p.date)).reduce((acc, p) => acc + p.points, 0);
@@ -318,13 +382,249 @@ export const Points: React.FC = () => {
     showToast('success', 'CSV Descargado', 'Histórico de puntos exportado.');
   };
 
-  const handleExportPDF = async () => {
-    if (filteredLogs.length === 0) {
-      showToast('info', 'Exportar', 'No hay registros en la lista para exportar.');
-      return;
+  // Helper para calcular las fechas e intervalos según el modo seleccionado (Total, Mensual, Semanal, Personalizado)
+  const getIntervalData = () => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (exportIntervalMode === 'total') {
+      return {
+        startDate: '',
+        endDate: '',
+        label: 'Todo el histórico (Acumulado Total)',
+        shortLabel: 'Histórico Completo'
+      };
     }
-    await exportToPDF('Puntos UD Atzeneta', `puntos_atzeneta_${Date.now()}`, exportHeaders, buildExportRows());
-    showToast('success', 'PDF Descargado', 'Histórico de puntos exportado en PDF.');
+
+    if (exportIntervalMode === 'monthly') {
+      const year = exportMonthlyYear;
+      const month = exportMonthlyMonth;
+      const monthObj = months.find(m => m.value === month);
+      const monthName = monthObj ? monthObj.label : `Mes ${month}`;
+      const monthStr = String(month).padStart(2, '0');
+      const lastDay = new Date(year, month, 0).getDate();
+      const lastDayStr = String(lastDay).padStart(2, '0');
+
+      return {
+        startDate: `${year}-${monthStr}-01`,
+        endDate: `${year}-${monthStr}-${lastDayStr}`,
+        label: `Mensual · ${monthName} ${year} (01/${monthStr}/${year} al ${lastDayStr}/${monthStr}/${year})`,
+        shortLabel: `${monthName} ${year}`
+      };
+    }
+
+    if (exportIntervalMode === 'weekly') {
+      let targetDate = new Date();
+      if (exportWeeklyType === 'last') {
+        targetDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (exportWeeklyType === 'custom' && exportWeeklyRefDate) {
+        const [y, m, d] = exportWeeklyRefDate.split('-').map(Number);
+        targetDate = new Date(y, m - 1, d);
+      }
+
+      // Calcular lunes y domingo
+      const day = targetDate.getDay(); // 0 es domingo, 1 es lunes...
+      const diffToMonday = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(targetDate);
+      monday.setDate(targetDate.getDate() + diffToMonday);
+
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const fmt = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const dayNum = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${dayNum}`;
+      };
+
+      const fmtDisplay = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const dayNum = String(d.getDate()).padStart(2, '0');
+        return `${dayNum}/${month}/${year}`;
+      };
+
+      const start = fmt(monday);
+      const end = fmt(sunday);
+      const labelPrefix = exportWeeklyType === 'current' ? 'Semana Actual' : exportWeeklyType === 'last' ? 'Semana Pasada' : 'Semana';
+
+      return {
+        startDate: start,
+        endDate: end,
+        label: `${labelPrefix} (Del ${fmtDisplay(monday)} al ${fmtDisplay(sunday)})`,
+        shortLabel: `${labelPrefix} (${fmtDisplay(monday)} - ${fmtDisplay(sunday)})`
+      };
+    }
+
+    // Modo Personalizado
+    let label = 'Personalizado';
+    let shortLabel = 'Personalizado';
+    if (exportStartDate && exportEndDate) {
+      const [sy, sm, sd] = exportStartDate.split('-');
+      const [ey, em, ed] = exportEndDate.split('-');
+      label = `Personalizado (${sd}/${sm}/${sy} al ${ed}/${em}/${ey})`;
+      shortLabel = `${sd}/${sm}/${sy} - ${ed}/${em}/${ey}`;
+    } else if (exportStartDate) {
+      const [sy, sm, sd] = exportStartDate.split('-');
+      label = `Desde el ${sd}/${sm}/${sy}`;
+      shortLabel = `Desde ${sd}/${sm}/${sy}`;
+    } else if (exportEndDate) {
+      const [ey, em, ed] = exportEndDate.split('-');
+      label = `Hasta el ${ed}/${em}/${ey}`;
+      shortLabel = `Hasta ${ed}/${em}/${ey}`;
+    }
+
+    return {
+      startDate: exportStartDate,
+      endDate: exportEndDate,
+      label,
+      shortLabel
+    };
+  };
+
+  // Calcula la clasificación agrupada por jugador para el intervalo y equipo seleccionados en el modal
+  const getExportLeaderboard = () => {
+    const { startDate, endDate } = getIntervalData();
+    const playerMap: Record<
+      string,
+      {
+        id: string;
+        name: string;
+        fullName: string;
+        dorsal?: number | string;
+        avatarUrl?: string;
+        points: number;
+        positivePoints: number;
+        negativePoints: number;
+        eventsCount: number;
+        teamCategory?: string;
+      }
+    > = {};
+
+    // 1. Unificar plantilla de jugadores
+    const squadPlayers = allPlayersData.length > 0 ? allPlayersData : profiles.filter(p => p.role_id === 3);
+
+    squadPlayers.forEach((p: any) => {
+      const pTeam = p.team_category || 'Primer Equipo';
+      const matchesTeam = exportTeamFilter === 'Todos' || pTeam === exportTeamFilter;
+      if (matchesTeam) {
+        const id = p.profile_id || p.id;
+        playerMap[id] = {
+          id,
+          name: p.nickname || p.full_name,
+          fullName: p.full_name,
+          dorsal: p.dorsal,
+          avatarUrl: p.photo_url || p.avatar_url || '',
+          points: 0,
+          positivePoints: 0,
+          negativePoints: 0,
+          eventsCount: 0,
+          teamCategory: pTeam
+        };
+      }
+    });
+
+    // 2. Sumar puntos de los logs dentro del intervalo
+    let totalPointsInInterval = 0;
+    let totalEventsInInterval = 0;
+
+    pointsLogs.forEach(log => {
+      // Filtro de fechas
+      if (startDate && log.date < startDate) return;
+      if (endDate && log.date > endDate) return;
+
+      if (playerMap[log.user_id]) {
+        playerMap[log.user_id].points += log.points;
+        if (log.points > 0) {
+          playerMap[log.user_id].positivePoints += log.points;
+        } else {
+          playerMap[log.user_id].negativePoints += log.points;
+        }
+        playerMap[log.user_id].eventsCount += 1;
+        totalPointsInInterval += log.points;
+        totalEventsInInterval += 1;
+      } else if (log.profiles && log.profiles.role_id === 3) {
+        const pTeam = log.profiles.team_category || 'Primer Equipo';
+        if (exportTeamFilter === 'Todos' || pTeam === exportTeamFilter) {
+          playerMap[log.user_id] = {
+            id: log.user_id,
+            name: log.profiles.nickname || log.profiles.full_name,
+            fullName: log.profiles.full_name,
+            dorsal: log.profiles.dorsal,
+            avatarUrl: log.profiles.avatar_url || '',
+            points: log.points,
+            positivePoints: log.points > 0 ? log.points : 0,
+            negativePoints: log.points < 0 ? log.points : 0,
+            eventsCount: 1,
+            teamCategory: pTeam
+          };
+          totalPointsInInterval += log.points;
+          totalEventsInInterval += 1;
+        }
+      }
+    });
+
+    // 3. Ordenar: Puntos desc -> Positivos desc -> Dorsal asc
+    const sorted = Object.values(playerMap).sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.positivePoints !== a.positivePoints) return b.positivePoints - a.positivePoints;
+      return (Number(a.dorsal) || 999) - (Number(b.dorsal) || 999);
+    });
+
+    const leaderboardWithRank = sorted.map((item, idx) => ({
+      ...item,
+      rank: idx + 1
+    }));
+
+    return {
+      leaderboard: leaderboardWithRank,
+      totalPointsInInterval,
+      totalEventsInInterval
+    };
+  };
+
+  const handleOpenExportPdfModal = () => {
+    setExportTeamFilter(filterTeam as any || 'Primer Equipo');
+    setExportIntervalMode('total');
+    setExportMonthlyMonth(selectedMonth);
+    setExportMonthlyYear(selectedYear);
+    setExportWeeklyType('current');
+    setExportWeeklyRefDate(new Date().toISOString().split('T')[0]);
+    setIsExportPdfModalOpen(true);
+  };
+
+  const handleGeneratePdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      const { startDate, endDate, label: intervalLabel } = getIntervalData();
+      const { leaderboard, totalPointsInInterval, totalEventsInInterval } = getExportLeaderboard();
+
+      if (leaderboard.length === 0) {
+        showToast('error', 'Sin datos', 'No hay jugadores en la clasificación para este criterio.');
+        setIsExportingPdf(false);
+        return;
+      }
+
+      await exportPointsLeaderboardToPDF({
+        title: 'CLASIFICACIÓN DE RENDIMIENTO (+/- PUNTOS)',
+        teamName: exportTeamFilter,
+        intervalLabel,
+        startDate,
+        endDate,
+        leaderboard,
+        totalPointsInInterval,
+        totalEventsInInterval
+      });
+
+      showToast('success', 'PDF Generado', 'La clasificación se ha descargado correctamente.');
+      setIsExportPdfModalOpen(false);
+    } catch (err: any) {
+      console.error('Error al generar PDF de puntos:', err);
+      showToast('error', 'Error al exportar', err?.message || 'No se pudo generar el documento PDF.');
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const months = [
@@ -371,7 +671,7 @@ export const Points: React.FC = () => {
               <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs">
                 <Download className="w-3.5 h-3.5" /> CSV
               </button>
-              <button onClick={handleExportPDF} className="btn-secondary py-2 text-xs">
+              <button onClick={handleOpenExportPdfModal} className="btn-secondary py-2 text-xs">
                 <FileText className="w-3.5 h-3.5" /> PDF
               </button>
             </>
@@ -443,9 +743,55 @@ export const Points: React.FC = () => {
         {/* LEADERBOARD (5 cols) */}
         <div className="dashboard-card lg:col-span-5 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between border-b border-brand-black-border pb-4 mb-4">
-              <h3 className="text-sm font-semibold text-brand-gray-light">Clasificación del Vestuario</h3>
-              <Award className="w-4 h-4 text-emerald-500" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-brand-black-border pb-3 mb-3 gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-brand-gray-light">Clasificación del Vestuario</h3>
+                <Award className="w-4 h-4 text-emerald-500" />
+              </div>
+
+              {/* Selector de Pestaña: Mensual vs General */}
+              <div className="flex bg-brand-black p-0.5 rounded-lg border border-brand-black-border gap-0.5 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setLeaderboardTab('monthly')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${
+                    leaderboardTab === 'monthly'
+                      ? 'bg-brand-red-600 text-white shadow-sm'
+                      : 'text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  <Calendar className="w-3 h-3" />
+                  {months.find(m => m.value === selectedMonth)?.label || 'Mes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeaderboardTab('general')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${
+                    leaderboardTab === 'general'
+                      ? 'bg-brand-red-600 text-white shadow-sm'
+                      : 'text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  <Trophy className="w-3 h-3" />
+                  General
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-cabecera con información del ranking activo */}
+            <div className="flex items-center justify-between text-[11px] text-brand-gray-muted px-1 mb-3">
+              <span>
+                {leaderboardTab === 'monthly' ? (
+                  <>
+                    Ranking de <strong className="text-brand-gray-light">{months.find(m => m.value === selectedMonth)?.label} {selectedYear}</strong>
+                  </>
+                ) : (
+                  <>Acumulado total de la temporada</>
+                )}
+              </span>
+              <span className="font-semibold text-brand-gray-light">
+                {leaderboard.length} jugadores
+              </span>
             </div>
 
             {leaderboard.length === 0 ? (
@@ -453,21 +799,21 @@ export const Points: React.FC = () => {
                 <p className="text-sm text-brand-gray-muted">No se registran jugadores en la clasificación.</p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
+              <div className="space-y-2.5 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
                 {leaderboard.map((item, index) => {
                   const rank = index + 1;
                   return (
                     <div 
                       key={item.id} 
-                      className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                      className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
                         item.id === user?.id 
                           ? 'bg-brand-red-600/10 border-brand-red-600/30' 
                           : 'bg-brand-black-hover/40 border-brand-black-border'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         {/* Puesto del ranking */}
-                        <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
+                        <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
                           rank === 1 ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30' :
                           rank === 2 ? 'bg-slate-300/20 text-slate-300 border border-slate-300/30' :
                           rank === 3 ? 'bg-amber-700/20 text-amber-700 border border-amber-700/30' :
@@ -479,18 +825,35 @@ export const Points: React.FC = () => {
                         <img 
                           src={item.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'} 
                           alt={item.name} 
-                          className="w-7 h-7 rounded-full border border-brand-black-border object-cover"
+                          className="w-7 h-7 rounded-full border border-brand-black-border object-cover shrink-0"
                         />
-                        <span className="text-xs font-semibold text-brand-gray-light truncate max-w-[120px]">
-                          {item.name}
-                        </span>
+                        
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {item.dorsal ? (
+                              <span className="text-[10px] font-bold text-brand-gray-muted">
+                                #{item.dorsal}
+                              </span>
+                            ) : null}
+                            <span className="text-xs font-semibold text-brand-gray-light truncate">
+                              {item.name}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded bg-brand-black border border-brand-black-border ${
-                        item.points >= 0 ? 'text-emerald-500' : 'text-brand-red-600'
-                      }`}>
-                        {item.points} pts
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {leaderboardTab === 'monthly' && item.eventsCount > 0 ? (
+                          <span className="text-[10px] text-brand-gray-muted hidden sm:inline">
+                            {item.eventsCount} reg.
+                          </span>
+                        ) : null}
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded bg-brand-black border border-brand-black-border ${
+                          item.points > 0 ? 'text-emerald-500' : item.points < 0 ? 'text-brand-red-600' : 'text-brand-gray-muted'
+                        }`}>
+                          {item.points > 0 ? '+' : ''}{item.points} pts
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
@@ -822,6 +1185,442 @@ export const Points: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* =====================================================================
+          MODAL EXPORTAR CLASIFICACIÓN A PDF CON INTERVALO
+          ===================================================================== */}
+      <Modal
+        isOpen={isExportPdfModalOpen}
+        onClose={() => !isExportingPdf && setIsExportPdfModalOpen(false)}
+        title="Exportar Clasificación a PDF"
+        maxWidth="max-w-xl"
+      >
+        <div className="space-y-5">
+          <p className="text-xs text-brand-gray-muted">
+            Configura el intervalo a recoger de puntos (total, mensual, semanal o personalizado) y descarga la clasificación oficial con foto, dorsal y balance de puntos.
+          </p>
+
+          {/* 1. Selector de Tipo de Intervalo (Total / Mensual / Semanal / Personalizado) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-brand-gray-light block">Tipo de Intervalo</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-brand-black p-1.5 rounded-xl border border-brand-black-border">
+              <button
+                type="button"
+                onClick={() => setExportIntervalMode('total')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-bold rounded-lg transition-all ${
+                  exportIntervalMode === 'total'
+                    ? 'bg-brand-red-600 text-white shadow-md'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-hover/40'
+                }`}
+              >
+                <Trophy className="w-3.5 h-3.5" /> Total
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportIntervalMode('monthly')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-bold rounded-lg transition-all ${
+                  exportIntervalMode === 'monthly'
+                    ? 'bg-brand-red-600 text-white shadow-md'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-hover/40'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" /> Mensual
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportIntervalMode('weekly')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-bold rounded-lg transition-all ${
+                  exportIntervalMode === 'weekly'
+                    ? 'bg-brand-red-600 text-white shadow-md'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-hover/40'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5" /> Semanal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setExportIntervalMode('custom');
+                  if (!exportStartDate) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 30);
+                    setExportStartDate(d.toISOString().split('T')[0]);
+                    setExportEndDate(new Date().toISOString().split('T')[0]);
+                  }
+                }}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-bold rounded-lg transition-all ${
+                  exportIntervalMode === 'custom'
+                    ? 'bg-brand-red-600 text-white shadow-md'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-hover/40'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5" /> Personalizado
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Controles específicos según el tipo de intervalo */}
+          {exportIntervalMode === 'total' && (
+            <div className="p-3 bg-brand-black/40 border border-brand-black-border rounded-xl flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
+                <Trophy className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-brand-gray-light">Histórico Completo de Puntos</p>
+                <p className="text-[11px] text-brand-gray-muted mt-0.5">
+                  Se calculará el total acumulado de todos los puntos asignados a la plantilla durante toda la temporada.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {exportIntervalMode === 'monthly' && (
+            <div className="p-3.5 bg-brand-black/40 border border-brand-black-border rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-brand-gray-light">Seleccionar Mes y Año</span>
+                <div className="flex gap-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      setExportMonthlyMonth(now.getMonth() + 1);
+                      setExportMonthlyYear(now.getFullYear());
+                    }}
+                    className="text-brand-red-500 hover:text-brand-red-400 font-semibold"
+                  >
+                    Mes Actual
+                  </button>
+                  <span className="text-brand-gray-dark">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+                      setExportMonthlyMonth(prev.getMonth() + 1);
+                      setExportMonthlyYear(prev.getFullYear());
+                    }}
+                    className="text-brand-gray-muted hover:text-brand-gray-light"
+                  >
+                    Mes Anterior
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-brand-gray-muted block mb-1">Mes</label>
+                  <select
+                    value={exportMonthlyMonth}
+                    onChange={(e) => setExportMonthlyMonth(Number(e.target.value))}
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                  >
+                    {months.map((m) => (
+                      <option key={m.value} value={m.value} className="bg-brand-black-card text-brand-gray-light">
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-brand-gray-muted block mb-1">Año</label>
+                  <select
+                    value={exportMonthlyYear}
+                    onChange={(e) => setExportMonthlyYear(Number(e.target.value))}
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                  >
+                    {[2027, 2026, 2025, 2024].map((y) => (
+                      <option key={y} value={y} className="bg-brand-black-card text-brand-gray-light">
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-brand-gray-muted flex items-center gap-1.5 pt-0.5">
+                <Calendar className="w-3.5 h-3.5 text-brand-red-500" />
+                <span>
+                  Intervalo exacto:{' '}
+                  <strong className="text-brand-gray-light">
+                    01/{String(exportMonthlyMonth).padStart(2, '0')}/{exportMonthlyYear} al{' '}
+                    {new Date(exportMonthlyYear, exportMonthlyMonth, 0).getDate()}/
+                    {String(exportMonthlyMonth).padStart(2, '0')}/{exportMonthlyYear}
+                  </strong>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {exportIntervalMode === 'weekly' && (
+            <div className="p-3.5 bg-brand-black/40 border border-brand-black-border rounded-xl space-y-3">
+              <span className="text-xs font-semibold text-brand-gray-light block">Seleccionar Semana</span>
+              
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setExportWeeklyType('current')}
+                  className={`py-1.5 px-2 text-xs font-semibold rounded-lg border transition-all ${
+                    exportWeeklyType === 'current'
+                      ? 'bg-brand-red-600/20 border-brand-red-600/60 text-brand-red-500'
+                      : 'bg-brand-black-hover/40 border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  Esta Semana
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportWeeklyType('last')}
+                  className={`py-1.5 px-2 text-xs font-semibold rounded-lg border transition-all ${
+                    exportWeeklyType === 'last'
+                      ? 'bg-brand-red-600/20 border-brand-red-600/60 text-brand-red-500'
+                      : 'bg-brand-black-hover/40 border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  Semana Pasada
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportWeeklyType('custom')}
+                  className={`py-1.5 px-2 text-xs font-semibold rounded-lg border transition-all ${
+                    exportWeeklyType === 'custom'
+                      ? 'bg-brand-red-600/20 border-brand-red-600/60 text-brand-red-500'
+                      : 'bg-brand-black-hover/40 border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light'
+                  }`}
+                >
+                  Otra Fecha
+                </button>
+              </div>
+
+              {exportWeeklyType === 'custom' && (
+                <div>
+                  <label className="text-[11px] font-medium text-brand-gray-muted block mb-1">
+                    Día dentro de la semana que deseas recoger:
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                    value={exportWeeklyRefDate}
+                    onChange={(e) => setExportWeeklyRefDate(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {(() => {
+                const { startDate, endDate } = getIntervalData();
+                if (!startDate || !endDate) return null;
+                const [sy, sm, sd] = startDate.split('-');
+                const [ey, em, ed] = endDate.split('-');
+                return (
+                  <div className="text-[11px] text-brand-gray-muted flex items-center gap-1.5 pt-0.5">
+                    <Calendar className="w-3.5 h-3.5 text-brand-red-500" />
+                    <span>
+                      Semana activa:{' '}
+                      <strong className="text-brand-gray-light">
+                        Lunes {sd}/{sm}/{sy} al Domingo {ed}/{em}/{ey}
+                      </strong>
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {exportIntervalMode === 'custom' && (
+            <div className="p-3.5 bg-brand-black/40 border border-brand-black-border rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-brand-gray-light">Rango Personalizado de Fechas</span>
+                <div className="flex gap-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                      setExportStartDate(past.toISOString().split('T')[0]);
+                      setExportEndDate(now.toISOString().split('T')[0]);
+                    }}
+                    className="text-brand-red-500 hover:text-brand-red-400 font-semibold"
+                  >
+                    Últimos 30 días
+                  </button>
+                  <span className="text-brand-gray-dark">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      const past = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
+                      setExportStartDate(past.toISOString().split('T')[0]);
+                      setExportEndDate(now.toISOString().split('T')[0]);
+                    }}
+                    className="text-brand-gray-muted hover:text-brand-gray-light"
+                  >
+                    Últimos 15 días
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-brand-gray-muted block mb-1">Fecha Inicio (Desde)</label>
+                  <input
+                    type="date"
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-brand-gray-muted block mb-1">Fecha Fin (Hasta)</label>
+                  <input
+                    type="date"
+                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Selector de Equipo */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-brand-gray-light block">Equipo / Categoría</label>
+            <div className="flex bg-brand-black p-1 rounded-lg border border-brand-black-border gap-1">
+              <button
+                type="button"
+                onClick={() => setExportTeamFilter('Primer Equipo')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  exportTeamFilter === 'Primer Equipo'
+                    ? 'bg-brand-red-600 text-white shadow'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light'
+                }`}
+              >
+                Primer Equipo
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportTeamFilter('Juvenil')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  exportTeamFilter === 'Juvenil'
+                    ? 'bg-brand-red-600 text-white shadow'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light'
+                }`}
+              >
+                Juvenil
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportTeamFilter('Todos')}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  exportTeamFilter === 'Todos'
+                    ? 'bg-brand-red-600 text-white shadow'
+                    : 'text-brand-gray-muted hover:text-brand-gray-light'
+                }`}
+              >
+                Todos
+              </button>
+            </div>
+          </div>
+
+          {/* 4. Resumen y Vista Previa en Vivo */}
+          {(() => {
+            const preview = getExportLeaderboard();
+            const top3 = preview.leaderboard.slice(0, 3);
+            const { shortLabel } = getIntervalData();
+            return (
+              <div className="bg-brand-black/60 border border-brand-black-border rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-brand-black-border pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs font-semibold text-brand-gray-light">
+                      Resumen del Intervalo ({shortLabel})
+                    </span>
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                    preview.totalPointsInInterval >= 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-brand-red-600/15 text-brand-red-500'
+                  }`}>
+                    {preview.totalPointsInInterval > 0 ? '+' : ''}{preview.totalPointsInInterval} pts totales
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center text-xs py-1">
+                  <div className="p-2 bg-brand-black-hover/20 rounded-lg">
+                    <span className="text-[10px] text-brand-gray-muted block">Jugadores</span>
+                    <span className="font-bold text-brand-gray-light">{preview.leaderboard.length}</span>
+                  </div>
+                  <div className="p-2 bg-brand-black-hover/20 rounded-lg">
+                    <span className="text-[10px] text-brand-gray-muted block">Anotaciones</span>
+                    <span className="font-bold text-brand-gray-light">{preview.totalEventsInInterval}</span>
+                  </div>
+                  <div className="p-2 bg-brand-black-hover/20 rounded-lg">
+                    <span className="text-[10px] text-brand-gray-muted block">Equipo</span>
+                    <span className="font-bold text-brand-gray-light truncate">{exportTeamFilter}</span>
+                  </div>
+                </div>
+
+                {top3.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[11px] font-semibold text-brand-gray-muted block">Líderes provisionales del intervalo:</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {top3.map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-brand-black-hover/40 border border-brand-black-border"
+                        >
+                          <span className={`w-5 h-5 rounded-full text-[10px] font-extrabold flex items-center justify-center shrink-0 ${
+                            idx === 0 ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/40' :
+                            idx === 1 ? 'bg-slate-300/20 text-slate-300 border border-slate-300/40' :
+                            'bg-amber-700/20 text-amber-700 border border-amber-700/40'
+                          }`}>
+                            {idx + 1}
+                          </span>
+                          <img
+                            src={item.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=60&q=80'}
+                            alt={item.name}
+                            className="w-6 h-6 rounded-full object-cover border border-brand-black-border shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-brand-gray-light truncate">{item.name}</p>
+                            <span className={`text-[10px] font-bold ${item.points >= 0 ? 'text-emerald-400' : 'text-brand-red-500'}`}>
+                              {item.points > 0 ? '+' : ''}{item.points} pts
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Botones de acción */}
+          <div className="flex gap-2 pt-2 justify-end">
+            <button
+              type="button"
+              disabled={isExportingPdf}
+              onClick={() => setIsExportPdfModalOpen(false)}
+              className="btn-secondary py-2 text-xs"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={isExportingPdf}
+              onClick={handleGeneratePdf}
+              className="btn-primary py-2 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {isExportingPdf ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generando PDF...
+                </>
+              ) : (
+                <>
+                  <FileText className="w-3.5 h-3.5" /> Descargar Clasificación (PDF)
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
