@@ -1,11 +1,11 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
   OpponentAnalysis, OpponentPresentation, PresentationSlide, PresentationBlock,
   OpponentLibraryVideo, OpponentRosterPlayer,
 } from '../../types';
 import {
-  Plus, Play, Trash2, Edit2, ChevronUp, ChevronDown, ArrowLeft, LayoutGrid,
+  Plus, Play, Trash2, Edit2, ArrowLeft, GripVertical, Check, X, LayoutGrid,
   Presentation as PresentationIcon, PanelsTopLeft, Film, Users, ShieldAlert,
   Award, FileText, Settings as TacticalIcon, Layers, Wand2, BarChart2, Trophy, Activity,
 } from 'lucide-react';
@@ -34,6 +34,31 @@ interface CatalogItem {
   make: () => PresentationSlide;
 }
 
+// Lo que se está arrastrando: ítems del catálogo (nuevas diapos) o diapositivas existentes (reordenar)
+type DragPayload = { kind: 'catalog'; keys: string[] } | { kind: 'slides'; ids: string[] };
+
+// Imagen fantasma del arrastre: tarjeta con el texto y un contador si hay varios elementos
+const setDragGhost = (e: React.DragEvent, label: string, count: number) => {
+  const ghost = document.createElement('div');
+  ghost.style.cssText =
+    'position:fixed;top:-1000px;left:-1000px;display:flex;align-items:center;gap:8px;padding:8px 12px;' +
+    'background:#0a0a0a;border:1px solid #dc2626;border-radius:10px;color:#fff;font:600 12px system-ui,sans-serif;' +
+    'box-shadow:0 10px 30px rgba(220,38,38,.35);max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  if (count > 1) {
+    const badge = document.createElement('span');
+    badge.textContent = String(count);
+    badge.style.cssText = 'background:#dc2626;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:800;';
+    ghost.appendChild(badge);
+  }
+  const text = document.createElement('span');
+  text.textContent = count > 1 ? `${label} y ${count - 1} más` : label;
+  text.style.cssText = 'overflow:hidden;text-overflow:ellipsis;';
+  ghost.appendChild(text);
+  document.body.appendChild(ghost);
+  e.dataTransfer.setDragImage(ghost, 16, 16);
+  window.setTimeout(() => ghost.remove(), 0);
+};
+
 const uid = () => `slide-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const bullets = (arr: string[]) => arr.map(s => `•  ${s}`).join('\n');
 
@@ -41,6 +66,21 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
   const [editingId, setEditingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
+  // Selección múltiple (catálogo y diapositivas) y estado del arrastre
+  const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
+  const [selectedCatalogKeys, setSelectedCatalogKeys] = useState<Set<string>>(new Set());
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [dragging, setDragging] = useState<DragPayload | null>(null);
+  const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
+  const dragRef = useRef<DragPayload | null>(null);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const catalogAnchorRef = useRef<string | null>(null);
+
+  const flashSlides = (ids: string[]) => {
+    setFlashIds(new Set(ids));
+    window.setTimeout(() => setFlashIds(new Set()), 900);
+  };
 
   const editing = presentations.find(p => p.id === editingId) || null;
   const playing = presentations.find(p => p.id === playingId) || null;
@@ -402,36 +442,39 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
     if (editingId === id) setEditingId(null);
   };
 
-  const addSlide = (make: () => PresentationSlide) => {
-    if (!editing) return;
-    const newSlide = make();
-    if (selectedSlideId) {
-      const idx = editing.slides.findIndex(s => s.id === selectedSlideId);
-      if (idx !== -1) {
-        const next = [...editing.slides];
-        next.splice(idx, 0, newSlide);
-        updatePresentation(editing.id, { slides: next });
-        setSelectedSlideId(newSlide.id);
-        return;
-      }
-    }
-    updatePresentation(editing.id, { slides: [...editing.slides, newSlide] });
-    setSelectedSlideId(newSlide.id);
-  };
-
-  const removeSlide = (slideId: string) => {
-    if (!editing) return;
-    updatePresentation(editing.id, { slides: editing.slides.filter(s => s.id !== slideId) });
-    if (selectedSlideId === slideId) setSelectedSlideId(null);
-  };
-
-  const moveSlide = (idx: number, dir: -1 | 1) => {
-    if (!editing) return;
+  // Inserta varias diapositivas nuevas (creadas desde el catálogo) en una posición concreta
+  const insertSlidesAt = (makers: Array<() => PresentationSlide>, index: number) => {
+    if (!editing || makers.length === 0) return;
+    const created = makers.map(m => m());
     const next = [...editing.slides];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target], next[idx]];
+    const at = Math.max(0, Math.min(index, next.length));
+    next.splice(at, 0, ...created);
     updatePresentation(editing.id, { slides: next });
+    setSelectedSlideIds(new Set(created.map(s => s.id)));
+    setSelectedSlideId(created[created.length - 1].id);
+    flashSlides(created.map(s => s.id));
+  };
+
+  // Mueve un grupo de diapositivas (manteniendo su orden relativo) a la posición indicada
+  const moveSlidesTo = (ids: string[], index: number) => {
+    if (!editing || ids.length === 0) return;
+    const idSet = new Set(ids);
+    const moving = editing.slides.filter(s => idSet.has(s.id));
+    const before = editing.slides.slice(0, index).filter(s => idSet.has(s.id)).length;
+    const rest = editing.slides.filter(s => !idSet.has(s.id));
+    const at = Math.max(0, Math.min(index - before, rest.length));
+    rest.splice(at, 0, ...moving);
+    if (rest.every((s, i) => s.id === editing.slides[i].id)) return;
+    updatePresentation(editing.id, { slides: rest });
+    flashSlides(ids);
+  };
+
+  const removeSlides = (ids: string[]) => {
+    if (!editing || ids.length === 0) return;
+    const idSet = new Set(ids);
+    updatePresentation(editing.id, { slides: editing.slides.filter(s => !idSet.has(s.id)) });
+    setSelectedSlideIds(prev => new Set([...prev].filter(id => !idSet.has(id))));
+    if (selectedSlideId && idSet.has(selectedSlideId)) setSelectedSlideId(null);
   };
 
   const updateSlideTitle = (slideId: string, title: string) => {
@@ -514,6 +557,150 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
   // ====================== VISTA: EDITOR DE UNA PRESENTACIÓN ======================
   if (editing) {
     const catalogHasContent = BLOCK_ORDER.some(b => catalog[b].length > 0);
+    const allCatalogItems = BLOCK_ORDER.flatMap(b => catalog[b]);
+    const catalogByKey = new Map(allCatalogItems.map(i => [i.key, i]));
+    const usedCount = new Map<string, number>();
+    editing.slides.forEach(s => { if (s.sourceKey) usedCount.set(s.sourceKey, (usedCount.get(s.sourceKey) || 0) + 1); });
+    const draggingSlideIds = dragging?.kind === 'slides' ? new Set(dragging.ids) : null;
+    const dragCount = dragging ? (dragging.kind === 'catalog' ? dragging.keys.length : dragging.ids.length) : 0;
+
+    // --- Selección en el catálogo (clic = marcar/desmarcar, Shift = rango) ---
+    const toggleCatalogItem = (key: string, e: React.MouseEvent) => {
+      setSelectedCatalogKeys(prev => {
+        const next = new Set(prev);
+        const anchor = catalogAnchorRef.current;
+        if (e.shiftKey && anchor && anchor !== key) {
+          const a = allCatalogItems.findIndex(i => i.key === anchor);
+          const b = allCatalogItems.findIndex(i => i.key === key);
+          if (a !== -1 && b !== -1) {
+            allCatalogItems.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(i => next.add(i.key));
+            return next;
+          }
+        }
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+      });
+      catalogAnchorRef.current = key;
+    };
+
+    const toggleBlockSelection = (block: PresentationBlock) => {
+      const keys = catalog[block].map(i => i.key);
+      setSelectedCatalogKeys(prev => {
+        const next = new Set(prev);
+        const allSelected = keys.every(k => next.has(k));
+        keys.forEach(k => (allSelected ? next.delete(k) : next.add(k)));
+        return next;
+      });
+    };
+
+    const addCatalogKeysAt = (keys: string[], index: number) => {
+      const makers = keys.map(k => catalogByKey.get(k)?.make).filter((m): m is () => PresentationSlide => !!m);
+      insertSlidesAt(makers, index);
+      setSelectedCatalogKeys(new Set());
+    };
+
+    // --- Selección de diapositivas (clic = una, Ctrl/Cmd = añadir, Shift = rango) ---
+    const clickSlide = (id: string, e: React.MouseEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        setSelectedSlideIds(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        });
+      } else if (e.shiftKey && selectedSlideId) {
+        const a = editing.slides.findIndex(s => s.id === selectedSlideId);
+        const b = editing.slides.findIndex(s => s.id === id);
+        if (a !== -1 && b !== -1) {
+          setSelectedSlideIds(new Set(editing.slides.slice(Math.min(a, b), Math.max(a, b) + 1).map(s => s.id)));
+        }
+        return;
+      } else {
+        setSelectedSlideIds(new Set([id]));
+      }
+      setSelectedSlideId(id);
+    };
+
+    // --- Drag & drop ---
+    const startDrag = (payload: DragPayload, e: React.DragEvent, label: string) => {
+      dragRef.current = payload;
+      setDragging(payload);
+      e.dataTransfer.effectAllowed = payload.kind === 'catalog' ? 'copy' : 'move';
+      e.dataTransfer.setData('text/plain', payload.kind);
+      setDragGhost(e, label, payload.kind === 'catalog' ? payload.keys.length : payload.ids.length);
+    };
+
+    const onCatalogDragStart = (item: CatalogItem, e: React.DragEvent) => {
+      const keys = selectedCatalogKeys.has(item.key)
+        ? allCatalogItems.filter(i => selectedCatalogKeys.has(i.key)).map(i => i.key)
+        : [item.key];
+      startDrag({ kind: 'catalog', keys }, e, item.label);
+    };
+
+    const onSlideDragStart = (slide: PresentationSlide, e: React.DragEvent) => {
+      if ((e.target as HTMLElement).closest?.('input')) { e.preventDefault(); return; }
+      const ids = selectedSlideIds.has(slide.id)
+        ? editing.slides.filter(s => selectedSlideIds.has(s.id)).map(s => s.id)
+        : [slide.id];
+      startDrag({ kind: 'slides', ids }, e, slide.title || BLOCK_LABELS[slide.block]);
+    };
+
+    const endDrag = () => {
+      dragRef.current = null;
+      setDragging(null);
+      setDropIndex(null);
+    };
+
+    // Índice de inserción según la posición vertical del cursor respecto al centro de cada diapositiva
+    const computeDropIndex = (clientY: number) => {
+      for (let i = 0; i < editing.slides.length; i++) {
+        const el = rowRefs.current.get(editing.slides[i].id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (clientY < r.top + r.height / 2) return i;
+      }
+      return editing.slides.length;
+    };
+
+    const onPanelDragOver = (e: React.DragEvent) => {
+      const payload = dragRef.current;
+      if (!payload) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = payload.kind === 'catalog' ? 'copy' : 'move';
+      const idx = computeDropIndex(e.clientY);
+      if (idx !== dropIndex) setDropIndex(idx);
+      // Auto-scroll al acercarse a los bordes de la lista
+      const list = listRef.current;
+      if (list) {
+        const r = list.getBoundingClientRect();
+        if (e.clientY < r.top + 48) list.scrollTop -= 14;
+        else if (e.clientY > r.bottom - 48) list.scrollTop += 14;
+      }
+    };
+
+    const onPanelDragLeave = (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropIndex(null);
+    };
+
+    const onPanelDrop = (e: React.DragEvent) => {
+      const payload = dragRef.current;
+      if (!payload) return;
+      e.preventDefault();
+      const idx = dropIndex ?? computeDropIndex(e.clientY);
+      if (payload.kind === 'catalog') addCatalogKeysAt(payload.keys, idx);
+      else moveSlidesTo(payload.ids, idx);
+      endDrag();
+    };
+
+    const dropLine = (position: 'top' | 'bottom') => (
+      <div className={`pointer-events-none absolute left-0 right-0 z-20 flex items-center ${position === 'top' ? '-top-[6px]' : '-bottom-[6px]'}`}>
+        <span className="w-2.5 h-2.5 rounded-full bg-brand-red-500 ring-4 ring-brand-red-500/25 shrink-0" />
+        <span className="flex-1 h-[3px] bg-brand-red-500 rounded-full shadow-[0_0_12px_rgba(239,68,68,0.9)]" />
+        <span className="ml-2 text-[10px] font-bold uppercase tracking-wider bg-brand-red-600 text-white px-2 py-0.5 rounded-full shadow-lg shrink-0">
+          {dragging?.kind === 'catalog' ? `+${dragCount} aquí` : dragCount > 1 ? `Mover ${dragCount}` : 'Mover aquí'}
+        </span>
+      </div>
+    );
+
     return (
       <div className="bg-brand-black-card border border-brand-black-border rounded-2xl p-4 sm:p-6 shadow-premium">
         {/* Cabecera del editor */}
@@ -541,34 +728,92 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Catálogo de contenido */}
-          <div className="bg-brand-black border border-brand-black-border rounded-xl p-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2 mb-3">
-              <Plus className="w-4 h-4 text-brand-red-600" /> Contenido disponible
-            </h4>
+          <div className="bg-brand-black border border-brand-black-border rounded-xl p-4 flex flex-col">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2">
+                <Plus className="w-4 h-4 text-brand-red-600" /> Contenido disponible
+              </h4>
+            </div>
+            <p className="text-[11px] text-brand-gray-dark mb-3 flex items-center gap-1.5">
+              <GripVertical className="w-3 h-3" /> Clic para seleccionar varios · arrástralos a las diapositivas
+            </p>
+
+            {/* Barra de selección */}
+            {selectedCatalogKeys.size > 0 && (
+              <div className="flex items-center gap-2 mb-3 bg-brand-red-950/40 border border-brand-red-600/50 rounded-lg px-3 py-2">
+                <span className="text-[11px] font-black text-white bg-brand-red-600 rounded-full px-2 py-0.5">{selectedCatalogKeys.size}</span>
+                <span className="text-xs text-brand-gray-light flex-1">seleccionado{selectedCatalogKeys.size === 1 ? '' : 's'} · arrastra para colocar</span>
+                <button
+                  onClick={() => addCatalogKeysAt(allCatalogItems.filter(i => selectedCatalogKeys.has(i.key)).map(i => i.key), editing.slides.length)}
+                  className="text-[11px] font-semibold text-white bg-brand-red-600 hover:bg-brand-red-500 px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Al final
+                </button>
+                <button onClick={() => setSelectedCatalogKeys(new Set())} className="p-1 text-brand-gray-muted hover:text-white" title="Quitar selección">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {!catalogHasContent ? (
               <p className="text-xs text-brand-gray-dark italic py-6 text-center">
                 No hay contenido para añadir todavía. Crea campogramas, informes o clips en las secciones anteriores.
               </p>
             ) : (
-              <div className="space-y-4 max-h-[520px] overflow-y-auto no-scrollbar pr-1">
+              <div className="space-y-4 max-h-[560px] overflow-y-auto no-scrollbar pr-1">
                 {BLOCK_ORDER.filter(b => catalog[b].length > 0).map(block => {
                   const Icon = blockIcon[block];
+                  const blockKeys = catalog[block].map(i => i.key);
+                  const blockSelected = blockKeys.filter(k => selectedCatalogKeys.has(k)).length;
                   return (
                     <div key={block}>
-                      <h5 className="text-[11px] font-bold text-brand-red-500 uppercase tracking-wider flex items-center gap-1.5 mb-2 sticky top-0 bg-brand-black py-1">
-                        <Icon className="w-3.5 h-3.5" /> {BLOCK_LABELS[block]}
-                      </h5>
+                      <div className="flex items-center justify-between gap-2 mb-2 sticky top-0 z-10 bg-brand-black py-1.5 border-b border-brand-black-border">
+                        <h5 className="text-[11px] font-bold text-brand-red-500 uppercase tracking-wider flex items-center gap-1.5">
+                          <Icon className="w-3.5 h-3.5" /> {BLOCK_LABELS[block]}
+                          <span className="text-[10px] font-semibold text-brand-gray-dark normal-case tracking-normal">({catalog[block].length})</span>
+                        </h5>
+                        <button
+                          onClick={() => toggleBlockSelection(block)}
+                          className="text-[10px] font-semibold text-brand-gray-muted hover:text-white px-1.5 py-0.5 rounded hover:bg-brand-black-card transition-colors"
+                        >
+                          {blockSelected === blockKeys.length ? 'Ninguno' : 'Seleccionar todo'}
+                        </button>
+                      </div>
                       <div className="space-y-1.5">
-                        {catalog[block].map(item => (
-                          <button
-                            key={item.key}
-                            onClick={() => addSlide(item.make)}
-                            className="w-full flex items-center gap-2 bg-black border border-brand-black-border rounded-lg px-3 py-2 text-left hover:border-brand-red-600/50 transition-colors group"
-                          >
-                            <Plus className="w-3.5 h-3.5 text-brand-gray-muted group-hover:text-brand-red-500 shrink-0" />
-                            <span className="flex-1 min-w-0 truncate text-xs text-brand-gray-light group-hover:text-white">{item.label}</span>
-                          </button>
-                        ))}
+                        {catalog[block].map(item => {
+                          const isSel = selectedCatalogKeys.has(item.key);
+                          const used = usedCount.get(item.key) || 0;
+                          const isBeingDragged = dragging?.kind === 'catalog' && dragging.keys.includes(item.key);
+                          return (
+                            <div
+                              key={item.key}
+                              draggable
+                              onDragStart={e => onCatalogDragStart(item, e)}
+                              onDragEnd={endDrag}
+                              onClick={e => toggleCatalogItem(item.key, e)}
+                              onDoubleClick={() => addCatalogKeysAt([item.key], editing.slides.length)}
+                              title="Clic: seleccionar · Arrastrar: colocar en la presentación · Doble clic: añadir al final"
+                              className={`w-full flex items-center gap-2.5 border rounded-lg px-2.5 py-2 text-left cursor-grab active:cursor-grabbing select-none transition-all group ${
+                                isSel
+                                  ? 'bg-brand-red-950/40 border-brand-red-500 shadow-[0_0_0_1px_rgba(239,68,68,0.25)]'
+                                  : 'bg-black border-brand-black-border hover:border-brand-red-600/50 hover:bg-brand-black-card'
+                              } ${isBeingDragged ? 'opacity-40 scale-[0.98]' : ''}`}
+                            >
+                              <span className={`w-4 h-4 rounded-[5px] border flex items-center justify-center shrink-0 transition-colors ${
+                                isSel ? 'bg-brand-red-600 border-brand-red-500' : 'border-brand-gray-dark group-hover:border-brand-gray-muted'
+                              }`}>
+                                {isSel && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                              </span>
+                              <span className={`flex-1 min-w-0 truncate text-xs ${isSel ? 'text-white font-semibold' : 'text-brand-gray-light group-hover:text-white'}`}>{item.label}</span>
+                              {used > 0 && (
+                                <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 rounded-full px-1.5 py-0.5 shrink-0" title="Ya está en la presentación">
+                                  ✓{used > 1 ? ` ×${used}` : ''}
+                                </span>
+                              )}
+                              <GripVertical className="w-3.5 h-3.5 text-brand-gray-dark group-hover:text-brand-gray-muted shrink-0" />
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -577,8 +822,15 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
             )}
           </div>
 
-          {/* Diapositivas ordenadas */}
-          <div className="bg-brand-black border border-brand-black-border rounded-xl p-4">
+          {/* Diapositivas ordenadas (zona de soltado) */}
+          <div
+            onDragOver={onPanelDragOver}
+            onDragLeave={onPanelDragLeave}
+            onDrop={onPanelDrop}
+            className={`bg-brand-black border rounded-xl p-4 transition-all ${
+              dragging ? 'border-brand-red-600/60 shadow-[0_0_0_3px_rgba(220,38,38,0.12)]' : 'border-brand-black-border'
+            }`}
+          >
             <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
               <h4 className="text-xs font-bold uppercase tracking-wider text-brand-gray-muted flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-brand-red-600" /> Diapositivas
@@ -598,33 +850,67 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
               </div>
             </div>
 
+            {/* Barra de selección múltiple de diapositivas */}
+            {selectedSlideIds.size > 1 && (
+              <div className="flex items-center gap-2 mb-3 bg-brand-red-950/40 border border-brand-red-600/50 rounded-lg px-3 py-2">
+                <span className="text-[11px] font-black text-white bg-brand-red-600 rounded-full px-2 py-0.5">{selectedSlideIds.size}</span>
+                <span className="text-xs text-brand-gray-light flex-1">diapositivas seleccionadas · arrastra para mover</span>
+                <button
+                  onClick={() => removeSlides([...selectedSlideIds])}
+                  className="text-[11px] font-semibold text-brand-gray-light hover:text-white hover:bg-brand-red-600 border border-brand-red-600/50 px-2.5 py-1 rounded-md flex items-center gap-1 transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" /> Eliminar
+                </button>
+                <button onClick={() => { setSelectedSlideIds(new Set()); setSelectedSlideId(null); }} className="p-1 text-brand-gray-muted hover:text-white" title="Quitar selección">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {editing.slides.length === 0 ? (
-              <div className="text-center py-12 text-brand-gray-muted text-sm border border-dashed border-brand-black-border rounded-xl">
-                <LayoutGrid className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                Añade contenido desde la izquierda.
+              <div className={`text-center py-16 text-sm border-2 border-dashed rounded-xl transition-all ${
+                dragging ? 'border-brand-red-500 bg-brand-red-950/20 text-white' : 'border-brand-black-border text-brand-gray-muted'
+              }`}>
+                <LayoutGrid className={`w-7 h-7 mx-auto mb-2 ${dragging ? 'text-brand-red-500 animate-pulse' : 'opacity-40'}`} />
+                {dragging ? `Suelta aquí para añadir ${dragCount} diapositiva${dragCount === 1 ? '' : 's'}` : 'Arrastra contenido desde la izquierda.'}
               </div>
             ) : (
-              <div className="space-y-2 max-h-[520px] overflow-y-auto no-scrollbar pr-1">
+              <div ref={listRef} className="space-y-2 max-h-[560px] overflow-y-auto no-scrollbar px-1 py-1.5">
                 {editing.slides.map((slide, idx) => {
-                  const TypeIcon = slideTypeIcon(slide.type);
                   const prevBlock = idx > 0 ? editing.slides[idx - 1].block : null;
                   const showBlockHeader = slide.block !== prevBlock;
-                  const isSelected = selectedSlideId === slide.id;
+                  const isSelected = selectedSlideIds.has(slide.id) || (selectedSlideId === slide.id && selectedSlideIds.size === 0);
+                  const isDragged = !!draggingSlideIds?.has(slide.id);
+                  const isFlash = flashIds.has(slide.id);
+                  const BlockIcon = blockIcon[slide.block];
                   return (
-                    <React.Fragment key={slide.id}>
+                    <div
+                      key={slide.id}
+                      ref={el => { if (el) rowRefs.current.set(slide.id, el); else rowRefs.current.delete(slide.id); }}
+                      className="relative"
+                    >
+                      {dragging && dropIndex === idx && dropLine('top')}
                       {showBlockHeader && (
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-brand-gray-dark pt-2 pb-0.5 px-1">{BLOCK_LABELS[slide.block]}</div>
+                        <div className="flex items-center gap-2 pt-2 pb-1.5 px-1">
+                          <BlockIcon className="w-3.5 h-3.5 text-brand-red-500" />
+                          <span className="text-[10px] font-black uppercase tracking-[0.14em] text-brand-gray-light">{BLOCK_LABELS[slide.block]}</span>
+                          <span className="flex-1 h-px bg-gradient-to-r from-brand-red-600/50 to-transparent" />
+                        </div>
                       )}
                       <div
-                        onClick={() => setSelectedSlideId(slide.id)}
-                        className={`flex items-center gap-3 border rounded-xl p-2.5 transition-all cursor-pointer ${
+                        draggable
+                        onDragStart={e => onSlideDragStart(slide, e)}
+                        onDragEnd={endDrag}
+                        onClick={e => clickSlide(slide.id, e)}
+                        className={`flex items-center gap-2.5 border rounded-xl p-2.5 transition-all cursor-grab active:cursor-grabbing group ${
                           isSelected
                             ? 'ring-2 ring-brand-red-500 bg-brand-red-950/30 border-brand-red-500 shadow-lg'
                             : slide.type === 'cover'
                             ? 'bg-gradient-to-r from-brand-red-950/40 via-black to-black border-brand-red-600/60 shadow-md'
                             : 'bg-black border-brand-black-border/80 hover:border-brand-gray-muted'
-                        }`}
+                        } ${isDragged ? 'opacity-30 scale-[0.98]' : ''} ${isFlash ? 'ring-2 ring-emerald-500/70' : ''}`}
                       >
+                        <GripVertical className="w-4 h-4 text-brand-gray-dark group-hover:text-brand-gray-muted shrink-0 -mr-1" />
                         <span className="text-[10px] font-mono text-brand-gray-muted w-4 text-center shrink-0">{idx + 1}</span>
 
                         {/* Diapositiva en miniatura (Thumbnail Preview) */}
@@ -690,13 +976,18 @@ export const OpponentPresentationBuilder: React.FC<Props> = ({ analysis, present
                         </div>
 
                         {/* Acciones */}
-                        <div className="flex items-center shrink-0 gap-0.5">
-                          <button onClick={() => moveSlide(idx, -1)} disabled={idx === 0} className="p-1 text-brand-gray-muted hover:text-white disabled:opacity-20"><ChevronUp className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => moveSlide(idx, 1)} disabled={idx === editing.slides.length - 1} className="p-1 text-brand-gray-muted hover:text-white disabled:opacity-20"><ChevronDown className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => removeSlide(slide.id)} className="p-1 text-brand-gray-muted hover:text-brand-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <div className="flex items-center shrink-0">
+                          <button
+                            onClick={e => { e.stopPropagation(); removeSlides([slide.id]); }}
+                            className="p-1.5 rounded-md text-brand-gray-muted hover:text-white hover:bg-brand-red-600 opacity-60 group-hover:opacity-100 transition-all"
+                            title="Eliminar diapositiva"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
-                    </React.Fragment>
+                      {dragging && dropIndex === editing.slides.length && idx === editing.slides.length - 1 && dropLine('bottom')}
+                    </div>
                   );
                 })}
               </div>
