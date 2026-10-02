@@ -4,6 +4,7 @@ import { dataService } from '../services/data';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../context/ToastContext';
 import { Modal } from '../components/Modal';
+import { TimeInput } from '../components/TimeInput';
 import { Training, Match, SocialEvent, Team } from '../types';
 import {
   Dumbbell, Trophy, ChevronLeft, ChevronRight, Calendar as CalendarIcon,
@@ -1230,11 +1231,10 @@ export const Calendar: React.FC = () => {
             </div>
             <div>
               <label className="form-label">Hora</label>
-              <input
-                type="time"
-                className="form-input"
+              <TimeInput
                 value={trainingForm.time}
-                onChange={(e) => setTrainingForm(prev => ({ ...prev, time: e.target.value }))}
+                onChange={(val) => setTrainingForm(prev => ({ ...prev, time: val }))}
+                placeholder="HH:MM (ej. 18:00)"
                 required
               />
             </div>
@@ -1343,11 +1343,10 @@ export const Calendar: React.FC = () => {
             </div>
             <div>
               <label className="form-label">Hora</label>
-              <input
-                type="time"
-                className="form-input"
+              <TimeInput
                 value={matchForm.time}
-                onChange={(e) => setMatchForm(prev => ({ ...prev, time: e.target.value }))}
+                onChange={(val) => setMatchForm(prev => ({ ...prev, time: val }))}
+                placeholder="HH:MM (ej. 18:00)"
                 required
               />
             </div>
@@ -1539,11 +1538,10 @@ export const Calendar: React.FC = () => {
             </div>
             <div>
               <label className="form-label">Hora</label>
-              <input
-                type="time"
-                className="form-input"
+              <TimeInput
                 value={socialForm.time}
-                onChange={(e) => setSocialForm(prev => ({ ...prev, time: e.target.value }))}
+                onChange={(val) => setSocialForm(prev => ({ ...prev, time: val }))}
+                placeholder="HH:MM (ej. 21:00)"
                 required
               />
             </div>

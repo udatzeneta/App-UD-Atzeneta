@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
+import { TimeInput } from '../components/TimeInput';
 import { Training } from '../types';
 import { exportToCSV, exportToPDF, ExportCell } from '../utils/export';
 import {
@@ -126,7 +127,7 @@ export const Trainings: React.FC = () => {
   const handleOpenEditModal = (t: Training) => {
     setEditingTraining(t);
     setDate(t.date);
-    setTime(t.time);
+    setTime(t.time ? t.time.slice(0, 5) : '18:00');
     setLocation(t.location);
     setDuration(String(t.duration));
     setObjective(t.objective);
@@ -542,11 +543,10 @@ export const Trainings: React.FC = () => {
             </div>
             <div>
               <label className="form-label">Hora de Inicio</label>
-              <input
-                type="time"
-                className="form-input"
+              <TimeInput
                 value={time}
-                onChange={(e) => setTime(e.target.value)}
+                onChange={setTime}
+                placeholder="HH:MM (ej. 18:00)"
               />
             </div>
           </div>

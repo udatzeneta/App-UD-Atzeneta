@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { TableSkeleton } from '../components/Skeletons';
 import { Modal } from '../components/Modal';
+import { TimeInput } from '../components/TimeInput';
 import { Match, Team, Player } from '../types';
 import { exportToCSV, exportToPDF, ExportCell, exportCallupToPDF } from '../utils/export';
 import {
@@ -324,7 +325,7 @@ export const Matches: React.FC = () => {
       setSelectedSquadPlayerIds(calledUpIds);
 
       // Cargar valores actuales del partido
-      setCallupTime(match.callup_time || '');
+      setCallupTime(match.callup_time ? match.callup_time.slice(0, 5) : '');
       setCallupLocation(match.callup_location || '');
       setKitShirtColor(match.kit_shirt_color || '#C1121F');
       setKitShortsColor(match.kit_shorts_color || '#000000');
@@ -684,7 +685,7 @@ export const Matches: React.FC = () => {
     setScoreUs(match.score_us !== null ? String(match.score_us) : '');
     setScoreThem(match.score_them !== null ? String(match.score_them) : '');
     setStatus(match.status);
-    setTime(match.time || '18:00');
+    setTime(match.time ? match.time.slice(0, 5) : '18:00');
     setMatchday(match.matchday || '');
     setLocation(match.location || '');
     setObjective(match.objective || '');
@@ -1549,11 +1550,10 @@ export const Matches: React.FC = () => {
             </div>
             <div>
               <label className="form-label">Hora</label>
-              <input
-                type="time"
-                className="form-input"
+              <TimeInput
                 value={time}
-                onChange={(e) => setTime(e.target.value)}
+                onChange={setTime}
+                placeholder="HH:MM (ej. 18:00)"
               />
             </div>
             <div>
@@ -1881,11 +1881,10 @@ export const Matches: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold text-brand-gray-muted uppercase tracking-wider block mb-1">Convocatoria (Hora)</label>
-                  <input
-                    type="time"
-                    className="form-input text-xs py-1.5 w-full bg-brand-black-bg"
+                  <TimeInput
                     value={callupTime}
-                    onChange={(e) => setCallupTime(e.target.value)}
+                    onChange={setCallupTime}
+                    placeholder="HH:MM (ej. 16:30)"
                   />
                 </div>
                 <div>
