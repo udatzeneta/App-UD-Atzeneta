@@ -4,18 +4,36 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/data';
 import { useAuth } from '../context/AuthContext';
 import { TableSkeleton } from '../components/Skeletons';
-import { 
-  Users, Plus, Edit2, Trash2, Scale, HeartPulse, Trophy, Activity, Calendar,
-  TrendingUp, Ruler, UserCheck, AlertTriangle, ShieldCheck, ChevronRight, Phone, Mail, Search,
-  Download, FileText, ChevronDown, Check, X, ShieldAlert, LayoutGrid, List as ListIcon, Map,
-  PlayCircle, Target, Navigation, BarChart2
+import {
+  Users, Plus, Edit2, Trash2, AlertTriangle, ChevronRight, Search,
+  Download, FileText, ShieldAlert, LayoutGrid, List as ListIcon, BarChart2
 } from 'lucide-react';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Player, PlayerWeight, PlayerPhysioRecord, TrainingAttendance, ScoutingPlayer } from '../types';
+import { Player, ScoutingPlayer } from '../types';
 import { Modal } from '../components/Modal';
 import { PhotoCropUpload } from '../components/PhotoCropUpload';
 import { useToast } from '../context/ToastContext';
-import { exportToCSV, exportToPDF, exportSquadToPDF } from '../utils/export';
+import { exportToCSV, exportSquadToPDF } from '../utils/export';
+import { computeSquad, CompetitionFilter, SquadRow, SEASON_LABEL, displayName, formatMatchShort } from '../components/players/squadStats';
+import { SquadTable, CardCycle, DisciplineBadge } from '../components/players/SquadTable';
+import { SquadAnalytics } from '../components/players/SquadAnalytics';
+import { DisciplinePanel } from '../components/players/DisciplinePanel';
+
+type ViewMode = 'list' | 'grid' | 'stats' | 'discipline';
+
+const POSITIONS = [
+  'Portero', 'Lateral Derecho', 'Lateral Izquierdo', 'Defensa Central', 'Pivote Defensivo', 'Mediocentro',
+  'Interior', 'Extremo Derecho', 'Extremo Izquierdo', 'Mediapunta', 'Delantero Centro'
+];
+
+const KpiTile: React.FC<{ label: string; children: React.ReactNode; onClick?: () => void; accent?: string }> = ({ label, children, onClick, accent }) => (
+  <div
+    onClick={onClick}
+    className={`bg-brand-black border border-brand-black-border rounded-xl px-4 py-3 ${onClick ? 'cursor-pointer hover:border-brand-gray-dark/60 transition-colors' : ''} ${accent || ''}`}
+  >
+    <p className="text-[10px] uppercase tracking-wider font-bold text-brand-gray-muted">{label}</p>
+    <div className="mt-1">{children}</div>
+  </div>
+);
 
 export const Players: React.FC = () => {
   const navigate = useNavigate();
@@ -42,22 +60,12 @@ export const Players: React.FC = () => {
     }
   }, [user?.team_category]);
 
-  type StatKey = 'minutes' | 'called' | 'starter' | 'goals' | 'assists' | 'conceded' | 'yellow' | 'red';
-  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
-  const [detailTab, setDetailTab] = useState<'ficha' | 'stats' | 'peso' | 'fisio'>('ficha');
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'stats'>('list');
-  const [filterCompetition, setFilterCompetition] = useState('Liga');
-  
-  // Controles de gráficas
-  const [scatterXAxis, setScatterXAxis] = useState<StatKey>('minutes');
-  const [scatterYAxis, setScatterYAxis] = useState<StatKey>('goals');
-  const [barMetric, setBarMetric] = useState<StatKey>('goals');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [filterCompetition, setFilterCompetition] = useState<CompetitionFilter>('Liga');
 
   // Modales
   const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
-  const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
-  const [isPhysioModalOpen, setIsPhysioModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [searchScoutingTerm, setSearchScoutingTerm] = useState('');
 
@@ -82,16 +90,6 @@ export const Players: React.FC = () => {
   const [assists, setAssists] = useState('0');
   const [yellowCards, setYellowCards] = useState('0');
   const [redCards, setRedCards] = useState('0');
-
-  // Campos formulario pesaje
-  const [newWeight, setNewWeight] = useState('');
-  const [weightDate, setWeightDate] = useState(new Date().toISOString().split('T')[0]);
-
-  // Campos formulario fisio
-  const [physioStatus, setPhysioStatus] = useState<'Disponible' | 'Lesionado' | 'En duda' | 'Baja'>('Disponible');
-  const [physioNotes, setPhysioNotes] = useState('');
-  const [physioTreatment, setPhysioTreatment] = useState('');
-  const [physioDate, setPhysioDate] = useState(new Date().toISOString().split('T')[0]);
 
   // React Query - Cargar Jugadores
   const { data: rawPlayers = [], isLoading } = useQuery({
@@ -118,127 +116,17 @@ export const Players: React.FC = () => {
     queryFn: () => dataService.getAllPlayerMatchStats()
   });
 
-  const getSanctionInfo = (yellowCards: number) => {
-    if (!yellowCards || yellowCards <= 0) return null;
-    if (yellowCards % 5 === 0) {
-      return {
-        type: 'sanction' as const,
-        count: yellowCards,
-        label: `Sanción (${yellowCards}ª Amarilla)`,
-        shortLabel: `${yellowCards}ª Amarilla`,
-        badgeClass: 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
-      };
-    }
-    if ((yellowCards + 1) % 5 === 0) {
-      return {
-        type: 'warning' as const,
-        count: yellowCards,
-        label: `Apercibido (${yellowCards}ª Amarilla)`,
-        shortLabel: `${yellowCards}ª Amarilla (Apercibido)`,
-        badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold'
-      };
-    }
-    return null;
-  };
-
-  // Rankings y Métricas Completa
-  const rankings = React.useMemo(() => {
-    const validMatches = allMatches.filter((m: any) => {
-      if (filterCompetition === 'Todas') return true;
-      if (!m.competition) return filterCompetition === 'Liga';
-      return m.competition.toLowerCase().trim() === filterCompetition.toLowerCase().trim();
-    });
-    const validMatchIds = new Set(validMatches.map((m: any) => m.id));
-    const validStats = allPlayerStats.filter((s: any) => validMatchIds.has(s.match_id));
-
-    const playerTotals: Record<string, { minutes: number, called: number, starter: number, goals: number, assists: number, conceded: number, yellow: number, red: number }> = {};
-
-    players.forEach((p: any) => {
-      const initialStats = {
-        minutes: p.minutes_played || 0,
-        called: p.matches_played || 0,
-        starter: 0,
-        goals: p.goals || 0,
-        assists: p.assists || 0,
-        conceded: 0,
-        yellow: p.yellow_cards || 0,
-        red: p.red_cards || 0
-      };
-      playerTotals[p.id] = initialStats;
-      if (p.profile_id) {
-        playerTotals[p.profile_id] = initialStats;
-      }
-    });
-
-    if (validStats.length > 0) {
-      const resetTargets = new Set<any>();
-      validStats.forEach((s: any) => {
-        const t = playerTotals[s.player_id];
-        if (!t) return;
-        if (!resetTargets.has(t)) {
-          t.minutes = 0;
-          t.called = 0;
-          t.starter = 0;
-          t.goals = 0;
-          t.assists = 0;
-          t.conceded = 0;
-          t.yellow = 0;
-          t.red = 0;
-          resetTargets.add(t);
-        }
-        if (s.is_called_up) t.called += 1;
-        if (s.is_starter) t.starter += 1;
-        t.minutes += (s.minutes_played || 0);
-        t.goals += (s.goals || 0);
-        t.assists += (s.assists || 0);
-        t.conceded += (s.conceded_goals || 0);
-        t.yellow += (s.yellow_cards || 0);
-        if (s.red_card) t.red += 1;
-      });
-    }
-
-    return players.map((p: any) => {
-      const stats = playerTotals[p.id] || { minutes: 0, called: 0, starter: 0, goals: 0, assists: 0, conceded: 0, yellow: 0, red: 0 };
-      const sanction = getSanctionInfo(stats.yellow);
-      return {
-        ...p,
-        stats,
-        sanction
-      };
-    });
-  }, [players, allMatches, allPlayerStats, filterCompetition]);
-
+  // Estadísticas de la temporada calculadas a partir de player_match_stats (prioridad: Liga)
+  const squad = React.useMemo(
+    () => computeSquad(players, allMatches, allPlayerStats, filterTeam, filterCompetition),
+    [players, allMatches, allPlayerStats, filterTeam, filterCompetition]
+  );
 
   // React Query - Cargar Jugadores de Scouting para Importar
   const { data: scoutingPlayers = [] } = useQuery({
     queryKey: ['scoutingForImport'],
     queryFn: () => dataService.getScouting(),
     enabled: isImportModalOpen
-  });
-
-  // React Query - Cargar Pesos del jugador seleccionado
-  const { data: weights = [], isLoading: isLoadingWeights } = useQuery({
-    queryKey: ['playerWeights', selectedPlayer?.id],
-    queryFn: () => selectedPlayer ? dataService.getPlayerWeights(selectedPlayer.id) : Promise.resolve([]),
-    enabled: !!selectedPlayer && detailTab === 'peso'
-  });
-
-  // React Query - Cargar Fisio del jugador seleccionado
-  const { data: physioRecords = [], isLoading: isLoadingPhysio } = useQuery({
-    queryKey: ['playerPhysio', selectedPlayer?.id],
-    queryFn: () => selectedPlayer ? dataService.getPlayerPhysioRecords(selectedPlayer.id) : Promise.resolve([]),
-    enabled: !!selectedPlayer && detailTab === 'fisio'
-  });
-
-  // React Query - Cargar Asistencia del jugador seleccionado
-  const { data: attendanceRecords = [], isLoading: isLoadingAttendance } = useQuery<TrainingAttendance[]>({
-    queryKey: ['playerAttendance', selectedPlayer?.id],
-    queryFn: async () => {
-      if (!selectedPlayer) return [];
-      const allAtt = await dataService.getTrainingAttendance();
-      return allAtt.filter((a: TrainingAttendance) => a.player_id === selectedPlayer.id);
-    },
-    enabled: !!selectedPlayer
   });
 
   // Mutaciones
@@ -256,11 +144,8 @@ export const Players: React.FC = () => {
 
   const updatePlayerMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Player> }) => dataService.updatePlayer(id, data),
-    onSuccess: (updated) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
-      if (selectedPlayer && selectedPlayer.id === updated.id) {
-        setSelectedPlayer(updated);
-      }
       showToast('success', 'Jugador Actualizado', 'Los datos del jugador han sido actualizados.');
       handleClosePlayerModal();
     },
@@ -273,7 +158,6 @@ export const Players: React.FC = () => {
     mutationFn: (id: string) => dataService.deletePlayer(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
-      setSelectedPlayer(null);
       showToast('success', 'Jugador Eliminado', 'Ficha eliminada de la base de datos.');
     },
     onError: (err: any) => {
@@ -281,71 +165,51 @@ export const Players: React.FC = () => {
     }
   });
 
-  const addWeightMutation = useMutation({
-    mutationFn: (weightRecord: Omit<PlayerWeight, 'id'>) => dataService.createPlayerWeight(weightRecord),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['playerWeights', selectedPlayer?.id] });
-      queryClient.invalidateQueries({ queryKey: ['players'] });
-      showToast('success', 'Peso Registrado', 'Nuevo control de peso añadido.');
-      setIsWeightModalOpen(false);
-      setNewWeight('');
-    },
-    onError: (err: any) => {
-      showToast('error', 'Error al registrar', err.message || 'No se pudo registrar el peso.');
-    }
-  });
-
-  const addPhysioMutation = useMutation({
-    mutationFn: (physioRecord: Omit<PlayerPhysioRecord, 'id'>) => dataService.createPlayerPhysioRecord(physioRecord),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['playerPhysio', selectedPlayer?.id] });
-      queryClient.invalidateQueries({ queryKey: ['players'] });
-      showToast('success', 'Parte Fisio Registrado', 'Nueva nota de fisioterapia añadida.');
-      setIsPhysioModalOpen(false);
-      setPhysioNotes('');
-      setPhysioTreatment('');
-    },
-    onError: (err: any) => {
-      showToast('error', 'Error al registrar', err.message || 'No se pudo registrar la nota de fisioterapia.');
-    }
-  });
-
-  // Filtros
+  // Filtros globales (buscador, posición, estado físico)
   const filteredPlayers = React.useMemo(() => {
-    return rankings.filter((p: any) => {
-      const matchesSearch = p.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        (p.position && p.position.toLowerCase().includes(searchTerm.toLowerCase()));
+    const q = searchTerm.trim().toLowerCase();
+    return squad.rows.filter(p => {
+      const matchesSearch = !q ||
+        p.full_name.toLowerCase().includes(q) ||
+        (p.nickname || '').toLowerCase().includes(q) ||
+        (p.position || '').toLowerCase().includes(q) ||
+        String(p.dorsal ?? '') === q;
       const matchesPosition = filterPosition === 'Todos' || p.position === filterPosition;
-      const matchesStatus = filterStatus === 'Todos' || p.physical_status === filterStatus;
-      const matchesTeam = (p.team_category || 'Primer Equipo') === filterTeam;
-      return matchesSearch && matchesPosition && matchesStatus && matchesTeam;
+      const matchesStatus = filterStatus === 'Todos' || (p.physical_status || 'Disponible') === filterStatus;
+      return matchesSearch && matchesPosition && matchesStatus;
     });
-  }, [rankings, searchTerm, filterPosition, filterStatus, filterTeam]);
+  }, [squad.rows, searchTerm, filterPosition, filterStatus]);
 
-  // 11 Más Utilizados (XI Titular Habitual)
-  const mostUsed11 = React.useMemo(() => {
-    return [...filteredPlayers]
-      .sort((a: any, b: any) => {
-        if (b.stats.starter !== a.stats.starter) {
-          return b.stats.starter - a.stats.starter;
-        }
-        return b.stats.minutes - a.stats.minutes;
-      })
-      .slice(0, 11);
-  }, [filteredPlayers]);
+  // Filas visibles en la tabla (tras filtros por columna y orden), usadas para exportar
+  const [tableRows, setTableRows] = useState<SquadRow[]>([]);
+  const exportRows = viewMode === 'list' && tableRows.length ? tableRows : filteredPlayers;
 
-  const topPlayers = (key: keyof typeof rankings[0]['stats'], ascending = false) => {
-    return [...rankings]
-      .filter((p: any) => {
-        if (key === 'conceded') {
-          return (p.position === 'Portero' || p.position?.toLowerCase().includes('portero')) && p.stats?.minutes > 0;
-        }
-        if (ascending) return true;
-        return (p.stats?.[key] || 0) > 0;
-      })
-      .sort((a: any, b: any) => ascending ? (a.stats?.[key] || 0) - (b.stats?.[key] || 0) : (b.stats?.[key] || 0) - (a.stats?.[key] || 0))
-      .slice(0, 5);
-  };
+  // KPIs del equipo
+  const kpis = React.useMemo(() => {
+    const s = squad.teamSeries;
+    const w = s.filter(x => x.result === 'V').length;
+    const d = s.filter(x => x.result === 'E').length;
+    const l = s.filter(x => x.result === 'D').length;
+    const gf = s.reduce((a, x) => a + x.gf, 0);
+    const gc = s.reduce((a, x) => a + x.gc, 0);
+    const pts = w * 3 + d;
+    const usedPlayers = squad.rows.filter(r => r.stats.minutes > 0).length;
+    const sanctioned = squad.rows.filter(r => r.discipline.state === 'sancionado').length;
+    const warned = squad.rows.filter(r => r.discipline.state === 'apercibido').length;
+    const unavailable = squad.rows.filter(r => !r.isGuest && r.physical_status && r.physical_status !== 'Disponible').length;
+    return { played: s.length, w, d, l, gf, gc, pts, usedPlayers, sanctioned, warned, unavailable, form: s.slice(-5) };
+  }, [squad]);
+
+  const leaders = React.useMemo(() => {
+    const top = (fn: (r: SquadRow) => number) => [...squad.rows].filter(r => fn(r) > 0).sort((a, b) => fn(b) - fn(a))[0];
+    return {
+      scorer: top(r => r.stats.goals),
+      assister: top(r => r.stats.assists),
+      minutes: top(r => r.stats.minutes)
+    };
+  }, [squad.rows]);
+
+  const openPlayer = (p: { id: string }) => navigate(`/players/${p.id}`);
 
   // Reset del formulario de jugador
   const handleOpenCreateModal = () => {
@@ -486,380 +350,70 @@ export const Players: React.FC = () => {
     }
   };
 
-  const handleAddWeightSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newWeight || !selectedPlayer) return;
-    
-    addWeightMutation.mutate({
-      player_id: selectedPlayer.id,
-      weight: parseFloat(newWeight),
-      date: weightDate
-    });
-  };
-
-  const handleAddPhysioSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!physioNotes.trim() || !selectedPlayer) return;
-
-    addPhysioMutation.mutate({
-      player_id: selectedPlayer.id,
-      status: physioStatus,
-      notes: physioNotes,
-      treatment: physioTreatment || undefined,
-      date: physioDate
-    });
-  };
-
-  const handleExportPlayerReport = async (player: Player) => {
-    if (!player) return;
-    showToast('info', 'Generando Reporte', 'Preparando el informe PDF de la ficha del jugador...');
-    
-    try {
-      const { jsPDF } = await import('jspdf');
-      const html2canvas = (await import('html2canvas')).default;
-
-      // Crear contenedor temporal
-      const reportEl = document.createElement('div');
-      reportEl.style.position = 'fixed';
-      reportEl.style.left = '-9999px';
-      reportEl.style.top = '-9999px';
-      reportEl.style.width = '700px';
-      reportEl.style.padding = '35px';
-      reportEl.style.background = '#ffffff';
-      reportEl.style.color = '#1f2937';
-      reportEl.style.fontFamily = 'system-ui, sans-serif';
-      
-      const totalSessions = attendanceRecords.length;
-      const sessionsTrained = attendanceRecords.filter((a: TrainingAttendance) => a.status === 'Entrena').length;
-      const attendanceRate = totalSessions > 0 ? ((sessionsTrained / totalSessions) * 100).toFixed(0) : '0';
-
-      reportEl.innerHTML = `
-        <div style="border: 2px solid #C1121F; padding: 25px; border-radius: 12px; background: #ffffff;">
-          <!-- Cabecera con Escudo y Título -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e5e7eb; padding-bottom: 15px; margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-              <img src="https://appwebffcv.novanet.es/pnfg/pimg/Clubes/00100_0074479982_ESCUDO_U.D._ATZENETA_PT.png" style="width: 55px; height: 55px; object-fit: contain;" crossorigin="anonymous" />
-              <div>
-                <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #C1121F; letter-spacing: 0.5px;">U.D. ATZENETA DE CASTELLÓN</h1>
-                <span style="font-size: 10px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Informe de Rendimiento y Ficha Técnica</span>
-              </div>
-            </div>
-            <div style="text-align: right;">
-              <span style="font-size: 10px; color: #9ca3af; font-weight: bold;">TEMPORADA 2025/2026</span>
-              <p style="margin: 3px 0 0 0; font-size: 9px; color: #6b7280;">Generado: ${new Date().toLocaleDateString('es-ES')}</p>
-            </div>
-          </div>
-
-          <!-- Perfil Principal del Jugador -->
-          <div style="display: flex; gap: 25px; background: #f9fafb; border: 1px solid #e5e7eb; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <div style="width: 100px; height: 100px; border-radius: 50%; overflow: hidden; border: 2px solid #C1121F; background: #ffffff; display: flex; align-items: center; justify-content: center; shrink-0;">
-              ${player.photo_url 
-                ? `<img src="${player.photo_url}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />`
-                : `<div style="font-size: 32px; color: #9ca3af; font-weight: bold; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #e5e7eb;">${player.nickname ? player.nickname[0] : player.full_name[0]}</div>`
-              }
-            </div>
-            
-            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left;">
-              <div style="grid-column: span 2;">
-                <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: #111827;">
-                  ${player.nickname || player.full_name} ${player.dorsal ? `<span style="color: #C1121F; font-size: 13px; background: rgba(193, 18, 31, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: bold;">#${player.dorsal}</span>` : ''}
-                </h2>
-                ${player.nickname ? `<p style="margin: 3px 0 0 0; font-size: 11px; color: #6b7280;">Nombre Completo: <strong>${player.full_name}</strong></p>` : ''}
-              </div>
-              
-              <div style="margin-top: 5px;">
-                <span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Posición Táctica</span>
-                <strong style="font-size: 11px; color: #1f2937;">${player.position || 'No definida'}</strong>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Pie Dominante</span>
-                <strong style="font-size: 11px; color: #1f2937;">${player.dominant_foot || 'No definido'}</strong>
-              </div>
-              <div>
-                <span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Estatura / Peso</span>
-                <strong style="font-size: 11px; color: #1f2937;">${player.height ? `${player.height} cm` : '-'} / ${player.weight ? `${player.weight} kg` : '-'}</strong>
-              </div>
-              <div>
-                <span style="font-size: 8px; color: #9ca3af; font-weight: bold; text-transform: uppercase; display: block;">Estado Físico</span>
-                <strong style="font-size: 11px; color: ${player.physical_status === 'Disponible' ? '#10b981' : player.physical_status === 'Lesionado' ? '#ef4444' : '#f59e0b'};">${player.physical_status || 'Disponible'}</strong>
-              </div>
-            </div>
-          </div>
-
-          <!-- Grid de Métricas de Rendimiento -->
-          <div style="margin-bottom: 20px; text-align: left;">
-            <h3 style="margin: 0 0 10px 0; font-size: 12px; font-weight: 700; color: #C1121F; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Rendimiento Deportivo y Asistencia</h3>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Partidos</span>
-                <strong style="font-size: 15px; color: #111827; display: block; margin-top: 3px;">${player.matches_played}</strong>
-              </div>
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Minutos</span>
-                <strong style="font-size: 15px; color: #111827; display: block; margin-top: 3px;">${player.minutes_played}'</strong>
-              </div>
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Goles / Asistencias</span>
-                <strong style="font-size: 15px; color: #10b981; display: block; margin-top: 3px;">${player.goals} / ${player.assists}</strong>
-              </div>
-              <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 10px; border-radius: 6px; text-align: center;">
-                <span style="font-size: 8px; color: #6b7280; font-weight: bold; text-transform: uppercase; display: block;">Asistencia</span>
-                <strong style="font-size: 15px; color: #3b82f6; display: block; margin-top: 3px;">${attendanceRate}%</strong>
-                <span style="font-size: 8px; color: #6b7280;">(${sessionsTrained}/${totalSessions} ses.)</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Historial de Peso y Fisioterapia -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; text-align: left;">
-            <!-- Columna Peso -->
-            <div>
-              <h3 style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; color: #C1121F; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">Evolución de Peso</h3>
-              ${weights.length === 0 
-                ? '<p style="font-size: 10px; color: #9ca3af; font-style: italic;">Sin registros de peso.</p>'
-                : `
-                  <table style="width: 100%; border-collapse: collapse; font-size: 9px;">
-                    <thead>
-                      <tr style="border-bottom: 1px solid #e5e7eb; text-align: left; color: #6b7280;">
-                        <th style="padding: 4px 0;">Fecha</th>
-                        <th style="padding: 4px 0; text-align: right;">Peso (kg)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${weights.slice(-5).map(w => `
-                        <tr style="border-bottom: 1px solid #f3f4f6;">
-                          <td style="padding: 4px 0; color: #374151;">${w.date}</td>
-                          <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #111827;">${w.weight} kg</td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
-                  </table>
-                `
-              }
-            </div>
-            
-            <!-- Columna Fisioterapia -->
-            <div>
-              <h3 style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; color: #C1121F; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">Fisioterapia y Observaciones</h3>
-              ${physioRecords.length === 0 
-                ? '<p style="font-size: 10px; color: #9ca3af; font-style: italic;">Sin partes médicos.</p>'
-                : `
-                  <div style="display: flex; flex-direction: column; gap: 6px;">
-                    ${physioRecords.slice(0, 2).map(r => `
-                      <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 6px 8px; border-radius: 4px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 8px; color: #6b7280; font-weight: bold; margin-bottom: 2px;">
-                          <span>${r.date}</span>
-                          <span style="color: ${r.status === 'Disponible' ? '#10b981' : '#ef4444'}">${r.status.toUpperCase()}</span>
-                        </div>
-                        <p style="margin: 0; font-size: 9px; color: #374151; line-height: 1.2;">${r.notes}</p>
-                        ${r.treatment ? `<p style="margin: 3px 0 0 0; font-size: 8px; color: #10b981; font-weight: bold;">Fisio: <span style="font-weight: normal; color: #4b5563;">${r.treatment}</span></p>` : ''}
-                      </div>
-                    `).join('')}
-                  </div>
-                `
-              }
-            </div>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(reportEl);
-
-      const canvas = await html2canvas(reportEl, {
-        useCORS: true,
-        allowTaint: false,
-        scale: 2
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-
-      const pdfW = pdf.internal.pageSize.getWidth();
-      const margin = 10;
-      const imgW = pdfW - 2 * margin;
-      const imgH = (canvas.height * imgW) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH);
-      pdf.save(`ficha_${player.nickname || player.full_name.replace(/\s+/g, '_')}.pdf`);
-
-      document.body.removeChild(reportEl);
-      showToast('success', 'PDF Generado', 'La ficha e informes de rendimiento se han descargado.');
-    } catch (err: any) {
-      console.error(err);
-      showToast('error', 'Error al exportar', 'No se pudo generar el informe en PDF.');
-    }
-  };
-
   // Exportar datos
   const handleExportCSV = () => {
-    if (filteredPlayers.length === 0) return;
-    const headers = ['Nombre', 'Dorsal', 'Posición', 'Pie Dominante', 'Estatura', 'Peso', 'PJ', 'Goles', 'Asistencias', 'Estado Físico'];
-    const rows = filteredPlayers.map(p => [
+    if (exportRows.length === 0) return;
+    const headers = [
+      'Dorsal', 'Nombre', 'Apodo', 'Posición', 'Convocatorias', 'PJ', 'Titular', 'Suplente', 'Minutos', '% Minutos', 'Min/PJ',
+      'Goles', 'Asistencias', 'G+A', 'Goles encajados', 'Amarillas', 'Rojas', 'Amarillas liga (ciclo)', 'Disciplina', 'Estado físico'
+    ];
+    const rows = exportRows.map(p => [
+      p.dorsal ?? '-',
       p.full_name,
-      p.dorsal || '-',
+      p.nickname || '-',
       p.position || '-',
-      p.dominant_foot || '-',
-      p.height ? `${p.height} cm` : '-',
-      p.weight ? `${p.weight} kg` : '-',
-      p.matches_played,
-      p.goals,
-      p.assists,
+      p.stats.called,
+      p.stats.played,
+      p.stats.starter,
+      p.stats.subIn,
+      p.stats.minutes,
+      p.stats.minutesPct,
+      p.stats.minPerMatch,
+      p.stats.goals,
+      p.stats.assists,
+      p.stats.ga,
+      p.stats.conceded,
+      p.stats.yellow,
+      p.stats.red,
+      p.discipline.yellowCycle,
+      p.discipline.state === 'sancionado' ? 'Sancionado' : p.discipline.state === 'apercibido' ? 'Apercibido' : '-',
       p.physical_status || 'Disponible'
     ]);
-    exportToCSV(`jugadores_ud_atzeneta`, headers, rows);
+    exportToCSV(`estadisticas_${filterTeam.replace(/\s+/g, '_').toLowerCase()}_${filterCompetition.toLowerCase()}`, headers, rows);
   };
 
   const handleExportPDF = async () => {
-    if (filteredPlayers.length === 0) return;
-    await exportSquadToPDF(filteredPlayers);
+    if (exportRows.length === 0) return;
+    await exportSquadToPDF(exportRows);
   };
 
-  // Render SVG para la gráfica evolutiva de peso
-  const renderWeightChart = () => {
-    if (weights.length === 0) {
-      return (
-        <div className="text-center py-8 text-brand-gray-muted italic text-xs">
-          No hay registros de peso suficientes para dibujar la gráfica.
-        </div>
-      );
-    }
-
-    const svgW = 500;
-    const svgH = 180;
-    const padX = 40;
-    const padY = 20;
-    const chartW = svgW - 2 * padX;
-    const chartH = svgH - 2 * padY;
-
-    const values = weights.map(w => w.weight);
-    const minWeight = Math.min(...values) - 2;
-    const maxWeight = Math.max(...values) + 2;
-    const range = maxWeight - minWeight || 4;
-
-    const points = weights.map((w, idx) => {
-      const x = padX + (idx / (weights.length - 1 || 1)) * chartW;
-      const y = padY + chartH - ((w.weight - minWeight) / range) * chartH;
-      return { x, y, weight: w.weight, date: w.date };
-    });
-
-    const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-
-    return (
-      <div className="space-y-2">
-        <div className="bg-brand-black border border-brand-black-border p-3 rounded-lg overflow-x-auto">
-          <svg width="100%" height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="min-w-[400px] overflow-visible">
-            {/* Gridlines */}
-            {[0, 0.5, 1].map((ratio, i) => {
-              const y = padY + chartH * ratio;
-              const wVal = (maxWeight - ratio * range).toFixed(1);
-              return (
-                <g key={i} className="opacity-20">
-                  <line x1={padX} y1={y} x2={padX + chartW} y2={y} stroke="#4b5563" strokeDasharray="3,3" />
-                  <text x={padX - 8} y={y + 3} fill="#9ca3af" fontSize="8" textAnchor="end">{wVal} kg</text>
-                </g>
-              );
-            })}
-
-            {/* Línea del gráfico */}
-            {points.length > 1 && (
-              <path
-                d={pathData}
-                fill="none"
-                stroke="#10b981"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {/* Puntos interactivos */}
-            {points.map((p, idx) => (
-              <g key={idx}>
-                <circle
-                  cx={p.x}
-                  cy={p.y}
-                  r="4"
-                  fill="#1f2937"
-                  stroke="#10b981"
-                  strokeWidth="2"
-                  className="cursor-pointer hover:r-6 hover:fill-emerald-500 transition-all"
-                />
-                <text
-                  x={p.x}
-                  y={p.y - 8}
-                  fill="#e5e7eb"
-                  fontSize="8"
-                  textAnchor="middle"
-                  fontWeight="bold"
-                >
-                  {p.weight}
-                </text>
-                {/* Fecha en el eje X */}
-                <text
-                  x={p.x}
-                  y={padY + chartH + 12}
-                  fill="#9ca3af"
-                  fontSize="7"
-                  textAnchor="middle"
-                >
-                  {p.date.split('-').slice(1).join('/')}
-                </text>
-              </g>
-            ))}
-          </svg>
-        </div>
-      </div>
-    );
-  };
+  const viewTabs: { key: ViewMode; label: string; icon: React.ElementType; badge?: number }[] = [
+    { key: 'list', label: 'Estadísticas', icon: ListIcon },
+    { key: 'stats', label: 'Gráficas', icon: BarChart2 },
+    { key: 'discipline', label: 'Tarjetas y sanciones', icon: ShieldAlert, badge: kpis.sanctioned + kpis.warned },
+    { key: 'grid', label: 'Fichas', icon: LayoutGrid }
+  ];
 
   return (
     <div className="space-y-4">
       {/* Cabecera */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-brand-gray-light flex items-center gap-2">
-            <Users className="w-6 h-6 text-brand-red-600" /> Plantilla y Fichas de Jugadores
+            <Users className="w-6 h-6 text-brand-red-600" /> Plantilla y Estadísticas
           </h2>
           <p className="text-sm text-brand-gray-muted mt-1">
-            Historial de pesajes periódicos, observaciones de fisioterapia y estadísticas deportivas.
+            Temporada {SEASON_LABEL} · datos calculados desde las actas de cada partido · {filterCompetition === 'Todas' ? 'todas las competiciones' : filterCompetition}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center bg-brand-black border border-brand-black-border rounded-lg p-0.5 mr-2">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
-              title="Vista de Fichas"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
-              title="Vista de Listado"
-            >
-              <ListIcon className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('stats')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'stats' ? 'bg-brand-black-hover text-brand-gray-light' : 'text-brand-gray-muted hover:text-brand-gray-light'}`}
-              title="Vista de Estadísticas"
-            >
-              <BarChart2 className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {canExport && (
             <>
-              <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs" title="Exportar CSV">
+              <button onClick={handleExportCSV} className="btn-secondary py-2 text-xs" title="Exportar las filas visibles a CSV">
                 <Download className="w-3.5 h-3.5" /> CSV
               </button>
-              <button onClick={handleExportPDF} className="btn-secondary py-2 text-xs" title="Exportar PDF">
+              <button onClick={handleExportPDF} className="btn-secondary py-2 text-xs" title="Exportar plantilla a PDF">
                 <FileText className="w-3.5 h-3.5" /> PDF
               </button>
             </>
@@ -880,929 +434,262 @@ export const Players: React.FC = () => {
       {/* Pestañas de Equipo */}
       {(user?.role_id === 1 || user?.role_id === 4 || user?.role_id === 2 || (user?.availableContexts && user.availableContexts.length > 0)) && (
         <div className="flex border-b border-brand-black-border">
-          <button
-            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Primer Equipo' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
-            onClick={() => { setFilterTeam('Primer Equipo'); setSelectedPlayer(null); }}
-          >
-            Primer Equipo
-          </button>
-          <button
-            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === 'Juvenil' ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
-            onClick={() => { setFilterTeam('Juvenil'); setSelectedPlayer(null); }}
-          >
-            Filial (Juvenil)
-          </button>
+          {[{ key: 'Primer Equipo', label: 'Primer Equipo' }, { key: 'Juvenil', label: 'Filial (Juvenil)' }].map(t => (
+            <button
+              key={t.key}
+              className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${filterTeam === t.key ? 'border-brand-red-600 text-brand-red-600' : 'border-transparent text-brand-gray-muted hover:text-brand-gray-light'}`}
+              onClick={() => setFilterTeam(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Buscador y Filtros */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-brand-black border border-brand-black-border p-2.5 rounded-lg">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-brand-gray-dark" />
-          <input
-            type="text"
-            className="form-input pl-10 w-full bg-brand-black-bg"
-            placeholder="Buscar jugador..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {/* KPIs del equipo */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <KpiTile label={`Partidos · ${filterCompetition === 'Todas' ? 'Total' : filterCompetition}`}>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-white tabular-nums">{kpis.played}</span>
+            <span className="text-xs font-bold tabular-nums">
+              <span className="text-emerald-400">{kpis.w}V</span> <span className="text-neutral-400">{kpis.d}E</span> <span className="text-red-400">{kpis.l}D</span>
+            </span>
+          </div>
+          <div className="flex gap-1 mt-1.5">
+            {kpis.form.map(f => (
+              <span
+                key={f.match.id}
+                title={`${f.label} · ${f.match.rival} ${f.gf}-${f.gc}`}
+                className={`w-5 h-5 rounded text-[10px] font-black flex items-center justify-center ${f.result === 'V' ? 'bg-emerald-500/20 text-emerald-400' : f.result === 'E' ? 'bg-neutral-500/20 text-neutral-300' : 'bg-red-500/20 text-red-400'}`}
+              >
+                {f.result}
+              </span>
+            ))}
+          </div>
+        </KpiTile>
+        <KpiTile label={filterCompetition === 'Liga' ? 'Puntos' : 'Puntos (equiv.)'}>
+          <span className="text-2xl font-black text-white tabular-nums">{kpis.pts}</span>
+          <span className="text-xs text-brand-gray-muted ml-1.5">{kpis.played ? (kpis.pts / kpis.played).toFixed(2) : '0.00'} / partido</span>
+        </KpiTile>
+        <KpiTile label="Goles a favor · en contra">
+          <span className="text-2xl font-black tabular-nums"><span className="text-emerald-400">{kpis.gf}</span><span className="text-brand-gray-dark mx-1">:</span><span className="text-red-400">{kpis.gc}</span></span>
+          <span className={`text-xs font-bold ml-1.5 ${kpis.gf - kpis.gc >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{kpis.gf - kpis.gc > 0 ? '+' : ''}{kpis.gf - kpis.gc}</span>
+        </KpiTile>
+        <KpiTile label="Jugadores utilizados">
+          <span className="text-2xl font-black text-white tabular-nums">{kpis.usedPlayers}</span>
+          <span className="text-xs text-brand-gray-muted ml-1.5">de {squad.rows.length}</span>
+          {kpis.unavailable > 0 && <p className="text-[10px] text-amber-400 mt-0.5">{kpis.unavailable} no disponibles (físico)</p>}
+        </KpiTile>
+        <KpiTile
+          label="Disciplina (liga)"
+          onClick={() => setViewMode('discipline')}
+          accent={kpis.sanctioned ? 'border-red-800/60 bg-red-950/20' : kpis.warned ? 'border-amber-800/50' : ''}
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1"><ShieldAlert className="w-4 h-4 text-red-400" /><span className="text-xl font-black text-white tabular-nums">{kpis.sanctioned}</span></span>
+            <span className="flex items-center gap-1"><AlertTriangle className="w-4 h-4 text-amber-400" /><span className="text-xl font-black text-white tabular-nums">{kpis.warned}</span></span>
+          </div>
+          <p className="text-[10px] text-brand-gray-muted mt-0.5">sancionados · apercibidos</p>
+        </KpiTile>
+        <KpiTile label="Líderes">
+          <div className="space-y-0.5 text-[11px]">
+            {[
+              { l: 'Goles', p: leaders.scorer, v: leaders.scorer?.stats.goals, c: 'text-emerald-400' },
+              { l: 'Asist.', p: leaders.assister, v: leaders.assister?.stats.assists, c: 'text-sky-400' },
+              { l: 'Min.', p: leaders.minutes, v: leaders.minutes ? `${leaders.minutes.stats.minutes}'` : undefined, c: 'text-white' }
+            ].map(x => (
+              <div key={x.l} className="flex items-center justify-between gap-2">
+                <span className="text-brand-gray-muted w-9">{x.l}</span>
+                <span className="font-semibold text-brand-gray-light truncate flex-1">{x.p ? displayName(x.p) : '—'}</span>
+                <span className={`font-black tabular-nums ${x.c}`}>{x.v ?? ''}</span>
+              </div>
+            ))}
+          </div>
+        </KpiTile>
+      </div>
+
+      {/* Vistas + Filtros */}
+      <div className="bg-brand-black border border-brand-black-border rounded-xl p-2.5 space-y-2.5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-1 bg-brand-black-bg border border-brand-black-border rounded-lg p-0.5 overflow-x-auto shrink-0">
+            {viewTabs.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setViewMode(t.key)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-colors ${viewMode === t.key ? 'bg-brand-black-hover text-white shadow-border-glow' : 'text-brand-gray-muted hover:text-white'}`}
+              >
+                <t.icon className="w-3.5 h-3.5" /> {t.label}
+                {!!t.badge && <span className="text-[9px] font-black bg-red-600 text-white rounded-full px-1.5 py-px">{t.badge}</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 bg-brand-black-bg border border-brand-black-border rounded-lg p-0.5 shrink-0" title={viewMode === 'discipline' ? 'El control de tarjetas siempre se calcula sobre la Liga' : 'Competición'}>
+            {(['Liga', 'Copa', 'Amistoso', 'Todas'] as CompetitionFilter[]).map(c => (
+              <button
+                key={c}
+                onClick={() => setFilterCompetition(c)}
+                disabled={viewMode === 'discipline'}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors disabled:opacity-40 ${filterCompetition === c ? 'bg-brand-red-600 text-white' : 'text-brand-gray-muted hover:text-white'}`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div>
-          <select
-            value={filterPosition}
-            onChange={(e) => setFilterPosition(e.target.value)}
-            className="form-input w-full bg-brand-black-bg"
-          >
-            <option value="Todos">Todas las Posiciones</option>
-            <option value="Portero">Portero</option>
-            <option value="Lateral Derecho">Lateral Derecho</option>
-            <option value="Lateral Izquierdo">Lateral Izquierdo</option>
-            <option value="Defensa Central">Defensa Central</option>
-            <option value="Pivote Defensivo">Pivote Defensivo</option>
-            <option value="Mediocentro">Mediocentro</option>
-            <option value="Interior">Interior</option>
-            <option value="Extremo Derecho">Extremo Derecho</option>
-            <option value="Extremo Izquierdo">Extremo Izquierdo</option>
-            <option value="Mediapunta">Mediapunta</option>
-            <option value="Delantero Centro">Delantero Centro</option>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-brand-gray-dark" />
+            <input
+              type="text"
+              className="form-input pl-9 w-full"
+              placeholder="Buscar jugador, dorsal o posición…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} className="form-input w-full">
+            <option value="Todos">Todas las posiciones</option>
+            {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-        </div>
-
-        <div>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="form-input w-full bg-brand-black-bg"
-          >
-            <option value="Todos">Todos los Estados Físicos</option>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="form-input w-full">
+            <option value="Todos">Todos los estados físicos</option>
             <option value="Disponible">Disponible</option>
             <option value="En duda">En duda</option>
             <option value="Lesionado">Lesionado</option>
             <option value="Baja">Baja</option>
           </select>
         </div>
-
-        <div>
-          <select
-            value={filterCompetition}
-            onChange={(e) => setFilterCompetition(e.target.value)}
-            className="form-input w-full bg-brand-black-bg text-brand-red-600 font-bold border-brand-red-600/30 focus:border-brand-red-600 focus:ring-brand-red-600/20"
-          >
-            <option value="Todas">Todas las Competiciones</option>
-            <option value="Liga">Liga</option>
-            <option value="Copa">Copa</option>
-            <option value="Amistoso">Amistoso</option>
-          </select>
-        </div>
       </div>
 
-      {/* Layout Grid - Jugadores a la izquierda, detalle a la derecha si hay seleccionado */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Listado de Jugadores */}
-        <div className={`${selectedPlayer ? 'lg:col-span-5' : 'lg:col-span-8'} space-y-4`}>
-          {isLoading ? (
-            <TableSkeleton />
-          ) : filteredPlayers.length === 0 ? (
-            <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center">
-              <p className="text-sm text-brand-gray-muted">No se encontraron fichas de jugadores.</p>
-            </div>
-          ) : viewMode === 'stats' ? (
-            <div className="space-y-6">
-              {/* 11 Más Utilizados (XI Titular Habitual) */}
-              <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 shadow-lg">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-brand-black-border">
-                  <div>
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                      <Trophy className="w-5 h-5 text-yellow-500" /> 11 Más Utilizados (XI Titular Habitual)
-                    </h3>
-                    <p className="text-xs text-brand-gray-muted mt-0.5">
-                      Los 11 jugadores que acumulan más partidos como titulares y minutos en la temporada.
-                    </p>
+      {/* Aviso de sancionados */}
+      {kpis.sanctioned > 0 && viewMode !== 'discipline' && (
+        <div className="flex items-center justify-between gap-3 bg-red-950/30 border border-red-800/50 rounded-lg px-4 py-2.5">
+          <p className="text-xs text-red-300 flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+            <span>
+              <strong>{squad.rows.filter(r => r.discipline.state === 'sancionado').map(r => displayName(r)).join(', ')}</strong>
+              {' '}{kpis.sanctioned === 1 ? 'está sancionado' : 'están sancionados'} para {squad.nextLeague ? formatMatchShort(squad.nextLeague) : 'el próximo partido de liga'}.
+            </span>
+          </p>
+          <button onClick={() => setViewMode('discipline')} className="text-[11px] font-bold text-red-300 hover:text-white flex items-center gap-1 shrink-0">
+            Ver control <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Contenido */}
+      {isLoading ? (
+        <TableSkeleton />
+      ) : squad.rows.length === 0 ? (
+        <div className="bg-brand-black border border-brand-black-border p-12 rounded-xl text-center">
+          <p className="text-sm text-brand-gray-muted">No se encontraron fichas de jugadores.</p>
+        </div>
+      ) : viewMode === 'stats' ? (
+        <SquadAnalytics rows={filteredPlayers} teamSeries={squad.teamSeries} competition={filterCompetition} onOpen={openPlayer} />
+      ) : viewMode === 'discipline' ? (
+        <DisciplinePanel rows={filteredPlayers} nextLeague={squad.nextLeague} leagueCards={squad.leagueCards} onOpen={openPlayer} />
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+          {filteredPlayers.map((player) => {
+            const statusColor =
+              (player.physical_status || 'Disponible') === 'Disponible' ? 'bg-emerald-950/20 text-emerald-400 border border-emerald-900/30' :
+              player.physical_status === 'En duda' ? 'bg-amber-950/20 text-amber-500 border border-amber-900/30' :
+              'bg-red-950/20 text-red-400 border border-red-900/30';
+            return (
+              <div
+                key={player.id}
+                onClick={() => openPlayer(player)}
+                className="dashboard-card p-4 flex flex-col justify-between cursor-pointer border hover:border-brand-red-600/35 transition-all group border-brand-black-border"
+              >
+                <div className="flex gap-3">
+                  <div className="w-12 h-12 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
+                    {player.photo_url ? (
+                      <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Users className="w-6 h-6 text-brand-gray-dark" />
+                    )}
                   </div>
-                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-brand-red-600/10 text-brand-red-400 border border-brand-red-600/30 shrink-0 w-fit">
-                    11 Titulares
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      {player.dorsal != null && (
+                        <span className="text-xs font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none shrink-0">
+                          {player.dorsal}
+                        </span>
+                      )}
+                      <h4 className="text-sm font-bold text-brand-gray-light truncate leading-tight group-hover:text-white transition-colors">
+                        {player.nickname || player.full_name}
+                      </h4>
+                    </div>
+                    {player.nickname && (
+                      <span className="text-[10px] text-brand-gray-muted truncate block mt-0.5">{player.full_name}</span>
+                    )}
+                    <span className="text-[10px] text-brand-gray-muted block mt-1 uppercase font-semibold">
+                      {player.position || 'Sin Demarcación'}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {mostUsed11.map((p: any, idx: number) => (
-                    <div
-                      key={p.id}
-                      onClick={() => navigate(`/players/${p.id}`)}
-                      className="bg-brand-black-card border border-brand-black-border hover:border-brand-red-600/50 p-3 rounded-lg flex items-center gap-3 cursor-pointer transition-all group relative overflow-hidden"
-                    >
-                      <div className="absolute top-1 right-2 text-[10px] font-mono font-bold text-brand-gray-dark">
-                        #{idx + 1}
-                      </div>
-                      <div className="w-10 h-10 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                        {p.photo_url ? (
-                          <img src={p.photo_url} alt={p.full_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <Users className="w-5 h-5 text-brand-gray-dark" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          {p.dorsal && (
-                            <span className="text-[10px] font-black text-brand-red-500 bg-brand-red-600/10 px-1 py-0.2 rounded shrink-0">
-                              {p.dorsal}
-                            </span>
-                          )}
-                          <span className="text-xs font-bold text-white truncate group-hover:text-brand-red-400 transition-colors">
-                            {p.nickname || p.full_name}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-brand-gray-muted block truncate mt-0.5">
-                          {p.position || 'Sin Posición'}
-                        </span>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-900/40">
-                            {p.stats.starter} Titular{p.stats.starter !== 1 ? 'es' : ''}
-                          </span>
-                          <span className="text-[10px] text-brand-gray-muted font-mono font-bold">
-                            {p.stats.minutes}' min
-                          </span>
-                        </div>
-                        {p.sanction && (
-                          <div className="mt-1.5">
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${p.sanction.badgeClass} flex items-center gap-1 w-fit`}>
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                              {p.sanction.shortLabel}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                <div className="grid grid-cols-4 gap-1 mt-4 text-center">
+                  {[
+                    { l: 'PJ', v: player.stats.played, c: 'text-white' },
+                    { l: 'Min', v: `${player.stats.minutes}'`, c: 'text-white' },
+                    { l: 'Gol', v: player.stats.goals, c: 'text-emerald-400' },
+                    { l: 'Asis', v: player.stats.assists, c: 'text-sky-400' }
+                  ].map(x => (
+                    <div key={x.l} className="bg-brand-black rounded-md py-1.5 border border-brand-black-border/60">
+                      <div className={`text-sm font-black tabular-nums ${x.c}`}>{x.v}</div>
+                      <div className="text-[9px] uppercase text-brand-gray-muted font-semibold">{x.l}</div>
                     </div>
                   ))}
                 </div>
-              </div>
 
-              {/* Control de Tarjetas y Sanciones por Ciclo de 5 Amarillas */}
-              <div className="bg-brand-black border border-brand-black-border rounded-xl p-5 shadow-lg">
-                <div className="flex items-center justify-between mb-3 pb-2 border-b border-brand-black-border">
-                  <div>
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-500" /> Control de Tarjetas y Sanciones (Ciclos de 5 Amarillas)
-                    </h3>
-                    <p className="text-xs text-brand-gray-muted mt-0.5">
-                      Monitoreo automático de sanciones por acumulación de 5 amarillas o apercibidos.
-                    </p>
+                <div className="flex items-center justify-between mt-3 border-t border-brand-black-border/40 pt-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
+                      {player.physical_status || 'Disponible'}
+                    </span>
+                    <DisciplineBadge row={player} />
                   </div>
+                  <CardCycle row={player} compact />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Cumplen Sanción (5, 10, 15... amarillas) */}
-                  <div className="bg-brand-black-card border border-red-900/30 p-3.5 rounded-lg space-y-2">
-                    <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <ShieldAlert className="w-4 h-4 text-red-500" /> Cumplen Sanción (5 / 10 / 15 Amarillas)
-                    </h4>
-                    {filteredPlayers.filter((p: any) => p.sanction?.type === 'sanction').length === 0 ? (
-                      <p className="text-xs text-brand-gray-muted italic py-1">Sin jugadores sancionados por ciclo de 5 amarillas.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredPlayers.filter((p: any) => p.sanction?.type === 'sanction').map((p: any) => (
-                          <div key={p.id} onClick={() => navigate(`/players/${p.id}`)} className="flex items-center justify-between bg-brand-black p-2 rounded border border-red-800/40 cursor-pointer hover:border-red-600 transition-colors">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-white">{p.nickname || p.full_name}</span>
-                              <span className="text-[10px] text-brand-gray-muted">({p.position || 'Sin demarcación'})</span>
-                            </div>
-                            <span className="text-xs font-black text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800 animate-pulse">
-                              🟨 {p.stats.yellow} Amarillas (Sanción)
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Apercibidos (4, 9, 14... amarillas) */}
-                  <div className="bg-brand-black-card border border-amber-900/30 p-3.5 rounded-lg space-y-2">
-                    <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-500" /> Apercibidos (4 / 9 / 14 Amarillas)
-                    </h4>
-                    {filteredPlayers.filter((p: any) => p.sanction?.type === 'warning').length === 0 ? (
-                      <p className="text-xs text-brand-gray-muted italic py-1">Sin jugadores apercibidos a 1 tarjeta del ciclo.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredPlayers.filter((p: any) => p.sanction?.type === 'warning').map((p: any) => (
-                          <div key={p.id} onClick={() => navigate(`/players/${p.id}`)} className="flex items-center justify-between bg-brand-black p-2 rounded border border-amber-800/40 cursor-pointer hover:border-amber-500 transition-colors">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-white">{p.nickname || p.full_name}</span>
-                              <span className="text-[10px] text-brand-gray-muted">({p.position || 'Sin demarcación'})</span>
-                            </div>
-                            <span className="text-xs font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800">
-                              ⚠️ {p.stats.yellow} Amarillas (Apercibido)
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Gráfica de Dispersión */}
-              <div className="bg-brand-black border border-brand-black-border rounded-xl p-6">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-brand-red-600" /> Comparativa de Dispersión
-                  </h3>
-                  <div className="flex gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-brand-gray-muted">Eje X:</span>
-                      <select value={scatterXAxis} onChange={e => setScatterXAxis(e.target.value as StatKey)} className="form-input py-1 text-xs min-w-[120px] bg-brand-black-bg">
-                        <option value="minutes">Minutos</option>
-                        <option value="goals">Goles</option>
-                        <option value="assists">Asistencias</option>
-                        <option value="starter">Partidos Titular</option>
-                        <option value="called">Convocatorias</option>
-                        <option value="conceded">Goles Encajados</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-brand-gray-muted">Eje Y:</span>
-                      <select value={scatterYAxis} onChange={e => setScatterYAxis(e.target.value as StatKey)} className="form-input py-1 text-xs min-w-[120px] bg-brand-black-bg">
-                        <option value="goals">Goles</option>
-                        <option value="assists">Asistencias</option>
-                        <option value="minutes">Minutos</option>
-                        <option value="starter">Partidos Titular</option>
-                        <option value="called">Convocatorias</option>
-                        <option value="conceded">Goles Encajados</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div className="h-80 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis type="number" dataKey={`stats.${scatterXAxis}`} name={scatterXAxis} stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                      <YAxis type="number" dataKey={`stats.${scatterYAxis}`} name={scatterYAxis} stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                      <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload;
-                          const valX = data.stats[scatterXAxis];
-                          const valY = data.stats[scatterYAxis];
-                          
-                          const matchingPlayers = rankings.filter((p: any) => p.stats[scatterXAxis] === valX && p.stats[scatterYAxis] === valY);
-
-                          return (
-                            <div className="bg-brand-black border border-brand-black-border p-3 rounded-lg shadow-xl max-w-[200px]">
-                              <div className="text-[10px] mb-2 pb-2 border-b border-brand-black-border flex justify-between gap-2">
-                                <p><span className="font-bold text-brand-red-400 capitalize">{scatterXAxis}:</span> {valX}</p>
-                                <p><span className="font-bold text-brand-red-400 capitalize">{scatterYAxis}:</span> {valY}</p>
-                              </div>
-                              <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar pr-1">
-                                {matchingPlayers.map((p: any) => (
-                                  <div key={p.id} className="flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-full overflow-hidden bg-brand-black-bg border border-brand-black-border shrink-0 flex items-center justify-center">
-                                      {p.photo_url ? (
-                                        <img src={p.photo_url} alt={p.nickname || p.full_name} className="w-full h-full object-cover" />
-                                      ) : (
-                                        <span className="text-[8px] font-bold text-brand-gray-light">{p.dorsal || '?'}</span>
-                                      )}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="font-bold text-white text-[11px] truncate leading-tight">{p.nickname || p.full_name}</p>
-                                      <p className="text-brand-gray-muted text-[9px] leading-tight truncate">{p.position || 'Sin demarc.'}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }} />
-                      <Scatter name="Jugadores" data={rankings} shape={(props: any) => {
-                        const { cx, cy, payload } = props;
-                        const displayName = payload.nickname || payload.full_name.split(' ')[0];
-                        const dorsalStr = payload.dorsal ? `${payload.dorsal}` : '?';
-                        const size = 32;
-                        
-                        return (
-                          <g transform={`translate(${cx},${cy})`} className="cursor-pointer hover:scale-125 transition-transform" style={{ transformOrigin: 'center' }}>
-                            {payload.photo_url ? (
-                              <foreignObject x={-size/2} y={-size/2} width={size} height={size} style={{ overflow: 'visible' }}>
-                                <div className="w-full h-full rounded-full overflow-hidden border-2 border-brand-red-600 shadow-lg bg-brand-black flex items-center justify-center relative">
-                                  <img src={payload.photo_url} alt={displayName} className="w-full h-full object-cover" />
-                                </div>
-                              </foreignObject>
-                            ) : (
-                              <foreignObject x={-size/2} y={-size/2} width={size} height={size} style={{ overflow: 'visible' }}>
-                                <div className="w-full h-full rounded-full overflow-hidden border-2 border-brand-red-600 shadow-lg bg-brand-black flex items-center justify-center">
-                                  <span className="text-[11px] font-black text-brand-gray-light leading-none">{dorsalStr}</span>
-                                </div>
-                              </foreignObject>
-                            )}
-                          </g>
-                        );
-                      }} />
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Gráfica de Barras */}
-              <div className="bg-brand-black border border-brand-black-border rounded-xl p-6">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <BarChart2 className="w-5 h-5 text-brand-red-600" /> Clasificación de Jugadores
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-brand-gray-muted">Métrica:</span>
-                    <select value={barMetric} onChange={e => setBarMetric(e.target.value as StatKey)} className="form-input py-1 text-xs min-w-[160px] bg-brand-black-bg">
-                      <option value="goals">Goles</option>
-                      <option value="assists">Asistencias</option>
-                      <option value="minutes">Minutos Jugados</option>
-                      <option value="starter">Partidos Titular</option>
-                      <option value="called">Convocatorias</option>
-                      <option value="yellow">Tarjetas Amarillas</option>
-                      <option value="red">Tarjetas Rojas</option>
-                      <option value="conceded">Goles Encajados</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="h-[400px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[...rankings].sort((a, b) => b.stats[barMetric] - a.stats[barMetric])} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                      <XAxis dataKey="nickname" stroke="#9ca3af" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" />
-                      <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                      <RechartsTooltip cursor={{ fill: '#374151', opacity: 0.4 }} content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload;
-                          return (
-                            <div className="bg-brand-black border border-brand-black-border p-3 rounded-lg shadow-xl">
-                              <p className="font-bold text-white text-sm">{data.nickname}</p>
-                              <p className="mt-1 text-xs"><span className="font-bold text-brand-red-400 capitalize">{barMetric}:</span> {data.stats[barMetric]}</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }} />
-                      <Bar dataKey={`stats.${barMetric}`} fill="#dc2626" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-          ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-4">
-              {filteredPlayers.map((player) => {
-                const isSelected = selectedPlayer?.id === player.id;
-                const statusColor = 
-                  player.physical_status === 'Disponible' ? 'bg-emerald-950/20 text-emerald-400 border border-emerald-900/30' :
-                  player.physical_status === 'En duda' ? 'bg-amber-950/20 text-amber-500 border border-amber-900/30' :
-                  'bg-red-950/20 text-red-400 border border-red-900/30';
-                
-                return (
-                  <div 
-                    key={player.id} 
-                    onClick={() => {
-                      navigate(`/players/${player.id}`);
-                    }}
-                    className={`dashboard-card p-4 flex flex-col justify-between cursor-pointer border hover:border-brand-red-600/35 transition-all group border-brand-black-border`}
-                  >
-                    <div className="flex gap-3">
-                      {/* Foto */}
-                      <div className="w-12 h-12 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                        {player.photo_url ? (
-                          <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <Users className="w-6 h-6 text-brand-gray-dark" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          {player.dorsal && (
-                            <span className="text-xs font-black text-brand-red-600 bg-brand-red-600/10 px-1.5 py-0.5 rounded leading-none shrink-0">
-                              {player.dorsal}
-                            </span>
-                          )}
-                          <h4 className="text-sm font-bold text-brand-gray-light truncate leading-tight group-hover:text-white transition-colors">
-                            {player.nickname || player.full_name}
-                          </h4>
-                        </div>
-                        {player.nickname && (
-                          <span className="text-[10px] text-brand-gray-muted truncate block mt-0.5">
-                            {player.full_name}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-brand-gray-muted block mt-1 uppercase font-semibold">
-                          {player.position || 'Sin Demarcación'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between mt-4 border-t border-brand-black-border/40 pt-3">
-                      {/* Estado */}
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
-                          {player.physical_status || 'Disponible'}
-                        </span>
-                        {player.sanction && (
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full border ${player.sanction.badgeClass}`} title={player.sanction.label}>
-                            {player.sanction.shortLabel}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Métricas breves */}
-                      <span className="text-[10px] text-brand-gray-muted">
-                        <span className="font-bold text-emerald-400">{player.stats?.goals || 0}</span> G / <span className="font-bold text-brand-gray-light">{player.stats?.starter || 0}</span> Tit / <span className="font-bold text-brand-gray-light">{player.stats?.minutes || 0}'</span>
-                      </span>
-                    </div>
-
-                    {/* Botones de Acción Rápida */}
-                    {(canEdit || canDelete) && (
-                      <div className="flex gap-1.5 mt-3 border-t border-brand-black-border/40 pt-3">
-                        {canEdit && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditModal(player);
-                            }}
-                            className="flex-1 flex items-center justify-center gap-1.5 p-1.5 text-xs text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-card border border-brand-black-border rounded transition-all"
-                            title="Editar"
-                          >
-                            <Edit2 className="w-3 h-3" /> Editar
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeletePlayer(player.id, player.full_name);
-                            }}
-                            className="flex-1 flex items-center justify-center gap-1.5 p-1.5 text-xs text-brand-gray-muted hover:text-brand-red-600 hover:bg-brand-red-600/5 border border-brand-black-border hover:border-brand-red-600/30 rounded transition-all"
-                            title="Eliminar"
-                          >
-                            <Trash2 className="w-3 h-3" /> Eliminar
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="bg-brand-black border border-brand-black-border rounded-xl overflow-x-auto">
-              <table className="w-full text-left text-sm text-brand-gray-light min-w-[800px]">
-                <thead className="bg-brand-black-bg border-b border-brand-black-border text-xs uppercase text-brand-gray-muted">
-                  <tr>
-                    <th className="px-3 py-3 font-semibold">Jugador</th>
-                    <th className="px-3 py-3 font-semibold">Posición</th>
-                    <th className="px-3 py-3 font-semibold text-center">PJ</th>
-                    <th className="px-3 py-3 font-semibold text-center">Titular</th>
-                    <th className="px-3 py-3 font-semibold text-center">Minutos</th>
-                    <th className="px-3 py-3 font-semibold text-center">Goles</th>
-                    <th className="px-3 py-3 font-semibold text-center">Asist.</th>
-                    <th className="px-3 py-3 font-semibold text-center">🟨 Amarillas</th>
-                    <th className="px-3 py-3 font-semibold text-center">🟥 Rojas</th>
-                    <th className="px-3 py-3 font-semibold text-center">Estado</th>
-                    {(canEdit || canDelete) && <th className="px-3 py-3 font-semibold text-right">Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPlayers.map((player) => {
-                    const isSelected = selectedPlayer?.id === player.id;
-                    const statusColor = 
-                      player.physical_status === 'Disponible' ? 'bg-emerald-950/20 text-emerald-400 border border-emerald-900/30' :
-                      player.physical_status === 'En duda' ? 'bg-amber-950/20 text-amber-500 border border-amber-900/30' :
-                      'bg-red-950/20 text-red-400 border border-red-900/30';
-
-                    return (
-                      <tr 
-                        key={player.id}
-                        onClick={() => navigate(`/players/${player.id}`)}
-                        className="border-b border-brand-black-border/50 hover:bg-brand-black-hover transition-colors cursor-pointer group text-xs"
+                {(canEdit || canDelete) && (
+                  <div className="flex gap-1.5 mt-3 border-t border-brand-black-border/40 pt-3">
+                    {canEdit && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleOpenEditModal(player); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 p-1.5 text-xs text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-card border border-brand-black-border rounded transition-all"
                       >
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                              {player.photo_url ? (
-                                <img src={player.photo_url} alt={player.full_name} className="w-full h-full object-cover" />
-                              ) : (
-                                <Users className="w-4 h-4 text-brand-gray-dark" />
-                              )}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                {player.dorsal && (
-                                  <span className="text-[10px] font-black text-brand-red-600 bg-brand-red-600/10 px-1 py-0.5 rounded leading-none">
-                                    {player.dorsal}
-                                  </span>
-                                )}
-                                <span className="font-bold text-sm text-brand-gray-light group-hover:text-white transition-colors">
-                                  {player.nickname || player.full_name}
-                                </span>
-                              </div>
-                              {player.nickname && (
-                                <span className="text-[10px] text-brand-gray-muted block mt-0.5">
-                                  {player.full_name}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs">
-                          <span className="text-brand-gray-muted uppercase font-semibold text-[10px]">
-                            {player.position || 'Sin Demarcación'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center font-bold text-white">
-                          {player.stats?.called || player.matches_played || 0}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center font-bold text-emerald-400">
-                          {player.stats?.starter || 0}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center font-mono font-bold text-brand-gray-light">
-                          {player.stats?.minutes || 0}'
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center font-bold text-emerald-400">
-                          {player.stats?.goals || 0}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center font-bold text-brand-gray-light">
-                          {player.stats?.assists || 0}
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span className="font-semibold text-yellow-400">{player.stats?.yellow || 0}</span>
-                            {player.sanction && (
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded border ${player.sanction.badgeClass}`} title={player.sanction.label}>
-                                {player.sanction.shortLabel}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-center font-bold text-red-500">
-                          {player.stats?.red || 0}
-                        </td>
-                        <td className="px-3 py-2.5 text-center">
-                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColor}`}>
-                            {player.physical_status || 'Disponible'}
-                          </span>
-                        </td>
-                        {(canEdit || canDelete) && (
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-1.5 transition-opacity">
-                              {canEdit && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenEditModal(player);
-                                  }}
-                                  className="p-1.5 text-brand-gray-muted hover:text-brand-gray-light hover:bg-brand-black-card border border-brand-black-border rounded transition-all"
-                                  title="Editar"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {canDelete && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeletePlayer(player.id, player.full_name);
-                                  }}
-                                  className="p-1.5 text-brand-gray-muted hover:text-brand-red-600 hover:bg-brand-red-600/5 border border-brand-black-border hover:border-brand-red-600/30 rounded transition-all"
-                                  title="Eliminar"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                        <Edit2 className="w-3 h-3" /> Editar
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeletePlayer(player.id, player.full_name); }}
+                        className="flex-1 flex items-center justify-center gap-1.5 p-1.5 text-xs text-brand-gray-muted hover:text-brand-red-600 hover:bg-brand-red-600/5 border border-brand-black-border hover:border-brand-red-600/30 rounded transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" /> Eliminar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-
-        {/* Panel de Rankings */}
-        {!selectedPlayer && (
-          <div className="lg:col-span-4 space-y-4">
-            <div className="dashboard-card p-5 border-brand-red-600/20">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-brand-red-600" /> Rankings ({filterCompetition})
-              </h3>
-              
-              <div className="space-y-6">
-                {[
-                  { title: 'Minutos Jugados', key: 'minutes', icon: Activity, asc: false, suffix: "'" },
-                  { title: 'Partidos Titular', key: 'starter', icon: PlayCircle, asc: false },
-                  { title: 'Convocatorias', key: 'called', icon: ListIcon, asc: false },
-                  { title: 'Goles Marcados', key: 'goals', icon: Target, asc: false },
-                  { title: 'Asistencias', key: 'assists', icon: Navigation, asc: false },
-                  { title: 'Goles Encajados (Porteros)', key: 'conceded', icon: ShieldAlert, asc: true },
-                  { title: 'Tarjetas Amarillas', key: 'yellow', icon: AlertTriangle, asc: false },
-                  { title: 'Tarjetas Rojas', key: 'red', icon: ShieldAlert, asc: false },
-                ].map(category => (
-                  <div key={category.key}>
-                    <h4 className="text-xs font-bold text-brand-gray-muted uppercase mb-2 flex items-center gap-1.5 border-b border-brand-black-border pb-1">
-                      <category.icon className="w-3.5 h-3.5 text-brand-red-600" /> {category.title}
-                    </h4>
-                    <ul className="space-y-2">
-                      {topPlayers(category.key as any, category.asc).map((p: any, idx) => (
-                        <li key={p.id} className="flex items-center justify-between group">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] font-black text-brand-gray-dark w-3 text-right">{idx + 1}.</span>
-                            {p.photo_url ? (
-                              <img src={p.photo_url} alt={p.full_name} className="w-5 h-5 rounded-full object-cover shrink-0 border border-brand-black-border" />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full bg-brand-black border border-brand-black-border flex items-center justify-center shrink-0">
-                                <span className="text-[8px] text-brand-gray-muted font-bold">{p.nickname?.[0] || p.full_name[0]}</span>
-                              </div>
-                            )}
-                            <span className="text-xs text-brand-gray-light font-medium truncate group-hover:text-brand-red-400 transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/players/${p.id}`); }}>
-                              {p.nickname || p.full_name.split(' ')[0]}
-                            </span>
-                          </div>
-                          <span className="text-xs font-black text-white shrink-0 ml-2">
-                            {p.stats[category.key]}{category.suffix || ''}
-                          </span>
-                        </li>
-                      ))}
-                      {topPlayers(category.key as any, category.asc).length === 0 && (
-                        <li className="text-[10px] text-brand-gray-dark italic">No hay datos suficientes</li>
-                      )}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Panel de Detalles del Jugador */}
-        {selectedPlayer && (
-          <div className="lg:col-span-7 dashboard-card p-6 border border-brand-red-600/20 flex flex-col justify-between space-y-6">
-            
-            {/* Header del Detalle */}
-            <div className="flex justify-between items-start border-b border-brand-black-border pb-4">
-              <div className="flex gap-4">
-                <div className="w-16 h-16 rounded-xl border border-brand-black-border bg-brand-black overflow-hidden flex items-center justify-center shrink-0">
-                  {selectedPlayer.photo_url ? (
-                    <img src={selectedPlayer.photo_url} alt={selectedPlayer.full_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <Users className="w-8 h-8 text-brand-gray-dark" />
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    {selectedPlayer.dorsal && (
-                      <span className="text-sm font-black text-brand-red-600 bg-brand-red-600/10 px-2 py-0.5 rounded">
-                        {selectedPlayer.dorsal}
-                      </span>
-                    )}
-                    <h3 className="text-lg font-bold text-brand-gray-light">
-                      {selectedPlayer.nickname || selectedPlayer.full_name}
-                    </h3>
-                  </div>
-                  {selectedPlayer.nickname && (
-                    <p className="text-xs text-brand-gray-muted mt-0.5">
-                      Nombre completo: <span className="text-brand-gray-light font-medium">{selectedPlayer.full_name}</span>
-                    </p>
-                  )}
-                  <p className="text-xs text-brand-gray-muted mt-1 uppercase font-semibold">
-                    {selectedPlayer.position || 'Sin Demarcación'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => handleExportPlayerReport(selectedPlayer)}
-                  className="px-2.5 py-1.5 bg-brand-red-600/10 hover:bg-brand-red-600 text-brand-gray-light hover:text-white border border-brand-red-600/25 hover:border-brand-red-600 rounded transition-all flex items-center gap-1.5 text-xs font-semibold"
-                  title="Exportar PDF de Ficha"
-                >
-                  <FileText className="w-3.5 h-3.5" /> PDF Ficha
-                </button>
-                {canEdit && (
-                  <button 
-                    onClick={() => handleOpenEditModal(selectedPlayer)}
-                    className="p-1.5 hover:bg-brand-black-hover border border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light rounded transition-all"
-                    title="Editar Ficha"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                {canDelete && (
-                  <button 
-                    onClick={() => handleDeletePlayer(selectedPlayer.id, selectedPlayer.full_name)}
-                    className="p-1.5 hover:bg-brand-red-600/10 border border-brand-black-border hover:border-brand-red-600/30 text-brand-gray-muted hover:text-brand-red-600 rounded transition-all"
-                    title="Borrar Ficha"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button 
-                  onClick={() => setSelectedPlayer(null)}
-                  className="p-1.5 hover:bg-brand-black-hover border border-brand-black-border text-brand-gray-muted hover:text-brand-gray-light rounded transition-all"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Pestañas internas */}
-            <div className="flex border-b border-brand-black-border/60">
-              <button
-                onClick={() => setDetailTab('ficha')}
-                className={`py-2 px-3 text-xs font-bold border-b-2 transition-all ${
-                  detailTab === 'ficha' ? 'border-brand-red-600 text-brand-gray-light' : 'border-transparent text-brand-gray-muted'
-                }`}
-              >
-                Ficha Técnica
-              </button>
-              <button
-                onClick={() => setDetailTab('stats')}
-                className={`py-2 px-3 text-xs font-bold border-b-2 transition-all ${
-                  detailTab === 'stats' ? 'border-brand-red-600 text-brand-gray-light' : 'border-transparent text-brand-gray-muted'
-                }`}
-              >
-                Estadísticas
-              </button>
-              <button
-                onClick={() => setDetailTab('peso')}
-                className={`py-2 px-3 text-xs font-bold border-b-2 transition-all ${
-                  detailTab === 'peso' ? 'border-brand-red-600 text-brand-gray-light' : 'border-transparent text-brand-gray-muted'
-                }`}
-              >
-                Control de Peso
-              </button>
-              <button
-                onClick={() => setDetailTab('fisio')}
-                className={`py-2 px-3 text-xs font-bold border-b-2 transition-all ${
-                  detailTab === 'fisio' ? 'border-brand-red-600 text-brand-gray-light' : 'border-transparent text-brand-gray-muted'
-                }`}
-              >
-                Fisioterapia / Control Físico
-              </button>
-            </div>
-
-            {/* Contenido Pestañas */}
-            <div className="flex-1 py-2">
-              
-              {/* FICHA TÉCNICA */}
-              {detailTab === 'ficha' && (
-                <div className="grid grid-cols-2 gap-4 text-left">
-                  <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg">
-                    <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Pie Dominante</span>
-                    <span className="text-sm font-semibold text-brand-gray-light mt-1 block flex items-center gap-1.5">
-                      <Activity className="w-3.5 h-3.5 text-brand-red-600" /> {selectedPlayer.dominant_foot || 'No definido'}
-                    </span>
-                  </div>
-                  <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg">
-                    <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Estatura</span>
-                    <span className="text-sm font-semibold text-brand-gray-light mt-1 block flex items-center gap-1.5">
-                      <Ruler className="w-3.5 h-3.5 text-brand-red-600" /> {selectedPlayer.height ? `${selectedPlayer.height} cm` : 'No definido'}
-                    </span>
-                  </div>
-                  <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg">
-                    <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Peso Actual</span>
-                    <span className="text-sm font-semibold text-brand-gray-light mt-1 block flex items-center gap-1.5">
-                      <Scale className="w-3.5 h-3.5 text-brand-red-600" /> {selectedPlayer.weight ? `${selectedPlayer.weight} kg` : 'No definido'}
-                    </span>
-                  </div>
-                  <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg">
-                    <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Fecha Nacimiento</span>
-                    <span className="text-sm font-semibold text-brand-gray-light mt-1 block flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-brand-red-600" /> {selectedPlayer.birth_date || 'No definido'}
-                    </span>
-                  </div>
-                  <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg">
-                    <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Teléfono de Contacto</span>
-                    <span className="text-sm font-semibold text-brand-gray-light mt-1 block flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-brand-red-600" /> {selectedPlayer.phone || 'No definido'}
-                    </span>
-                  </div>
-                  <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg">
-                    <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Correo Electrónico</span>
-                    <span className="text-sm font-semibold text-brand-gray-light mt-1 block flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-brand-red-600" /> {selectedPlayer.email || 'No definido'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* ESTADÍSTICAS */}
-              {detailTab === 'stats' && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-left">
-                    <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg text-center">
-                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Partidos Jugados</span>
-                      <span className="text-xl font-extrabold text-brand-gray-light mt-1 block">{selectedPlayer.matches_played}</span>
-                    </div>
-                    <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg text-center">
-                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Minutos Jugados</span>
-                      <span className="text-xl font-extrabold text-brand-gray-light mt-1 block">{selectedPlayer.minutes_played}'</span>
-                    </div>
-                    <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg text-center">
-                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Goles Anotados</span>
-                      <span className="text-xl font-extrabold text-emerald-500 mt-1 block">+{selectedPlayer.goals}</span>
-                    </div>
-                    <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg text-center">
-                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Asistencias Clave</span>
-                      <span className="text-xl font-extrabold text-indigo-400 mt-1 block">+{selectedPlayer.assists}</span>
-                    </div>
-                    <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg text-center">
-                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Tarjetas Amarillas</span>
-                      <span className="text-xl font-extrabold text-yellow-500 mt-1 block">{selectedPlayer.yellow_cards}</span>
-                    </div>
-                    <div className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg text-center">
-                      <span className="text-[9px] text-brand-gray-muted uppercase font-bold block">Tarjetas Rojas</span>
-                      <span className="text-xl font-extrabold text-brand-red-600 mt-1 block">{selectedPlayer.red_cards}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* CONTROL DE PESO */}
-              {detailTab === 'peso' && (
-                <div className="space-y-4 text-left">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-brand-gray-light">Histórico y Evolución del Peso</span>
-                    {canEdit && (
-                      <button 
-                        onClick={() => setIsWeightModalOpen(true)}
-                        className="btn-primary py-1 px-2.5 text-[10px] flex items-center gap-1"
-                      >
-                        <Scale className="w-3.5 h-3.5" /> Registrar Control
-                      </button>
-                    )}
-                  </div>
-                  {isLoadingWeights ? (
-                    <div className="text-center py-8 text-brand-gray-muted text-xs">Cargando historial de peso...</div>
-                  ) : (
-                    renderWeightChart()
-                  )}
-                </div>
-              )}
-
-              {/* FISIOTERAPIA */}
-              {detailTab === 'fisio' && (
-                <div className="space-y-4 text-left">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-brand-gray-light">Historial de Partes Médicos</span>
-                    {canEdit && (
-                      <button 
-                        onClick={() => setIsPhysioModalOpen(true)}
-                        className="btn-primary py-1 px-2.5 text-[10px] flex items-center gap-1"
-                      >
-                        <HeartPulse className="w-3.5 h-3.5" /> Nuevo Parte Fisio
-                      </button>
-                    )}
-                  </div>
-                  
-                  {isLoadingPhysio ? (
-                    <div className="text-center py-8 text-brand-gray-muted text-xs">Cargando historial médico...</div>
-                  ) : physioRecords.length === 0 ? (
-                    <div className="bg-brand-black/20 border border-dashed border-brand-black-border p-6 rounded-lg text-center text-xs text-brand-gray-muted italic">
-                      No hay registros ni partes de fisioterapia cargados para este jugador.
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1 no-scrollbar">
-                      {physioRecords.map((rec) => {
-                        const statusBadge = 
-                          rec.status === 'Disponible' ? 'bg-emerald-950/20 text-emerald-400' :
-                          rec.status === 'En duda' ? 'bg-amber-950/20 text-amber-500' :
-                          'bg-red-950/20 text-red-400';
-                        return (
-                          <div key={rec.id} className="bg-brand-black/30 border border-brand-black-border p-3 rounded-lg space-y-1">
-                            <div className="flex justify-between items-center border-b border-brand-black-border/30 pb-1.5 mb-1.5">
-                              <span className="text-[10px] text-brand-gray-muted font-bold flex items-center gap-1">
-                                <Calendar className="w-3 h-3" /> {rec.date}
-                              </span>
-                              <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${statusBadge}`}>
-                                {rec.status}
-                              </span>
-                            </div>
-                            <p className="text-xs text-brand-gray-light leading-normal">{rec.notes}</p>
-                            {rec.treatment && (
-                              <p className="text-[10px] text-emerald-400 mt-1 leading-normal italic">
-                                🩺 Tratamiento: <span className="text-brand-gray-muted not-italic">{rec.treatment}</span>
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </div>
-          </div>
-        )}
-      </div>
+      ) : (
+        <SquadTable
+          rows={filteredPlayers}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onOpen={openPlayer}
+          onEdit={handleOpenEditModal}
+          onDelete={(p) => handleDeletePlayer(p.id, p.full_name)}
+          onVisibleRowsChange={setTableRows}
+        />
+      )}
 
       {/* =====================================================================
           MODAL CREAR / EDITAR JUGADOR
@@ -2109,119 +996,6 @@ export const Players: React.FC = () => {
             </button>
           </div>
         </div>
-      </Modal>
-
-      {/* =====================================================================
-          MODAL AGREGAR PESO
-          ===================================================================== */}
-      <Modal
-        isOpen={isWeightModalOpen}
-        onClose={() => setIsWeightModalOpen(false)}
-        title="Registrar Control de Peso"
-      >
-        <form onSubmit={handleAddWeightSubmit} className="space-y-4 text-left">
-          <div>
-            <label className="form-label">Fecha del Control</label>
-            <input
-              type="date"
-              required
-              className="form-input"
-              value={weightDate}
-              onChange={(e) => setWeightDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="form-label">Peso Registrado (kg)</label>
-            <input
-              type="number"
-              step="0.1"
-              required
-              min="30"
-              max="150"
-              className="form-input"
-              placeholder="72.5"
-              value={newWeight}
-              onChange={(e) => setNewWeight(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2 justify-end pt-4 border-t border-brand-black-border">
-            <button type="button" onClick={() => setIsWeightModalOpen(false)} className="btn-secondary py-2 text-xs">
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary py-2 text-xs font-semibold">
-              Registrar Control
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* =====================================================================
-          MODAL AGREGAR PARTE FISIO
-          ===================================================================== */}
-      <Modal
-        isOpen={isPhysioModalOpen}
-        onClose={() => setIsPhysioModalOpen(false)}
-        title="Nuevo Parte / Diagnóstico de Fisioterapia"
-      >
-        <form onSubmit={handleAddPhysioSubmit} className="space-y-4 text-left">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="form-label">Fecha del Parte</label>
-              <input
-                type="date"
-                required
-                className="form-input"
-                value={physioDate}
-                onChange={(e) => setPhysioDate(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="form-label">Estado Físico del Jugador</label>
-              <select
-                className="form-input bg-brand-black"
-                value={physioStatus}
-                onChange={(e) => setPhysioStatus(e.target.value as any)}
-              >
-                <option value="Disponible">Disponible</option>
-                <option value="En duda">En duda</option>
-                <option value="Lesionado">Lesionado</option>
-                <option value="Baja">Baja</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">Observaciones / Diagnóstico</label>
-            <textarea
-              required
-              rows={3}
-              className="form-input"
-              placeholder="Ej. Sobrecarga muscular en el sóleo, dolor al tacto..."
-              value={physioNotes}
-              onChange={(e) => setPhysioNotes(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="form-label">Tratamiento Planificado</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Ej. Terapia manual, crioterapia, readaptación..."
-              value={physioTreatment}
-              onChange={(e) => setPhysioTreatment(e.target.value)}
-            />
-          </div>
-
-          <div className="flex gap-2 justify-end pt-4 border-t border-brand-black-border">
-            <button type="button" onClick={() => setIsPhysioModalOpen(false)} className="btn-secondary py-2 text-xs">
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary py-2 text-xs font-semibold">
-              Guardar Parte
-            </button>
-          </div>
-        </form>
       </Modal>
 
     </div>
