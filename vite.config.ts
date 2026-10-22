@@ -71,11 +71,27 @@ export default defineConfig(({ mode }) => {
     {
       name: 'sync-matches-api',
       configureServer(server: any) {
+        const scriptPath = path.resolve(__dirname, 'sync_matches_supabase.cjs');
+
+        const runAutoSync = () => {
+          console.log('[AutoSync FFCV] Comprobando y sincronizando calendario oficial...');
+          exec(`node "${scriptPath}"`, (error, stdout) => {
+            if (error) {
+              console.error(`[AutoSync FFCV Error]: ${error.message}`);
+            } else {
+              console.log('[AutoSync FFCV] Calendario oficial FFCV actualizado.');
+            }
+          });
+        };
+
+        // Ejecutar auto-sync al iniciar (tras 10s) y luego periódicamente cada 4 horas
+        setTimeout(runAutoSync, 10000);
+        setInterval(runAutoSync, 4 * 60 * 60 * 1000);
+
         server.middlewares.use((req: any, res: any, next: any) => {
           if (req.url === '/api/sync-matches') {
             console.log('Executing sync_matches_supabase.cjs...');
             
-            const scriptPath = path.resolve(__dirname, 'sync_matches_supabase.cjs');
             exec(`node "${scriptPath}"`, (error, stdout, stderr) => {
               res.setHeader('Content-Type', 'application/json');
               if (error) {

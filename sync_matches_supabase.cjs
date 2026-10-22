@@ -12,39 +12,46 @@ if (!globalThis.WebSocket) {
   globalThis.WebSocket = require('ws');
 }
 
-// Configuración de los equipos del club a sincronizar
+// Configuración de los equipos y competiciones oficiales
 const TEAMS_TO_SYNC = [
   {
     name: 'Primer Equipo',
     teamCategory: 'Primer Equipo',
     codEquipo: '18331',
-    defaultCompetitions: [] // Se obtienen dinámicamente desde vis_competiciones_equipo.php
+    competitions: [
+      {
+        codCompeticion: '905431606', // Primera FFCV
+        codGrupo: '905431607',       // Grup - 1
+        codTemporada: '22',          // Temporada 2026-2027
+        nombre: 'Primera FFCV',
+        competitionType: 'Liga'
+      },
+      {
+        codCompeticion: '905432482', // VI La Nostra Copa
+        codGrupo: '905432483',       // Eliminatorias
+        codTemporada: '22',
+        nombre: 'VI La Nostra Copa',
+        competitionType: 'Copa'
+      }
+    ]
   },
   {
     name: 'Equipo Juvenil',
     teamCategory: 'Juvenil',
     codEquipo: '905662975',
-    defaultCompetitions: [
+    competitions: [
       {
         codCompeticion: '905431573', // Tercera FFCV Juvenil
         codGrupo: '905431574',       // Grup - 1
-        codTemporada: '22',          // Temporada 2026-2027
-        nombre: 'Tercera FFCV Juvenil'
+        codTemporada: '22',
+        nombre: 'Tercera FFCV Juvenil',
+        competitionType: 'Liga'
       }
     ]
   }
 ];
 
 const logosMap = {};
-
-// Mapeo de nombre de competición FFCV → valor del campo competition en Supabase
-function mapCompeticion(nombre) {
-  const n = (nombre || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (n.includes('copa')) return 'Copa';
-  if (n.includes('promocion') || n.includes('playoff') || n.includes('ascenso')) return 'Promoción';
-  if (n.includes('amistoso') || n.includes('torneo') || n.includes('trofeo')) return 'Amistoso';
-  return 'Liga';
-}
 
 function loadEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -63,19 +70,12 @@ function loadEnv() {
   return env;
 }
 
-function pick(obj, keys) {
-  for (const k of keys) {
-    if (obj != null && obj[k] != null && obj[k] !== '') return obj[k];
-  }
-  return null;
-}
-
 function parseDate(dateStr) {
   if (!dateStr) return null;
   const s = String(dateStr).trim();
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
     const [dd, mm, yyyy] = s.split('/');
-    return `${yyyy}-${mm}-${dd}`;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
   }
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   return null;
@@ -88,84 +88,17 @@ function parseTime(timeStr) {
   return `${m[1].padStart(2, '0')}:${m[2]}:00`;
 }
 
-function parseGoals(val) {
-  if (val == null || val === '') return null;
-  const n = parseInt(String(val).replace(/[^\d]/g, ''), 10);
-  return isNaN(n) ? null : n;
-}
-
-// La temporada 2026/2027 va de 2026-07-01 a 2027-06-30. Comparar solo el año
-// del partido no basta, porque la 2025/2026 también tiene fechas con año 2026.
-function isTemporada2026_2027(fecha) {
-  return fecha >= '2026-07-01' && fecha <= '2027-06-30';
-}
-
-function mapPartido(p, competicion, codEquipo, teamCategory) {
-  const fecha = pick(p, ['fecha', 'Fecha', 'fecha_partido']);
-  const hora = pick(p, ['hora', 'Hora', 'hora_partido']);
-
-  const jornadaRaw = pick(p, ['jornada', 'Jornada', 'num_jornada', 'fase', 'Fase']);
-  const matchday = jornadaRaw ? String(jornadaRaw).trim() : null;
-
-  const codLocal = String(pick(p, ['CodEquipo_local', 'codigo_equipo_local', 'cod_equipo_local', 'CodEquipoLocal']) || '').replace(/\D/g, '');
-  const nombreLocal = String(pick(p, ['Nombre_equipo_local', 'equipo_local', 'local', 'NombreLocal']) || '').trim();
-  const nombreVisitante = String(pick(p, ['Nombre_equipo_visitante', 'equipo_visitante', 'visitante', 'NombreVisitante']) || '').trim();
-
-  const golesLocal = parseGoals(pick(p, ['Goles_casa', 'goles_casa', 'goles_local', 'GolesLocal']));
-  const golesVisitante = parseGoals(pick(p, ['Goles_visitante', 'goles_visitante', 'GolesVisita', 'GolesVisitante']));
-
-  const estado = String(pick(p, ['estado', 'Estado']) || '');
-  const campo = pick(p, ['campojuego', 'campo', 'campo_juego', 'instalacion', 'localidad']);
-
-  const isLocal = codLocal === String(codEquipo);
-  const rival = isLocal ? nombreVisitante : nombreLocal;
-  const scoreUs = isLocal ? golesLocal : golesVisitante;
-  const scoreThem = isLocal ? golesVisitante : golesLocal;
-
-  let status = 'Programado';
-  if (scoreUs !== null && scoreThem !== null) {
-    status = 'Jugado';
-  } else if (/^5$|suspend/i.test(estado)) {
-    status = 'Suspendido';
+function parseResult(resultadoStr) {
+  if (!resultadoStr) return { scoreHome: null, scoreAway: null };
+  const parts = String(resultadoStr).split('-').map(p => p.trim());
+  if (parts.length === 2) {
+    const h = parseInt(parts[0], 10);
+    const a = parseInt(parts[1], 10);
+    if (!isNaN(h) && !isNaN(a)) {
+      return { scoreHome: h, scoreAway: a };
+    }
   }
-
-  const imgLocal = pick(p, ['url_img_local', 'escudo_local']);
-  const imgVisitante = pick(p, ['url_img_visitante', 'escudo_visitante']);
-  if (nombreLocal && imgLocal) {
-    logosMap[nombreLocal] = imgLocal.startsWith('http') ? imgLocal : `https://appwebffcv.novanet.es${imgLocal}`;
-  }
-  if (nombreVisitante && imgVisitante) {
-    logosMap[nombreVisitante] = imgVisitante.startsWith('http') ? imgVisitante : `https://appwebffcv.novanet.es${imgVisitante}`;
-  }
-
-  const date = parseDate(fecha);
-  if (!date || !rival) return null;
-
-  return {
-    date,
-    matchday,
-    rival,
-    is_local: isLocal,
-    competition: competicion,
-    team_category: teamCategory,
-    score_us: scoreUs,
-    score_them: scoreThem,
-    status,
-    time: parseTime(hora),
-    location: campo ? String(campo).trim() : null,
-    objective: null,
-    observations: null,
-  };
-}
-
-async function handleCookies(page) {
-  const selectors = [
-    'button:has-text("Aceptar")', 'button:has-text("ACEPTAR")',
-    'button:has-text("Aceptar todas")', '.cc-btn.cc-allow', '.cm-btn-success',
-  ];
-  for (const sel of selectors) {
-    try { await page.locator(sel).first().click({ timeout: 2000 }); return; } catch (e) { }
-  }
+  return { scoreHome: null, scoreAway: null };
 }
 
 (async () => {
@@ -175,22 +108,21 @@ async function handleCookies(page) {
     const existingLogos = JSON.parse(fs.readFileSync(logosPath, 'utf8'));
     Object.assign(logosMap, existingLogos);
   } catch (e) { }
+
   const supabaseUrl = env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || supabaseUrl.includes('your-supabase-project-id')) {
-    console.error('❌ VITE_SUPABASE_URL no está configurada en el .env');
-    process.exit(1);
-  }
-  if (!supabaseKey || supabaseKey.includes('your-supabase')) {
-    console.error('❌ SUPABASE_SERVICE_ROLE_KEY no está configurada en el .env');
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ Faltan credenciales de Supabase en .env');
     process.exit(1);
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  });
   const page = await context.newPage();
 
   let totalInserted = 0;
@@ -198,9 +130,8 @@ async function handleCookies(page) {
   let totalErrors = 0;
 
   try {
-    console.log('🌐 Navegando a FFCV para establecer sesión...');
-    await page.goto('https://ffcv.es/competiciones/#partidos', { waitUntil: 'load', timeout: 60000 });
-    await handleCookies(page);
+    console.log('🌐 Conectando a la FFCV...');
+    await page.goto('https://ffcv.es/competiciones/#calendario', { waitUntil: 'load', timeout: 45000 });
     await page.waitForTimeout(2000);
 
     for (const team of TEAMS_TO_SYNC) {
@@ -208,321 +139,180 @@ async function handleCookies(page) {
       console.log(`⚽ Sincronizando equipo: ${team.name} (${team.teamCategory}) [CodEquipo: ${team.codEquipo}]`);
       console.log(`========================================`);
 
-      console.log(`📡 Obteniendo lista de competiciones de la API para ${team.name}...`);
-      const competitionsData = await page.evaluate(async (codEquipo) => {
-        try {
-          const response = await fetch(`https://ffcv.es/competiciones/api/equipos/vis_competiciones_equipo.php?codequipo=${encodeURIComponent(codEquipo)}`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return await response.json();
-        } catch (err) {
-          return { error: err.message };
-        }
-      }, team.codEquipo);
+      for (const comp of team.competitions) {
+        console.log(`\n📋 Consultando jornadas de: ${comp.nombre} (Grupo ${comp.codGrupo})...`);
 
-      let competiciones = [];
-      if (competitionsData && Array.isArray(competitionsData.competiciones) && competitionsData.competiciones.length > 0) {
-        competiciones = competitionsData.competiciones.map(comp => {
-          const codGrupo = comp.cogido_grupo || comp.cod_grupo || comp.codgrupo;
-          const codTemporada = comp.codigo_temporada || comp.cod_temporada || '22';
-          const nombre = comp.competicion || comp.nombre_competicion || comp.nombre || '';
-          return { codGrupo, codTemporada, nombre };
-        }).filter(c => c.codGrupo);
-      } else if (team.defaultCompetitions && team.defaultCompetitions.length > 0) {
-        console.log(`   ℹ️ Usando competiciones por defecto configuradas para ${team.name}`);
-        competiciones = [...team.defaultCompetitions];
-      }
-
-      // Asegurar que competiciones por defecto no falten (ej. Tercera FFCV Juvenil Grupo 1)
-      if (team.defaultCompetitions) {
-        for (const defComp of team.defaultCompetitions) {
-          if (!competiciones.some(c => String(c.codGrupo) === String(defComp.codGrupo))) {
-            competiciones.push(defComp);
-          }
-        }
-      }
-
-      // Filtrar para mantener solo competiciones de la temporada actual (codTemporada === '22') y solo Liga, Copa y Promoción
-      competiciones = competiciones.filter(c => {
-        const isCurrentSeason = !c.codTemporada || String(c.codTemporada) === '22';
-        const cat = mapCompeticion(c.nombre);
-        return isCurrentSeason && (cat === 'Liga' || cat === 'Copa' || cat === 'Promoción');
-      });
-
-      console.log(`📋 Competiciones a sincronizar (${team.name}): ${competiciones.map(c => c.nombre).join(', ')}`);
-
-      for (const comp of competiciones) {
-        const competicion = mapCompeticion(comp.nombre);
-        const apiUrl = `https://ffcv.es/competiciones/api/equipos/partidos_equipo_temporada.php?cod_equipo=${encodeURIComponent(team.codEquipo)}&cod_temporada=${encodeURIComponent(comp.codTemporada)}&cod_grupo=${encodeURIComponent(comp.codGrupo)}`;
-
-        console.log(`\n📡 ${comp.nombre} (${competicion}): ${apiUrl}`);
-
-        const apiData = await page.evaluate(async (url) => {
+        const jornadasData = await page.evaluate(async (codGrupo) => {
           try {
-            const res = await fetch(url);
+            const res = await fetch(`https://ffcv.es/competiciones/api/filtros/jornadas_fetch.php?cod_grupo=${encodeURIComponent(codGrupo)}`);
             if (!res.ok) return { error: `HTTP ${res.status}` };
             return await res.json();
-          } catch (err) {
-            return { error: err.message };
-          }
-        }, apiUrl);
-
-        if (apiData?.error) {
-          console.log(`   ❌ Error API: ${apiData.error}`);
-          totalErrors++;
-          continue;
-        }
-
-        let partidos = Array.isArray(apiData?.partidos) ? apiData.partidos : [];
-        console.log(`   ✅ ${partidos.length} partidos via API.`);
-
-        // Si la API devuelve vacío (ej. Copa), intentamos parsear del DOM
-        if (partidos.length === 0) {
-          try {
-            await page.selectOption('#team-partidos-competicion', String(comp.codGrupo), { timeout: 1000 });
-            await page.waitForTimeout(1000); // Esperar a que el DOM se actualice con esta competición
           } catch (e) {
-            console.log('   ⚠️ No se pudo cambiar el selector de competición en el DOM:', e.message);
+            return { error: e.message };
           }
-          partidos = await page.evaluate(async (codGrupo) => {
-            const sel = document.getElementById('team-partidos-competicion');
-            if (sel) sel.value = String(codGrupo); // asegurar selección
-            const MESES = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };
-            const cards = Array.from(document.querySelectorAll('#team-partidos .match-card'));
-            
-            const results = [];
-            for (const card of cards) {
-              try {
-                const meta = (card.querySelector('.m-meta')?.textContent || '').trim();
-                // Extraer fecha: "7 septiembre de 2025"
-                const fechaM = meta.match(/(\d{1,2})\s+(\w+)\s+de\s+(\d{4})/);
-                let fecha = null;
-                if (fechaM) {
-                  const dia = fechaM[1].padStart(2, '0');
-                  const mes = String(MESES[fechaM[2].toLowerCase()] || 1).padStart(2, '0');
-                  fecha = `${fechaM[3]}-${mes}-${dia}`;
-                }
-                let matchday = null;
-                const partesMeta = meta.split('·');
-                if (partesMeta.length > 1) {
-                  const matchdayText = partesMeta[1].trim();
-                  const numMatch = matchdayText.match(/\d+/);
-                  matchday = numMatch ? numMatch[0] : matchdayText;
-                }
-                const filas = Array.from(card.querySelectorAll('.team-row'));
-                const allRows = filas;
-                const atzeneta = filas.find(r => r.classList.contains('is-team'));
-                const rival = filas.find(r => !r.classList.contains('is-team'));
-                const isLocal = atzeneta === allRows[0]; // primera fila = local
-                const nombreRival = rival?.querySelector('.team-name')?.textContent?.trim() || '';
-                const golesAtzeneta = parseInt(atzeneta?.querySelector('.team-goals')?.textContent || '', 10);
-                const golesRival = parseInt(rival?.querySelector('.team-goals')?.textContent || '', 10);
-                const statusText = (card.querySelector('.match-status, .badge, [class*="status"], [class*="estado"]')?.textContent || '').toLowerCase();
-                const hasScore = !isNaN(golesAtzeneta) && !isNaN(golesRival);
-                const status = hasScore ? 'Jugado' : (statusText.includes('suspend') ? 'Suspendido' : 'Programado');
+        }, comp.codGrupo);
 
-                const localName = allRows[0]?.querySelector('.team-name')?.textContent?.trim() || '';
-                const localImg = allRows[0]?.querySelector('img')?.getAttribute('src');
-                const visitanteName = allRows[1]?.querySelector('.team-name')?.textContent?.trim() || '';
-                const visitanteImg = allRows[1]?.querySelector('img')?.getAttribute('src');
-
-                // ── Extraer hora y campo haciendo fetch al detalle del partido ──────────
-                let parsedTime = null;
-                let parsedLocation = null;
-
-                const anchor = card.closest('a');
-                const href = anchor ? anchor.getAttribute('href') : '';
-                const matchCod = href.match(/cod_partido=(\d+)/);
-                const codPartido = matchCod ? matchCod[1] : null;
-
-                if (codPartido) {
-                  try {
-                    const res = await fetch(`../partidos/partido.php?cod_partido=${codPartido}`);
-                    if (res.ok) {
-                      const html = await res.text();
-                      const startMarker = 'window.__FFCV_BOOTSTRAP_JSON = ';
-                      const startIdx = html.indexOf(startMarker);
-                      if (startIdx !== -1) {
-                        const jsonStart = startIdx + startMarker.length;
-                        const rest = html.slice(jsonStart);
-                        const matchEnd = rest.match(/([\s\S]*?)\};\r?\n/);
-                        if (matchEnd) {
-                          const jsonText = matchEnd[1] + '}';
-                          const data = JSON.parse(jsonText);
-                          
-                          if (data.hora) {
-                            const m = String(data.hora).trim().match(/^(\d{1,2}):(\d{2})/);
-                            if (m) {
-                              parsedTime = `${m[1].padStart(2, '0')}:${m[2]}:00`;
-                            }
-                          }
-                          if (data.campo) {
-                            parsedLocation = String(data.campo).trim();
-                          }
-                        }
-                      }
-                    }
-                  } catch (fetchErr) {
-                    // ignorar error del fetch individual y seguir
-                  }
-                }
-
-                results.push({
-                  fecha, matchday, nombreRival, isLocal,
-                  golesAtzeneta: hasScore ? golesAtzeneta : null,
-                  golesRival: hasScore ? golesRival : null,
-                  status,
-                  localName, localImg,
-                  visitanteName, visitanteImg,
-                  time: parsedTime,
-                  location: parsedLocation
-                });
-              } catch (e) {
-                // ignorar error de tarjeta individual
-              }
-            }
-            return results;
-          }, comp.codGrupo);
-
-          if (partidos.length > 0) {
-            console.log(`   ✅ ${partidos.length} partidos parseados del HTML.`);
-          } else {
-            console.log('   ℹ️  Sin partidos (la competición puede no haber empezado).');
-            continue;
-          }
-
-          // Mapear formato DOM → formato Supabase
-          const mappedMatches = partidos.map(p => {
-            if (!p.fecha || !p.nombreRival) return null;
-
-            if (p.localName && p.localImg) {
-              logosMap[p.localName] = p.localImg.startsWith('http') ? p.localImg : `https://appwebffcv.novanet.es${p.localImg}`;
-            }
-            if (p.visitanteName && p.visitanteImg) {
-              logosMap[p.visitanteName] = p.visitanteImg.startsWith('http') ? p.visitanteImg : `https://appwebffcv.novanet.es${p.visitanteImg}`;
-            }
-
-            return {
-              date: p.fecha,
-              matchday: p.matchday,
-              rival: p.nombreRival,
-              is_local: p.isLocal,
-              competition: competicion,
-              team_category: team.teamCategory,
-              score_us: p.golesAtzeneta,
-              score_them: p.golesRival,
-              status: p.status,
-              time: p.time,
-              location: p.location,
-              objective: null,
-              observations: null,
-            };
-          }).filter(Boolean);
-          
-          // Descartar partidos que no pertenezcan a la temporada 2026/2027 (rango: 2026-07-01 a 2027-06-30)
-          const mappedMatchesFiltered = mappedMatches.filter(m => isTemporada2026_2027(m.date));
-
-          if (mappedMatchesFiltered.length === 0) {
-             console.log('   ℹ️  No se encontraron partidos válidos para la temporada 2026/2027 en pantalla.');
-             continue;
-          }
-
-          for (const match of mappedMatchesFiltered) {
-            let query = supabase
-              .from('matches')
-              .select('id, status')
-              .eq('team_category', team.teamCategory)
-              .eq('competition', match.competition)
-              .ilike('rival', match.rival);
-
-            if (match.matchday) {
-              query = query.eq('matchday', match.matchday);
-            } else {
-              query = query.eq('date', match.date);
-            }
-
-            const { data: existing, error: searchError } = await query.maybeSingle();
-            if (searchError) { console.error(`   ❌ ${match.date} vs ${match.rival}: ${searchError.message}`); totalErrors++; continue; }
-            if (existing) {
-              if (existing.status === 'Jugado') {
-                console.log(`   ⏭️  Omitido (Ya jugado): ${match.date} vs ${match.rival}`);
-              } else {
-                const { error } = await supabase.from('matches').update(match).eq('id', existing.id);
-                if (error) { console.error(`   ❌ Update: ${error.message}`); totalErrors++; }
-                else { totalUpdated++; console.log(`   ✏️  Actualizado: ${match.date} vs ${match.rival} [${match.status}]`); }
-              }
-            } else {
-              const { error } = await supabase.from('matches').insert(match);
-              if (error) { console.error(`   ❌ Insert: ${error.message}`); totalErrors++; }
-              else { totalInserted++; console.log(`   ➕ Insertado: ${match.date} vs ${match.rival} [${match.status}]`); }
-            }
-          }
+        const jornadas = Array.isArray(jornadasData?.jornadas) ? jornadasData.jornadas : [];
+        if (jornadas.length === 0) {
+          console.log(`   ℹ️ No se encontraron jornadas para ${comp.nombre}`);
           continue;
         }
 
-        const mappedMatches = partidos.map(p => mapPartido(p, competicion, team.codEquipo, team.teamCategory)).filter(Boolean);
+        console.log(`   ✅ ${jornadas.length} jornadas disponibles en calendario.`);
 
-        // Descartar partidos que no pertenezcan a la temporada 2026/2027 (rango: 2026-07-01 a 2027-06-30)
-        const mappedMatchesFiltered = mappedMatches.filter(m => isTemporada2026_2027(m.date));
+        for (const j of jornadas) {
+          const codJornada = j.codjornada;
+          const jornadaLabel = j.nombre || codJornada;
 
-        if (mappedMatchesFiltered.length === 0) {
-           console.log('   ℹ️  No se encontraron partidos válidos para la temporada 2026/2027 en la API.');
-           continue;
-        }
+          const data = await page.evaluate(async ({ codTemp, codComp, codGrp, codJor }) => {
+            try {
+              const url = `https://ffcv.es/competiciones/api/partidos/resultados_por_grupo_jornada_data.php?cod_temporada=${codTemp}&cod_competicion=${codComp}&cod_grupo=${codGrp}&cod_jornada=${codJor}`;
+              const res = await fetch(url);
+              if (!res.ok) return { error: `HTTP ${res.status}` };
+              return await res.json();
+            } catch (err) {
+              return { error: err.message };
+            }
+          }, {
+            codTemp: comp.codTemporada,
+            codComp: comp.codCompeticion,
+            codGrp: comp.codGrupo,
+            codJor: codJornada
+          });
 
-        for (const match of mappedMatchesFiltered) {
-          let query = supabase
-            .from('matches')
-            .select('id, status')
-            .eq('team_category', team.teamCategory)
-            .eq('competition', match.competition)
-            .ilike('rival', match.rival);
+          if (data?.error || !Array.isArray(data?.partidos)) continue;
 
-          if (match.matchday) {
-            query = query.eq('matchday', match.matchday);
-          } else {
-            query = query.eq('date', match.date);
+          // Buscar partido donde participe nuestro equipo
+          const rawMatch = data.partidos.find(p => {
+            const locId = String(p.cod_equipo_local || '');
+            const visId = String(p.cod_equipo_visitante || '');
+            if (locId === team.codEquipo || visId === team.codEquipo) return true;
+            const locName = (p.local || '').toLowerCase();
+            const visName = (p.visitante || '').toLowerCase();
+            return locName.includes('atzeneta') || visName.includes('atzeneta');
+          });
+
+          if (!rawMatch) continue;
+
+          const isLocal = String(rawMatch.cod_equipo_local) === team.codEquipo ||
+                          (rawMatch.local || '').toLowerCase().includes('atzeneta');
+
+          const rival = isLocal ? rawMatch.visitante : rawMatch.local;
+          const parsedDate = parseDate(rawMatch.fecha);
+          const parsedTime = parseTime(rawMatch.hora);
+          const { scoreHome, scoreAway } = parseResult(rawMatch.resultado);
+
+          const scoreUs = isLocal ? scoreHome : scoreAway;
+          const scoreThem = isLocal ? scoreAway : scoreHome;
+
+          let status = 'Programado';
+          if (scoreUs !== null && scoreThem !== null) {
+            status = 'Jugado';
+          } else if (rawMatch.estado === '3' || (rawMatch.motivo_estado || '').toLowerCase().includes('suspend') || (rawMatch.motivo_estado || '').toLowerCase().includes('metereo')) {
+            status = 'Suspendido';
           }
 
-          const { data: existing, error: searchError } = await query.maybeSingle();
+          // Guardar logos de rivales
+          if (rawMatch.local && rawMatch.escudo_local) {
+            logosMap[rawMatch.local] = rawMatch.escudo_local.startsWith('http')
+              ? rawMatch.escudo_local
+              : `https://appwebffcv.novanet.es${rawMatch.escudo_local}`;
+          }
+          if (rawMatch.visitante && rawMatch.escudo_visitante) {
+            logosMap[rawMatch.visitante] = rawMatch.escudo_visitante.startsWith('http')
+              ? rawMatch.escudo_visitante
+              : `https://appwebffcv.novanet.es${rawMatch.escudo_visitante}`;
+          }
 
-          if (searchError) {
-            console.error(`   ❌ Error buscando ${match.date} vs ${match.rival}: ${searchError.message}`);
-            totalErrors++;
-            continue;
+          const matchPayload = {
+            date: parsedDate,
+            time: parsedTime,
+            matchday: String(jornadaLabel).trim(),
+            rival: rival ? rival.trim() : 'Rival',
+            is_local: isLocal,
+            competition: comp.competitionType,
+            team_category: team.teamCategory,
+            score_us: scoreUs,
+            score_them: scoreThem,
+            status: status,
+            location: rawMatch.campo ? String(rawMatch.campo).trim() : null,
+            observations: rawMatch.motivo_estado ? `FFCV: ${rawMatch.motivo_estado}` : null
+          };
+
+          // Buscar coincidencia en Supabase (primero por matchday, si no por fecha y rival)
+          let { data: existing } = await supabase
+            .from('matches')
+            .select('id, status, tactical_system')
+            .eq('team_category', team.teamCategory)
+            .eq('competition', comp.competitionType)
+            .eq('matchday', matchPayload.matchday)
+            .maybeSingle();
+
+          if (!existing && matchPayload.date) {
+            const { data: byDate } = await supabase
+              .from('matches')
+              .select('id, status, tactical_system')
+              .eq('team_category', team.teamCategory)
+              .eq('competition', comp.competitionType)
+              .eq('date', matchPayload.date)
+              .ilike('rival', `%${matchPayload.rival.replace(/['"]/g, '').split(' ')[0]}%`)
+              .maybeSingle();
+            existing = byDate;
           }
 
           if (existing) {
-            if (existing.status === 'Jugado') {
-              console.log(`   ⏭️  Omitido (Ya jugado): ${match.date} vs ${match.rival}`);
+            // Si el partido ya fue jugado y tiene acta registrada por el cuerpo técnico, no pisamos resultado local salvo que esté vacío
+            const updateFields = {
+              date: matchPayload.date,
+              time: matchPayload.time,
+              rival: matchPayload.rival,
+              is_local: matchPayload.is_local,
+              location: matchPayload.location,
+            };
+
+            // Solo actualizar resultado/estado si no está ya marcado como Jugado en la app
+            if (existing.status !== 'Jugado') {
+              updateFields.status = matchPayload.status;
+              if (matchPayload.score_us !== null) updateFields.score_us = matchPayload.score_us;
+              if (matchPayload.score_them !== null) updateFields.score_them = matchPayload.score_them;
+            }
+
+            const { error: updError } = await supabase.from('matches').update(updateFields).eq('id', existing.id);
+            if (updError) {
+              console.error(`   ❌ Error actualizando J.${matchPayload.matchday}:`, updError.message);
+              totalErrors++;
             } else {
-              const { error } = await supabase.from('matches').update(match).eq('id', existing.id);
-              if (error) { console.error(`   ❌ Update ${match.date} vs ${match.rival}: ${error.message}`); totalErrors++; }
-              else { totalUpdated++; console.log(`   ✏️  Actualizado: ${match.date} vs ${match.rival} [${match.status}]`); }
+              totalUpdated++;
+              console.log(`   ✏️  J.${matchPayload.matchday}: ${matchPayload.date} ${matchPayload.time || '--:--'} vs ${matchPayload.rival} (${matchPayload.location || 'Sin campo'}) [${matchPayload.status}]`);
             }
           } else {
-            const { error } = await supabase.from('matches').insert(match);
-            if (error) { console.error(`   ❌ Insert ${match.date} vs ${match.rival}: ${error.message}`); totalErrors++; }
-            else { totalInserted++; console.log(`   ➕ Insertado: ${match.date} vs ${match.rival} [${match.status}]`); }
+            const { error: insError } = await supabase.from('matches').insert(matchPayload);
+            if (insError) {
+              console.error(`   ❌ Error insertando J.${matchPayload.matchday}:`, insError.message);
+              totalErrors++;
+            } else {
+              totalInserted++;
+              console.log(`   ➕ Insertado J.${matchPayload.matchday}: ${matchPayload.date} ${matchPayload.time || '--:--'} vs ${matchPayload.rival}`);
+            }
           }
         }
       }
     }
 
-    console.log(`\n📊 Sincronización completada:`);
-    console.log(`   ➕ ${totalInserted} insertados`);
-    console.log(`   ✏️  ${totalUpdated} actualizados`);
-    if (totalErrors > 0) console.log(`   ❌ ${totalErrors} errores`);
+    console.log(`\n========================================`);
+    console.log(`📊 Sincronización oficial FFCV finalizada:`);
+    console.log(`   ➕ Insertados: ${totalInserted}`);
+    console.log(`   ✏️  Actualizados: ${totalUpdated}`);
+    if (totalErrors > 0) console.log(`   ❌ Errores: ${totalErrors}`);
+    console.log(`========================================`);
 
-    // Guardar el mapa de logos
     try {
       fs.writeFileSync(logosPath, JSON.stringify(logosMap, null, 2), 'utf8');
-      console.log(`\n🎨 Logos actualizados en: ${logosPath}`);
-    } catch (e) {
-      console.error('❌ Error guardando logos:', e);
-    }
+      console.log(`🎨 Logos guardados en: ${logosPath}`);
+    } catch (e) { }
 
   } catch (err) {
-    console.error('❌ Error:', err.message || err);
+    console.error('❌ Error general durante la sincronización:', err);
     process.exit(1);
   } finally {
     await browser.close();

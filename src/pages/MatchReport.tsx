@@ -1315,26 +1315,37 @@ export const MatchReport: React.FC = () => {
       await dataService.updateMatch(matchId, updatedMatch);
 
       // 2. Guardar estadísticas de rendimiento de jugadores
-      const statsPayload = Object.values(playerStats).map(p => ({
-        match_id: matchId,
-        player_id: p.player_id,
-        is_called_up: p.is_called_up,
-        is_starter: p.is_starter,
-        position: p.position || undefined,
-        minutes_played: p.minutes_played,
-        goals: p.goals,
-        conceded_goals: p.conceded_goals,
-        own_goals: p.own_goals,
-        assists: p.assists,
-        yellow_cards: p.yellow_cards,
-        red_card: p.red_card,
-        positive_aspects: p.positive_aspects.trim() || undefined,
-        improve_aspects: p.improve_aspects.trim() || undefined,
-        comments: p.comments?.trim() || undefined,
-        substituted_for: p.substituted_for || undefined,
-        substituted_minute: p.substituted_minute || undefined,
-        event_minutes: p.event_minutes
-      }));
+      const matchCat = matchData?.team_category || 'Primer Equipo';
+      const statsPayload = Object.values(playerStats)
+        .filter(p => {
+          // Si el jugador fue convocado o jugó minutos, siempre se guarda
+          if (p.is_called_up || (p.minutes_played && p.minutes_played > 0)) return true;
+          // Si no fue convocado y pertenece a otra categoría diferente a la del partido, NO guardarlo
+          const pData = dbPlayers.find(dp => dp.id === p.player_id);
+          const pCat = pData?.team_category || 'Primer Equipo';
+          if (pCat !== matchCat) return false;
+          return true;
+        })
+        .map(p => ({
+          match_id: matchId,
+          player_id: p.player_id,
+          is_called_up: p.is_called_up,
+          is_starter: p.is_starter,
+          position: p.position || undefined,
+          minutes_played: p.minutes_played,
+          goals: p.goals,
+          conceded_goals: p.conceded_goals,
+          own_goals: p.own_goals,
+          assists: p.assists,
+          yellow_cards: p.yellow_cards,
+          red_card: p.red_card,
+          positive_aspects: p.positive_aspects.trim() || undefined,
+          improve_aspects: p.improve_aspects.trim() || undefined,
+          comments: p.comments?.trim() || undefined,
+          substituted_for: p.substituted_for || undefined,
+          substituted_minute: p.substituted_minute || undefined,
+          event_minutes: p.event_minutes
+        }));
 
       await dataService.savePlayerMatchStats(matchId, statsPayload);
     },

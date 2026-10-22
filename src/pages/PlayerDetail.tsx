@@ -232,11 +232,22 @@ export const PlayerDetail: React.FC = () => {
   }, [matchStats, matches, attendanceRecords, trainings]);
 
   const filteredMatchStats = React.useMemo(() => {
-    // Only keep stats for matches that have an acta (match report)
+    const playerCategory = player?.team_category || 'Primer Equipo';
+    
+    // Only keep stats for matches that have an acta (match report) and belong to player's team category or player was called up
     const statsWithActa = matchStats.filter(s => {
       const match = matches.find((m: Match) => m.id === s.match_id);
       if (!match) return false;
-      const hasActa = match.status === 'Jugado' || typeof match.score_us === 'number' || !!match.tactical_system;
+      
+      const matchCategory = match.team_category || 'Primer Equipo';
+      const isPlayerTeamMatch = matchCategory === playerCategory;
+      const playerParticipated = s.is_called_up || (s.minutes_played && s.minutes_played > 0);
+      
+      // If it's a match of another team category and player wasn't called up, ignore
+      if (!isPlayerTeamMatch && !playerParticipated) return false;
+
+      // Only count matches that have actually been played or scored
+      const hasActa = match.status === 'Jugado' || typeof match.score_us === 'number';
       return hasActa;
     });
 
@@ -245,7 +256,7 @@ export const PlayerDetail: React.FC = () => {
       const match = matches.find((m: Match) => m.id === s.match_id);
       return match?.date?.startsWith(statsMonthFilter);
     });
-  }, [matchStats, matches, statsMonthFilter]);
+  }, [matchStats, matches, statsMonthFilter, player?.team_category]);
 
   const filteredAttendance = React.useMemo(() => {
     if (statsMonthFilter === 'General') return attendanceRecords;
