@@ -61,7 +61,7 @@ export const Players: React.FC = () => {
   }, [user?.team_category]);
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [filterCompetition, setFilterCompetition] = useState<CompetitionFilter>('Liga');
+  const [filterCompetition, setFilterCompetition] = useState<CompetitionFilter>('Todas');
 
   // Modales
   const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);

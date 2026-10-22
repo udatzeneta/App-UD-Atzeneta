@@ -59,6 +59,12 @@ export const SquadAnalytics: React.FC<Props> = ({ rows, teamSeries, competition,
   const [evoMetric, setEvoMetric] = useState<EvoMetric>('minutes');
   const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
   const [heatSort, setHeatSort] = useState<'minutes' | 'dorsal'>('minutes');
+  const [tableCompFilter, setTableCompFilter] = useState<string>('Todas');
+
+  const displayTeamSeries = useMemo(() => {
+    if (tableCompFilter === 'Todas') return teamSeries;
+    return teamSeries.filter(tp => (tp.match.competition || 'Liga').toLowerCase() === tableCompFilter.toLowerCase());
+  }, [teamSeries, tableCompFilter]);
 
   const used = useMemo(() => rows.filter(r => r.stats.called > 0 || r.stats.minutes > 0), [rows]);
 
@@ -120,8 +126,18 @@ export const SquadAnalytics: React.FC<Props> = ({ rows, teamSeries, competition,
   const heatRows = useMemo(() => {
     const list = [...used];
     if (heatSort === 'dorsal') return list.sort((a, b) => (a.dorsal ?? 999) - (b.dorsal ?? 999));
-    return list.sort((a, b) => b.stats.minutes - a.stats.minutes);
-  }, [used, heatSort]);
+    
+    // Sort by filtered minutes in active competition
+    return list.sort((a, b) => {
+      const minsA = a.timeline
+        .filter(({ match }) => displayTeamSeries.some(tp => tp.match.id === match.id))
+        .reduce((sum, { stat }) => sum + (stat?.minutes_played || 0), 0);
+      const minsB = b.timeline
+        .filter(({ match }) => displayTeamSeries.some(tp => tp.match.id === match.id))
+        .reduce((sum, { stat }) => sum + (stat?.minutes_played || 0), 0);
+      return minsB - minsA;
+    });
+  }, [used, heatSort, displayTeamSeries]);
 
   if (teamSeries.length === 0) {
     return (
@@ -290,10 +306,26 @@ export const SquadAnalytics: React.FC<Props> = ({ rows, teamSeries, competition,
         subtitle="Minutos jugados en cada encuentro · borde = titular · iconos de goles, asistencias y tarjetas"
         icon={Grid3x3}
         actions={
-          <select value={heatSort} onChange={e => setHeatSort(e.target.value as any)} className="form-input py-1 text-xs w-auto">
-            <option value="minutes">Ordenar por minutos</option>
-            <option value="dorsal">Ordenar por dorsal</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={tableCompFilter}
+              onChange={e => setTableCompFilter(e.target.value)}
+              className="form-input py-1 text-xs w-auto font-medium"
+            >
+              <option value="Todas">Todas las competiciones</option>
+              <option value="Liga">Solo Liga</option>
+              <option value="Copa">Solo Copa</option>
+              <option value="Amistoso">Solo Amistosos</option>
+            </select>
+            <select
+              value={heatSort}
+              onChange={e => setHeatSort(e.target.value as any)}
+              className="form-input py-1 text-xs w-auto font-medium"
+            >
+              <option value="minutes">Ordenar por minutos</option>
+              <option value="dorsal">Ordenar por dorsal</option>
+            </select>
+          </div>
         }
       >
         <div className="overflow-x-auto">
@@ -301,9 +333,17 @@ export const SquadAnalytics: React.FC<Props> = ({ rows, teamSeries, competition,
             <thead>
               <tr>
                 <th className="text-left text-[10px] uppercase text-brand-gray-muted font-semibold pr-3 sticky left-0 bg-brand-black z-10">Jugador</th>
-                {teamSeries.map(tp => (
-                  <th key={tp.match.id} className="text-center font-semibold text-brand-gray-muted min-w-[52px]" title={tp.match.rival}>
-                    <div className="text-[10px] text-brand-gray-light">{tp.label}</div>
+                {displayTeamSeries.map(tp => (
+                  <th key={tp.match.id} className="text-center font-semibold text-brand-gray-muted min-w-[54px]" title={`${tp.match.competition} - vs ${tp.match.rival}`}>
+                    <div className="text-[10px] text-brand-gray-light font-bold flex items-center justify-center gap-1">
+                      {tp.label}
+                      {tp.match.competition === 'Copa' && (
+                        <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1 py-px rounded font-black">C</span>
+                      )}
+                      {tp.match.competition === 'Amistoso' && (
+                        <span className="text-[8px] bg-blue-500/20 text-blue-400 px-1 py-px rounded font-black">A</span>
+                      )}
+                    </div>
                     <div className={`text-[9px] font-bold ${tp.result === 'V' ? 'text-emerald-400' : tp.result === 'D' ? 'text-red-400' : 'text-neutral-400'}`}>{tp.gf}-{tp.gc}</div>
                   </th>
                 ))}
@@ -319,39 +359,45 @@ export const SquadAnalytics: React.FC<Props> = ({ rows, teamSeries, competition,
                       {displayName(r)}
                     </button>
                   </td>
-                  {r.timeline.map(({ match, stat: s }) => {
-                    const mins = s?.minutes_played || 0;
-                    const dur = match.duration || 90;
-                    const ratio = Math.min(1, mins / dur);
-                    const notCalled = !s || !s.is_called_up;
-                    const title = notCalled
-                      ? `${match.rival}: no convocado${s?.comments ? ` (${s.comments})` : ''}`
-                      : `${match.rival}: ${mins}' ${s?.is_starter ? '(titular)' : mins > 0 ? '(suplente)' : '(no jugó)'}`;
-                    return (
-                      <td key={match.id} title={title} className="p-0">
-                        <div
-                          className={`relative h-9 rounded-md flex flex-col items-center justify-center ${s?.is_starter ? 'ring-1 ring-inset ring-white/40' : ''}`}
-                          style={{
-                            background: notCalled ? 'transparent' : mins === 0 ? '#1f1f1f' : `rgba(193, 18, 31, ${0.22 + ratio * 0.78})`,
-                            border: notCalled ? '1px dashed #2a2a2a' : undefined
-                          }}
-                        >
-                          <span className={`font-mono font-bold leading-none ${notCalled ? 'text-brand-gray-dark' : mins === 0 ? 'text-brand-gray-muted' : 'text-white'}`}>
-                            {notCalled ? '–' : mins === 0 ? 'SJ' : `${mins}'`}
-                          </span>
-                          {s && (s.goals > 0 || s.assists > 0 || s.yellow_cards > 0 || s.red_card) && (
-                            <span className="flex items-center gap-0.5 mt-0.5 leading-none">
-                              {s.goals > 0 && <span className="text-[9px]">{'⚽'.repeat(Math.min(s.goals, 3))}</span>}
-                              {s.assists > 0 && <span className="text-[8px] font-black text-sky-300">A{s.assists > 1 ? s.assists : ''}</span>}
-                              {s.yellow_cards > 0 && Array.from({ length: s.yellow_cards }).map((_, i) => <span key={i} className="w-1.5 h-2 rounded-[1px] bg-yellow-400" />)}
-                              {s.red_card && <span className="w-1.5 h-2 rounded-[1px] bg-red-500 ring-1 ring-white/60" />}
+                  {r.timeline
+                    .filter(({ match }) => displayTeamSeries.some(tp => tp.match.id === match.id))
+                    .map(({ match, stat: s }) => {
+                      const mins = s?.minutes_played || 0;
+                      const dur = match.duration || 90;
+                      const ratio = Math.min(1, mins / dur);
+                      const notCalled = !s || !s.is_called_up;
+                      const title = notCalled
+                        ? `${match.rival}: no convocado${s?.comments ? ` (${s.comments})` : ''}`
+                        : `${match.rival}: ${mins}' ${s?.is_starter ? '(titular)' : mins > 0 ? '(suplente)' : '(no jugó)'}`;
+                      return (
+                        <td key={match.id} title={title} className="p-0">
+                          <div
+                            className={`relative h-9 rounded-md flex flex-col items-center justify-center ${s?.is_starter ? 'ring-1 ring-inset ring-white/40' : ''}`}
+                            style={{
+                              background: notCalled ? 'transparent' : mins === 0 ? '#1f1f1f' : `rgba(193, 18, 31, ${0.22 + ratio * 0.78})`,
+                              border: notCalled ? '1px dashed #2a2a2a' : undefined
+                            }}
+                          >
+                            <span className={`font-mono font-bold leading-none ${notCalled ? 'text-brand-gray-dark' : mins === 0 ? 'text-brand-gray-muted' : 'text-white'}`}>
+                              {notCalled ? '–' : mins === 0 ? 'SJ' : `${mins}'`}
                             </span>
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })}
-                  <td className="pl-2 text-center font-mono font-bold text-white">{r.stats.minutes}'</td>
+                            {s && (s.goals > 0 || s.assists > 0 || s.yellow_cards > 0 || s.red_card) && (
+                              <span className="flex items-center gap-0.5 mt-0.5 leading-none">
+                                {s.goals > 0 && <span className="text-[9px]">{'⚽'.repeat(Math.min(s.goals, 3))}</span>}
+                                {s.assists > 0 && <span className="text-[8px] font-black text-sky-300">A{s.assists > 1 ? s.assists : ''}</span>}
+                                {s.yellow_cards > 0 && Array.from({ length: s.yellow_cards }).map((_, i) => <span key={i} className="w-1.5 h-2 rounded-[1px] bg-yellow-400" />)}
+                                {s.red_card && <span className="w-1.5 h-2 rounded-[1px] bg-red-500 ring-1 ring-white/60" />}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  <td className="pl-2 text-center font-mono font-bold text-white">
+                    {r.timeline
+                      .filter(({ match }) => displayTeamSeries.some(tp => tp.match.id === match.id))
+                      .reduce((sum, { stat }) => sum + (stat?.minutes_played || 0), 0)}'
+                  </td>
                 </tr>
               ))}
             </tbody>

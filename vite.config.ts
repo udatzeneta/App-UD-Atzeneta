@@ -75,7 +75,7 @@ export default defineConfig(({ mode }) => {
 
         const runAutoSync = () => {
           console.log('[AutoSync FFCV] Comprobando y sincronizando calendario oficial...');
-          exec(`node "${scriptPath}"`, (error, stdout) => {
+          exec(`node "${scriptPath}"`, (error) => {
             if (error) {
               console.error(`[AutoSync FFCV Error]: ${error.message}`);
             } else {

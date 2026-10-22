@@ -82,6 +82,17 @@ const byDate = (a: Match, b: Match) =>
 
 export const matchLabel = (m: Match) => {
   if (m.competition === 'Liga' && m.matchday) return `J${m.matchday}`;
+  if (m.competition === 'Copa') {
+    if (m.matchday) {
+      const cleanMatchday = m.matchday.replace(/Ronda/i, 'R.').replace(/Fase/i, 'F.').trim();
+      return cleanMatchday.length <= 8 ? cleanMatchday : 'Copa';
+    }
+    return 'Copa';
+  }
+  if (m.competition === 'Amistoso') {
+    const [, mm, dd] = m.date.split('-');
+    return `Am.${dd}/${mm}`;
+  }
   const [, mm, dd] = m.date.split('-');
   return `${dd}/${mm}`;
 };
